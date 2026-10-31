@@ -23,24 +23,28 @@ func runSimulate(args []string) error {
 	fs := flag.NewFlagSet("simulate", flag.ContinueOnError)
 	from := fs.String("from", "", "source snapshot (required)")
 	to := fs.String("to", "", "destination snapshot; omit for a move inside the same organization")
-	account := fs.String("account", "", "ID of the account to move (required)")
-	targetOU := fs.String("target-ou", "", "ID of the destination OU or root (required)")
+	account := fs.String("account", "", "ID of the account to move (this or --ou is required)")
+	ou := fs.String("ou", "", "ID of the OU to move with everything under it (this or --account is required)")
+	targetOU := fs.String("target-ou", "", "ID of the destination OU or root; for --ou, the new parent (required)")
 	format := fs.String("format", "text", "output format: text, json or markdown")
 	out := fs.String("out", "", "write the report to this file instead of stdout")
 	actions := fs.String("actions", "", "JSON file with actions in use; merged into the snapshot's list for the account")
 	lastAccessed := fs.String("last-accessed", "", "IAM last-accessed export (get-service-last-accessed-details JSON) to import as actions in use")
 	replace := fs.Bool("replace-actions", false, "replace the snapshot's actions in use instead of merging")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: orgshift simulate --from A.json [--to B.json] --account ID --target-ou OU [flags]")
+		fmt.Fprintln(os.Stderr, "Usage: orgshift simulate --from A.json [--to B.json] (--account ID | --ou OU) --target-ou OU [flags]")
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "\nExit codes: 0 GO, 2 REVIEW, 3 NO-GO, 1 error.")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *from == "" || *account == "" || *targetOU == "" {
+	if *from == "" || *targetOU == "" || (*account == "") == (*ou == "") {
 		fs.Usage()
-		return errors.New("--from, --account and --target-ou are required")
+		return errors.New("--from, --target-ou and exactly one of --account or --ou are required")
+	}
+	if *ou != "" && (*actions != "" || *lastAccessed != "") {
+		return errors.New("--actions and --last-accessed apply to a single account; use --account")
 	}
 	src, err := snapshot.Load(*from)
 	if err != nil {
@@ -55,32 +59,60 @@ func runSimulate(args []string) error {
 	if err := applyUsageFlags(src, *account, *actions, *lastAccessed, *replace); err != nil {
 		return err
 	}
-	res, err := evaluator.Evaluate(evaluator.Input{From: src, To: dst, AccountID: *account, TargetOUID: *targetOU})
-	if err != nil {
-		return err
+	var (
+		verdict evaluator.Status
+		body    []byte
+	)
+	f := strings.ToLower(*format)
+	if f == "md" {
+		f = "markdown"
 	}
-	var body []byte
-	switch strings.ToLower(*format) {
-	case "text":
-		body = []byte(report.Text(res))
-	case "json":
-		if body, err = report.JSON(res); err != nil {
+	if *ou != "" {
+		res, err := evaluator.EvaluateOU(evaluator.OUInput{From: src, To: dst, OUID: *ou, TargetParentID: *targetOU})
+		if err != nil {
 			return err
 		}
-	case "markdown", "md":
-		body = []byte(report.Markdown(res))
-	default:
-		return fmt.Errorf("unknown format %q", *format)
+		verdict = res.Verdict
+		switch f {
+		case "text":
+			body = []byte(report.OUText(res))
+		case "json":
+			if body, err = report.OUJSON(res); err != nil {
+				return err
+			}
+		case "markdown":
+			body = []byte(report.OUMarkdown(res))
+		default:
+			return fmt.Errorf("unknown format %q", *format)
+		}
+	} else {
+		res, err := evaluator.Evaluate(evaluator.Input{From: src, To: dst, AccountID: *account, TargetOUID: *targetOU})
+		if err != nil {
+			return err
+		}
+		verdict = res.Verdict
+		switch f {
+		case "text":
+			body = []byte(report.Text(res))
+		case "json":
+			if body, err = report.JSON(res); err != nil {
+				return err
+			}
+		case "markdown":
+			body = []byte(report.Markdown(res))
+		default:
+			return fmt.Errorf("unknown format %q", *format)
+		}
 	}
 	if *out != "" {
 		if err := os.WriteFile(*out, body, 0o644); err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "wrote %s (%s)\n", *out, res.Verdict)
+		fmt.Fprintf(os.Stderr, "wrote %s (%s)\n", *out, verdict)
 	} else {
 		os.Stdout.Write(body)
 	}
-	switch res.Verdict {
+	switch verdict {
 	case evaluator.StatusReview:
 		return errVerdict{2}
 	case evaluator.StatusNoGo:

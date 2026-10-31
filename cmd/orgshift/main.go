@@ -16,6 +16,7 @@ func printUsage() {
 Usage:
   orgshift fixtures --out DIR               write the fictional fixture organizations
   orgshift simulate --from A.json [--to B.json] --account ID --target-ou OU [flags]
+  orgshift simulate --from A.json [--to B.json] --ou OU --target-ou PARENT [flags]
   orgshift serve [--from A.json --to B.json] [--fixtures] [--listen 127.0.0.1:8080]
   orgshift collect --profile NAME --out FILE [flags]
   orgshift version

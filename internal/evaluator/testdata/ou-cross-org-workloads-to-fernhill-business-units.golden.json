@@ -8463,7 +8463,7 @@
       "policy_name": "RCPFullAWSAccess",
       "policy_type": "RCP",
       "aws_managed": true,
-      "fate": "recreate"
+      "fate": "automatic"
     },
     {
       "ou_id": "ou-lark-work",
@@ -8472,7 +8472,7 @@
       "policy_name": "FullAWSAccess",
       "policy_type": "SCP",
       "aws_managed": true,
-      "fate": "recreate"
+      "fate": "automatic"
     },
     {
       "ou_id": "ou-lark-work",
@@ -8490,7 +8490,7 @@
       "policy_name": "RCPFullAWSAccess",
       "policy_type": "RCP",
       "aws_managed": true,
-      "fate": "recreate"
+      "fate": "automatic"
     },
     {
       "ou_id": "ou-lark-dev",
@@ -8499,7 +8499,7 @@
       "policy_name": "FullAWSAccess",
       "policy_type": "SCP",
       "aws_managed": true,
-      "fate": "recreate"
+      "fate": "automatic"
     },
     {
       "ou_id": "ou-lark-dev",
@@ -8526,7 +8526,7 @@
       "policy_name": "RCPFullAWSAccess",
       "policy_type": "RCP",
       "aws_managed": true,
-      "fate": "recreate"
+      "fate": "automatic"
     },
     {
       "ou_id": "ou-lark-prod",
@@ -8535,7 +8535,7 @@
       "policy_name": "FullAWSAccess",
       "policy_type": "SCP",
       "aws_managed": true,
-      "fate": "recreate"
+      "fate": "automatic"
     }
   ],
   "diff": [

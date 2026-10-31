@@ -46,28 +46,33 @@
   <form hx-post="/simulate" hx-target="#result" hx-indicator="#busy" hx-swap="innerHTML show:#result:top" method="get" action="/simulate" class="plan">
     <div class="grid4">
       <label>Source snapshot
-        <select name="from" hx-get="/partials/accounts" hx-target="#account-select" hx-trigger="load, change" hx-swap="innerHTML" hx-include="[name=account_preselect]">
+        <select name="from" hx-get="/partials/subject" hx-target="#subject-select" hx-trigger="load, change" hx-swap="innerHTML" hx-include="[name=kind],[name=account_preselect],[name=ou_preselect]">
           {{range .Snapshots}}<option value="{{.Name}}" {{if eq .Name $.Form.From}}selected{{end}}>{{.Name}}</option>{{end}}
         </select>
       </label>
-      <label>Account to move
-        <span id="account-select"><select name="account" required><option value="">loading…</option></select></span>
+      <label>What moves
+        <span class="radios">
+          <label><input type="radio" name="kind" value="account" {{if ne .Form.Kind "ou"}}checked{{end}} hx-get="/partials/subject" hx-target="#subject-select" hx-swap="innerHTML" hx-include="[name=from],[name=account_preselect],[name=ou_preselect]"> one account</label>
+          <label><input type="radio" name="kind" value="ou" {{if eq .Form.Kind "ou"}}checked{{end}} hx-get="/partials/subject" hx-target="#subject-select" hx-swap="innerHTML" hx-include="[name=from],[name=account_preselect],[name=ou_preselect]"> a whole OU</label>
+        </span>
+        <span id="subject-select"><select name="account" required><option value="">loading…</option></select></span>
       </label>
       <label>Target snapshot
         <select name="to" hx-get="/partials/ous" hx-target="#ou-select" hx-trigger="load, change" hx-swap="innerHTML" hx-include="[name=target_ou_preselect]">
           {{range .Snapshots}}<option value="{{.Name}}" {{if eq .Name $.Form.To}}selected{{end}}>{{.Name}}</option>{{end}}
         </select>
       </label>
-      <label>Target OU
+      <label>Target OU <span class="muted">(the new parent, for an OU)</span>
         <span id="ou-select"><select name="target_ou" required><option value="">loading…</option></select></span>
       </label>
     </div>
     <input type="hidden" name="account_preselect" value="{{.Form.Account}}">
+    <input type="hidden" name="ou_preselect" value="{{.Form.OU}}">
     <input type="hidden" name="target_ou_preselect" value="{{.Form.TargetOU}}">
     <div class="actions">
       <button type="submit">Simulate the move</button>
       <span id="busy" class="htmx-indicator">evaluating…</span>
-      <span class="muted small">Pick the same snapshot twice for a move inside one organization.</span>
+      <span class="muted small">Pick the same snapshot twice for a move inside one organization. A whole OU moves with every nested OU and account; the verdict is the worst account verdict.</span>
     </div>
   </form>
   {{else}}
@@ -77,6 +82,7 @@
 
 <section id="result">
   {{if .Result}}{{template "result.html" .Result}}{{end}}
+  {{if .OUResult}}{{template "result_ou.html" .OUResult}}{{end}}
 </section>
 </main>
 <footer class="muted small">orgshift reads snapshots only. Collect them with read-only credentials (<code>orgshift collect</code>) or generate fixtures (<code>orgshift fixtures</code>).</footer>

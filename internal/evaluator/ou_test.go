@@ -96,8 +96,12 @@ func TestOUCrossOrgRecreatesTree(t *testing.T) {
 		}
 	}
 	for _, at := range res.Attachments {
-		if at.Fate != "recreate" {
-			t.Errorf("cross-org attachments must be marked recreate, got %+v", at)
+		want := "recreate"
+		if at.AWSManaged {
+			want = "automatic"
+		}
+		if at.Fate != want {
+			t.Errorf("cross-org attachment should be %s, got %+v", want, at)
 		}
 	}
 	// Accounts keep their place inside the subtree, under the new parent.

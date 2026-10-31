@@ -49,6 +49,8 @@ func New(store *Store, logger *log.Logger) (*Server, error) {
 		"join":        strings.Join,
 		"lower":       strings.ToLower,
 		"sortedKeys":  sortedKeys,
+		"firstN":      firstN,
+		"leftOver":    leftOver,
 	}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
@@ -66,6 +68,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /snapshots", s.handleUpload)
 	mux.HandleFunc("POST /snapshots/fixtures", s.handleFixtures)
 	mux.HandleFunc("GET /partials/accounts", s.handleAccounts)
+	mux.HandleFunc("GET /partials/subject", s.handleSubject)
 	mux.HandleFunc("GET /partials/ous", s.handleOUs)
 	mux.HandleFunc("GET /simulate", s.handleSimulate)
 	mux.HandleFunc("POST /simulate", s.handleSimulate)
@@ -87,6 +90,7 @@ type pageData struct {
 	Snapshots []snapshotOption
 	Form      formValues
 	Result    *resultView
+	OUResult  *ouResultView
 	Error     string
 	Flash     string
 }
@@ -100,6 +104,8 @@ type snapshotOption struct {
 
 type formValues struct {
 	From, To, Account, TargetOU string
+	// Kind is "account" or "ou"; OU is the subject OU when Kind is "ou".
+	Kind, OU string
 }
 
 func (s *Server) options() []snapshotOption {
@@ -119,7 +125,7 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	data := pageData{Snapshots: s.options(), Flash: r.URL.Query().Get("flash"), Error: r.URL.Query().Get("error")}
+	data := pageData{Snapshots: s.options(), Flash: r.URL.Query().Get("flash"), Error: r.URL.Query().Get("error"), Form: formValues{Kind: "account"}}
 	names := s.store.Names()
 	if len(names) > 0 {
 		data.Form.From = names[0]
@@ -175,6 +181,40 @@ type option struct {
 	Selected     bool
 }
 
+// handleSubject renders the subject picker for the chosen kind: the accounts
+// of the source snapshot grouped by OU, or its OUs.
+func (s *Server) handleSubject(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("kind") == "ou" {
+		s.handleSubjectOUs(w, r)
+		return
+	}
+	s.handleAccounts(w, r)
+}
+
+func (s *Server) handleSubjectOUs(w http.ResponseWriter, r *http.Request) {
+	snap, ok := s.store.Get(r.URL.Query().Get("from"))
+	if !ok {
+		s.render(w, "select_subject_ous.html", nil)
+		return
+	}
+	selected := r.URL.Query().Get("ou")
+	if selected == "" {
+		selected = r.URL.Query().Get("ou_preselect")
+	}
+	ix := snap.Index()
+	var opts []option
+	var walk func(id string, depth int)
+	walk = func(id string, depth int) {
+		for _, ou := range ix.ChildOUs(id) {
+			_, accts := ix.Subtree(ou.ID)
+			opts = append(opts, option{Value: ou.ID, Label: fmt.Sprintf("%s%s (%s) · %s", strings.Repeat("   ", depth), ou.Name, ou.ID, plural(len(accts), "account", "accounts")), Depth: depth, Selected: ou.ID == selected})
+			walk(ou.ID, depth+1)
+		}
+	}
+	walk(snap.Root.ID, 0)
+	s.render(w, "select_subject_ous.html", opts)
+}
+
 func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	snap, ok := s.store.Get(r.URL.Query().Get("from"))
 	if !ok {
@@ -228,14 +268,31 @@ func (s *Server) handleOUs(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "select_ous.html", opts)
 }
 
+// simulation is the outcome of one request: exactly one of Account or OU is set.
+type simulation struct {
+	Account *resultView
+	OU      *ouResultView
+	Query   string
+}
+
 // simulate runs the evaluation for a request's parameters.
-func (s *Server) simulate(r *http.Request) (*resultView, formValues, error) {
+func (s *Server) simulate(r *http.Request) (*simulation, formValues, error) {
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			return nil, formValues{}, err
 		}
 	}
-	fv := formValues{From: r.FormValue("from"), To: r.FormValue("to"), Account: r.FormValue("account"), TargetOU: r.FormValue("target_ou")}
+	fv := formValues{From: r.FormValue("from"), To: r.FormValue("to"), Account: r.FormValue("account"), TargetOU: r.FormValue("target_ou"),
+		Kind: r.FormValue("kind"), OU: r.FormValue("ou")}
+	if fv.Kind == "" {
+		fv.Kind = "account"
+		if fv.Account == "" && fv.OU != "" {
+			fv.Kind = "ou"
+		}
+	}
+	if fv.Kind != "account" && fv.Kind != "ou" {
+		return nil, fv, fmt.Errorf("kind must be account or ou, not %q", fv.Kind)
+	}
 	from, ok := s.store.Get(fv.From)
 	if !ok {
 		return nil, fv, fmt.Errorf("source snapshot %q is not loaded", fv.From)
@@ -248,16 +305,24 @@ func (s *Server) simulate(r *http.Request) (*resultView, formValues, error) {
 	if !ok {
 		return nil, fv, fmt.Errorf("target snapshot %q is not loaded", toName)
 	}
+	if fv.Kind == "ou" {
+		res, err := evaluator.EvaluateOU(evaluator.OUInput{From: from, To: to, OUID: fv.OU, TargetParentID: fv.TargetOU})
+		if err != nil {
+			return nil, fv, err
+		}
+		q := url.Values{"kind": {"ou"}, "from": {fv.From}, "to": {toName}, "ou": {fv.OU}, "target_ou": {fv.TargetOU}}
+		return &simulation{OU: newOUResultView(res, fv.From, toName, from, to, q.Encode()), Query: q.Encode()}, fv, nil
+	}
 	res, err := evaluator.Evaluate(evaluator.Input{From: from, To: to, AccountID: fv.Account, TargetOUID: fv.TargetOU})
 	if err != nil {
 		return nil, fv, err
 	}
 	q := url.Values{"from": {fv.From}, "to": {toName}, "account": {fv.Account}, "target_ou": {fv.TargetOU}}
-	return newResultView(res, fv.From, toName, from, to, q.Encode()), fv, nil
+	return &simulation{Account: newResultView(res, fv.From, toName, from, to, q.Encode()), Query: q.Encode()}, fv, nil
 }
 
 func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
-	view, fv, err := s.simulate(r)
+	sim, fv, err := s.simulate(r)
 	htmx := r.Header.Get("HX-Request") == "true"
 	if err != nil {
 		if htmx {
@@ -269,26 +334,44 @@ func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if htmx {
-		w.Header().Set("HX-Push-Url", "/simulate?"+view.ExportQuery)
-		s.render(w, "result.html", view)
+		w.Header().Set("HX-Push-Url", "/simulate?"+sim.Query)
+		if sim.OU != nil {
+			s.render(w, "result_ou.html", sim.OU)
+		} else {
+			s.render(w, "result.html", sim.Account)
+		}
 		return
 	}
-	s.render(w, "index.html", pageData{Snapshots: s.options(), Form: fv, Result: view})
+	s.render(w, "index.html", pageData{Snapshots: s.options(), Form: fv, Result: sim.Account, OUResult: sim.OU})
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
-	view, _, err := s.simulate(r)
+	sim, _, err := s.simulate(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	base := fmt.Sprintf("orgshift-%s-to-%s", view.Result.Subject.AccountID, view.Result.Subject.TargetOUID)
+	var (
+		base     string
+		data     []byte
+		markdown string
+	)
+	if sim.OU != nil {
+		res := sim.OU.Result
+		base = fmt.Sprintf("orgshift-ou-%s-to-%s", res.Subject.OUID, res.Subject.TargetParentID)
+		data, err = report.OUJSON(res)
+		markdown = report.OUMarkdown(res)
+	} else {
+		res := sim.Account.Result
+		base = fmt.Sprintf("orgshift-%s-to-%s", res.Subject.AccountID, res.Subject.TargetOUID)
+		data, err = report.JSON(res)
+		markdown = report.Markdown(res)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, ".json") {
-		data, err := report.JSON(view.Result)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+base+`.json"`)
 		w.Write(data)
@@ -296,7 +379,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+base+`.md"`)
-	fmt.Fprint(w, report.Markdown(view.Result))
+	fmt.Fprint(w, markdown)
 }
 
 // sortedKeys is used by templates that need deterministic map iteration.

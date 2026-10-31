@@ -147,3 +147,72 @@ func TestUploadAndSameOrg(t *testing.T) {
 }
 
 func escape(s string) string { return strings.ReplaceAll(s, " ", "+") }
+
+func TestSubjectPartialAndOUSimulation(t *testing.T) {
+	ts := newTestServer(t, true)
+	_, body := get(t, ts, "/partials/subject?kind=ou&from="+escape(fixtures.LarkspurName)+"&ou_preselect=ou-lark-work", nil)
+	if !strings.Contains(body, `name="ou"`) || !strings.Contains(body, `value="ou-lark-work" selected`) || strings.Contains(body, `value="r-lark"`) {
+		t.Fatalf("ou subject partial should list OUs (not the root) with the preselection: %s", body)
+	}
+	if !strings.Contains(body, "Workloads (ou-lark-work) · 3 accounts") || !strings.Contains(body, "Production (ou-lark-prod) · 2 accounts") {
+		t.Errorf("ou labels should carry account counts: %s", body)
+	}
+	_, body = get(t, ts, "/partials/subject?kind=account&from="+escape(fixtures.LarkspurName), nil)
+	if !strings.Contains(body, `name="account"`) {
+		t.Fatalf("account subject partial: %s", body)
+	}
+	_, body = get(t, ts, "/", nil)
+	if !strings.Contains(body, `name="kind" value="ou"`) || !strings.Contains(body, "a whole OU") {
+		t.Fatal("index should offer the whole-OU toggle")
+	}
+
+	q := "kind=ou&from=" + escape(fixtures.LarkspurName) + "&to=" + escape(fixtures.FernhillName) + "&ou=ou-lark-work&target_ou=ou-fern-bu"
+	resp, body := get(t, ts, "/simulate?"+q, map[string]string{"HX-Request": "true"})
+	if resp.StatusCode != 200 || strings.Contains(body, "<html") {
+		t.Fatalf("htmx response should be a partial: %d", resp.StatusCode)
+	}
+	for _, want := range []string{"OU Workloads", "verdict-pill nogo", `class="rollup"`, "larkspur-payments-prod", "larkspur-payments-dev", "larkspur-data-prod",
+		"Workloads / Production", "must be recreated under Business Units", "recreate in the target", `id="acct-111111111115"`, "Policy chain down to the OU",
+		"What changes at the OU", "Larkspur-Allowed-Regions", "after the move"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("OU result missing %q", want)
+		}
+	}
+	if push := resp.Header.Get("HX-Push-Url"); !strings.Contains(push, "kind=ou") || !strings.Contains(push, "ou=ou-lark-work") {
+		t.Errorf("HX-Push-Url should carry the OU parameters, got %q", push)
+	}
+	// The target tree draws the moved subtree under Business Units, with the nested OUs and accounts as ghosts.
+	if !strings.Contains(body, `node ou on-path subject ghost`) || !strings.Contains(body, `node account   ghost`) {
+		t.Error("target tree should contain the ghost OU subtree")
+	}
+	// Full page keeps the form state and the OU result.
+	resp, body = get(t, ts, "/simulate?"+q, nil)
+	if resp.StatusCode != 200 || !strings.Contains(body, "<html") || !strings.Contains(body, `name="kind" value="ou" checked`) || !strings.Contains(body, `name="ou_preselect" value="ou-lark-work"`) {
+		t.Fatalf("full page should preselect the OU: %d", resp.StatusCode)
+	}
+	// Same-org move: attachments travel.
+	q = "kind=ou&from=" + escape(fixtures.LarkspurName) + "&to=" + escape(fixtures.LarkspurName) + "&ou=ou-lark-prod&target_ou=r-lark"
+	_, body = get(t, ts, "/simulate?"+q, map[string]string{"HX-Request": "true"})
+	if !strings.Contains(body, "moves with the OU") || !strings.Contains(body, "Larkspur-Daily-Backups") {
+		t.Error("same-org OU result should list carried attachments")
+	}
+	// Errors.
+	q = "kind=ou&from=" + escape(fixtures.LarkspurName) + "&to=" + escape(fixtures.LarkspurName) + "&ou=ou-lark-work&target_ou=ou-lark-prod"
+	resp, body = get(t, ts, "/simulate?"+q, map[string]string{"HX-Request": "true"})
+	if resp.StatusCode != 422 || !strings.Contains(body, "under itself") {
+		t.Fatalf("moving an OU under its descendant should be a 422, got %d %s", resp.StatusCode, body)
+	}
+}
+
+func TestOUExports(t *testing.T) {
+	ts := newTestServer(t, true)
+	q := "kind=ou&from=" + escape(fixtures.LarkspurName) + "&to=" + escape(fixtures.FernhillName) + "&ou=ou-lark-work&target_ou=ou-fern-bu"
+	resp, body := get(t, ts, "/export.json?"+q, nil)
+	if resp.StatusCode != 200 || !strings.Contains(body, `"ou_id": "ou-lark-work"`) || !strings.Contains(resp.Header.Get("Content-Disposition"), "orgshift-ou-ou-lark-work-to-ou-fern-bu.json") {
+		t.Fatalf("ou json export: %d %s", resp.StatusCode, resp.Header.Get("Content-Disposition"))
+	}
+	resp, body = get(t, ts, "/export.md?"+q, nil)
+	if resp.StatusCode != 200 || !strings.HasPrefix(body, "# orgshift verdict: NO-GO") || !strings.Contains(body, "## Accounts") {
+		t.Fatalf("ou markdown export: %d", resp.StatusCode)
+	}
+}

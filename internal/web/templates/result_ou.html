@@ -1,0 +1,94 @@
+{{$r := .Result}}{{$s := $r.Subject}}
+<section class="panel verdict {{statusClass $r.Verdict}}">
+  <div class="verdict-head">
+    <div class="verdict-pill {{statusClass $r.Verdict}}">{{$r.Verdict}}</div>
+    <div>
+      <h2>OU {{$s.OUName}} <code>{{$s.OUID}}</code> <span class="pill subject">whole OU</span></h2>
+      <p class="summary">{{$r.Summary}}</p>
+      {{range $r.Notes}}<p class="muted small">Note: {{.}}</p>{{end}}
+    </div>
+    <div class="export">
+      <a class="button secondary" href="/export.json?{{.ExportQuery}}">Export JSON</a>
+      <a class="button secondary" href="/export.md?{{.ExportQuery}}">Export Markdown</a>
+      <a class="button secondary" href="/simulate?{{.ExportQuery}}">Link to this result</a>
+    </div>
+  </div>
+  <div class="grid2 subject">
+    <div><h4>From</h4><div>{{$s.SourceOrg.Name}} <code>{{$s.SourceOrg.ID}}</code></div><div class="path">{{parentPath $s.SourcePath}}</div></div>
+    <div><h4>To</h4><div>{{$s.TargetOrg.Name}} <code>{{$s.TargetOrg.ID}}</code>{{if $s.CrossOrg}} <span class="pill warn">different organization</span>{{end}}</div><div class="path">{{parentPath $s.TargetPath}}</div></div>
+  </div>
+  <p class="muted small">The OU carries {{plural $s.NestedOUs "nested OU" "nested OUs"}} and {{plural $s.Accounts "account" "accounts"}}. Every account was evaluated at its new position; the OU verdict is the worst account verdict.</p>
+</section>
+
+<section class="panel">
+  <h2>Accounts under {{$s.OUName}}</h2>
+  {{if not $r.Accounts}}<p class="muted">No accounts under this OU.</p>{{else}}
+  <table class="rollup">
+    <thead><tr><th>Verdict</th><th>Account</th><th>Inside the OU</th><th class="num">Blocking</th><th class="num">Review</th><th class="num">Info</th><th>Why</th><th></th></tr></thead>
+    <tbody>
+    {{range $r.Accounts}}
+      <tr class="{{statusClass .Verdict}}">
+        <td><span class="pill {{statusClass .Verdict}}">{{.Verdict}}</span></td>
+        <td>{{.AccountName}}<br><code>{{.AccountID}}</code></td>
+        <td class="muted">{{.RelativePath}}</td>
+        <td class="num">{{.Blocking}}</td>
+        <td class="num">{{.Review}}</td>
+        <td class="num">{{.Info}}</td>
+        <td class="why">{{range firstN .BlockingTitles 3}}<div>{{.}}</div>{{end}}{{with leftOver .BlockingTitles 3}}<div class="muted small">and {{.}} more</div>{{end}}{{if not .BlockingTitles}}<span class="muted small">nothing blocks this account</span>{{end}}</td>
+        <td><a href="#acct-{{.AccountID}}" onclick="document.getElementById('acct-{{.AccountID}}').open = true">details</a></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2>The OU itself</h2>
+  {{range $r.Findings}}{{template "finding" .}}{{end}}
+  {{if $r.Attachments}}
+  <h3>Policies attached on the OU tree</h3>
+  <table class="rollup attachments">
+    <thead><tr><th>OU</th><th>Type</th><th>Policy</th><th>Fate</th></tr></thead>
+    <tbody>
+    {{range $r.Attachments}}<tr><td>{{.OUName}} <code>{{.OUID}}</code></td><td><span class="badge {{lower .PolicyType}}">{{.PolicyType}}</span></td><td>{{.PolicyName}} <code>{{.PolicyID}}</code>{{if .AWSManaged}} <span class="pill side">AWS managed</span>{{end}}</td><td>{{if eq .Fate "carried"}}<span class="pill go">moves with the OU</span>{{else if eq .Fate "automatic"}}<span class="pill side">attached automatically</span>{{else}}<span class="pill review">recreate in the target</span>{{end}}</td></tr>{{end}}
+    </tbody>
+  </table>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2>Side-by-side: where the OU sits and which policies reach it</h2>
+  <div class="grid2 trees">
+    <div>
+      <h3>Source · {{.SourceName}}</h3>
+      <ul class="tree">{{template "tree_node" .SourceTree}}</ul>
+    </div>
+    <div>
+      <h3>Target · {{.TargetName}}</h3>
+      <ul class="tree">{{template "tree_node" .TargetTree}}</ul>
+    </div>
+  </div>
+  <p class="muted small">Badges show policies attached directly to each node; hover to see their names. The dashed subtree is the OU drawn at its new position{{if $s.CrossOrg}}, without badges because its attachments do not travel between organizations{{end}}.</p>
+
+  <h3>Policy chain down to the OU</h3>
+  {{template "chain_view" $r.Diff}}
+</section>
+
+<section class="panel">
+  <h2>What changes at the OU: inherited policies</h2>
+  <p class="muted small">Policies the OU inherits from above, before and after. Attachments on the OU and below are unchanged inside one organization and listed above for a cross-organization move.</p>
+  {{template "diff_view" $r.Diff}}
+</section>
+
+{{range $r.Accounts}}
+<details class="panel account-result {{statusClass .Verdict}}" id="acct-{{.AccountID}}">
+  <summary><span class="pill {{statusClass .Verdict}}">{{.Verdict}}</span> <strong>{{.AccountName}}</strong> <code>{{.AccountID}}</code> <span class="muted">· {{.RelativePath}} · {{.Blocking}} blocking, {{.Review}} to review</span></summary>
+  <p class="summary">{{.Result.Summary}}</p>
+  {{range .Result.Notes}}<p class="muted small">Note: {{.}}</p>{{end}}
+  <h3>Verdict board</h3>
+  {{template "verdict_board" .Result}}
+  <h3>What changes for this account</h3>
+  {{template "diff_view" .Result.Diff}}
+</details>
+{{end}}

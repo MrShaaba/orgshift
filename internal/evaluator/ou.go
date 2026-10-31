@@ -73,8 +73,9 @@ type OUAttachment struct {
 	PolicyName string `json:"policy_name"`
 	PolicyType string `json:"policy_type"`
 	AWSManaged bool   `json:"aws_managed"`
-	// Fate is "carried" for a move inside the organization and "recreate"
-	// when the OU has to be rebuilt in another organization.
+	// Fate is "carried" for a move inside the organization; across
+	// organizations it is "recreate" for customer-managed policies and
+	// "automatic" for the AWS managed defaults Organizations attaches itself.
 	Fate string `json:"fate"`
 }
 
@@ -172,8 +173,12 @@ func EvaluateOU(in OUInput) (*OUResult, error) {
 	}
 	for _, o := range ous {
 		for _, p := range fromIx.AttachedAll(o.ID) {
+			f := fate
+			if crossOrg && p.AWSManaged {
+				f = "automatic"
+			}
 			res.Attachments = append(res.Attachments, OUAttachment{OUID: o.ID, OUName: o.Name, PolicyID: p.ID, PolicyName: p.Name,
-				PolicyType: p.Type.Short(), AWSManaged: p.AWSManaged, Fate: fate})
+				PolicyType: p.Type.Short(), AWSManaged: p.AWSManaged, Fate: f})
 		}
 	}
 	res.Findings = append(res.Findings, ouFindings(in.From, to, ou, ous, accounts, res.Attachments, crossOrg, parentNode)...)

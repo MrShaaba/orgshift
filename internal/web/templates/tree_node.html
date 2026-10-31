@@ -3,7 +3,7 @@
   <div class="node-row">
     <span class="node-name">{{if eq .Node.Kind "root"}}⌂{{else if eq .Node.Kind "ou"}}▸{{else}}●{{end}} {{.Node.Name}}</span>
     <code class="node-id">{{.Node.ID}}</code>
-    {{if .Ghost}}<span class="pill ghost">after the move</span>{{end}}
+    {{if and .Ghost .IsSubject}}<span class="pill ghost">after the move</span>{{end}}
     {{if and .IsSubject (not .Ghost)}}<span class="pill subject">moving</span>{{end}}
     <span class="badges">{{range .Badges}}<span class="badge {{lower .Type}}" title="{{.Names}}">{{.Type}} {{.Count}}</span>{{end}}</span>
   </div>

@@ -1,0 +1,4 @@
+<select name="ou" required>
+{{if not .}}<option value="">no OUs</option>{{end}}
+{{range .}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}
+</select>

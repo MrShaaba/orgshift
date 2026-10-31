@@ -1,0 +1,154 @@
+{{$r := .Result}}{{$s := $r.Subject}}
+<section class="panel verdict {{statusClass $r.Verdict}}">
+  <div class="verdict-head">
+    <div class="verdict-pill {{statusClass $r.Verdict}}">{{$r.Verdict}}</div>
+    <div>
+      <h2>{{$s.AccountName}} <code>{{$s.AccountID}}</code></h2>
+      <p class="summary">{{$r.Summary}}</p>
+      {{range $r.Notes}}<p class="muted small">Note: {{.}}</p>{{end}}
+    </div>
+    <div class="export">
+      <a class="button secondary" href="/export.json?{{.ExportQuery}}">Export JSON</a>
+      <a class="button secondary" href="/export.md?{{.ExportQuery}}">Export Markdown</a>
+      <a class="button secondary" href="/simulate?{{.ExportQuery}}">Link to this result</a>
+    </div>
+  </div>
+  <div class="grid2 subject">
+    <div><h4>From</h4><div>{{$s.SourceOrg.Name}} <code>{{$s.SourceOrg.ID}}</code></div><div class="path">{{parentPath $s.SourcePath}}</div></div>
+    <div><h4>To</h4><div>{{$s.TargetOrg.Name}} <code>{{$s.TargetOrg.ID}}</code>{{if $s.CrossOrg}} <span class="pill warn">different organization</span>{{end}}</div><div class="path">{{parentPath $s.TargetPath}}</div></div>
+  </div>
+  <p class="muted small">Evaluated {{plural $s.ActionsInUse "action in use" "actions in use"}}, {{plural $s.InboundAccess "inbound access entry" "inbound access entries"}} and {{plural $s.TaggedResources "tagged resource" "tagged resources"}}. Regions assumed when an action has none: {{if $s.RegionsAssumed}}{{join $s.RegionsAssumed ", "}}{{else}}none{{end}}.</p>
+</section>
+
+<section class="panel">
+  <h2>Verdict board</h2>
+  <div class="board">
+  {{range $r.Checks}}
+    <article class="check {{statusClass .Status}}">
+      <header>
+        <span class="pill {{statusClass .Status}}">{{.Status}}</span>
+        <h3>{{.Title}}</h3>
+        <span class="counts muted small">{{with count . "NO-GO"}}{{.}} blocking · {{end}}{{with count . "REVIEW"}}{{.}} to review · {{end}}{{with count . "INFO"}}{{.}} info{{end}}</span>
+      </header>
+      <p class="muted">{{.Summary}}</p>
+      {{if not .Findings}}<p class="ok">No findings.</p>{{end}}
+      {{range .Findings}}
+      <details class="finding {{statusClass .Status}}">
+        <summary><span class="dot {{statusClass .Status}}"></span><span class="ftitle">{{.Title}}</span>{{if .Regions}}<span class="regions">{{join .Regions ", "}}</span>{{end}}</summary>
+        <div class="fbody">
+          <p>{{.Detail}}</p>
+          <dl class="meta">
+            {{if .Action}}<dt>Action</dt><dd><code>{{.Action}}</code></dd>{{end}}
+            {{if .Principal}}<dt>Principal</dt><dd><code>{{.Principal}}</code></dd>{{end}}
+            {{if .Resource}}<dt>Resource</dt><dd><code>{{.Resource}}</code></dd>{{end}}
+            {{if .Regions}}<dt>Regions</dt><dd>{{join .Regions ", "}}</dd>{{end}}
+          </dl>
+          {{range .Evidence}}
+          <div class="evidence">
+            <div class="evhead"><span class="kind">{{.Kind}}</span>{{if .Side}} <span class="pill side">{{.Side}}</span>{{end}}
+              {{if .PolicyName}} {{.PolicyType}} <strong>{{.PolicyName}}</strong> <code>{{.PolicyID}}</code>{{end}}
+              {{if .Statement}} · statement <strong>{{.Statement}}</strong>{{end}}
+              {{if .Level}} · at {{.Level}}{{end}}
+              {{if .Reference}} <code>{{.Reference}}</code>{{end}}</div>
+            {{if .Note}}<pre class="note">{{.Note}}</pre>{{end}}
+            {{if .StatementJSON}}<pre class="json">{{pretty .StatementJSON}}</pre>{{end}}
+          </div>
+          {{end}}
+        </div>
+      </details>
+      {{end}}
+    </article>
+  {{end}}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Side-by-side: where the account sits and which policies reach it</h2>
+  <div class="grid2 trees">
+    <div>
+      <h3>Source · {{.SourceName}}</h3>
+      <ul class="tree">{{template "tree_node" .SourceTree}}</ul>
+    </div>
+    <div>
+      <h3>Target · {{.TargetName}}</h3>
+      <ul class="tree">{{template "tree_node" .TargetTree}}</ul>
+    </div>
+  </div>
+  <p class="muted small">Badges show policies attached directly to each node; hover to see their names. Highlighted nodes form the policy chain from the root to the account.</p>
+
+  <h3>Policy chain</h3>
+  <div class="chains">
+  {{range $r.Diff}}
+    {{if or .EnabledSource .EnabledTarget}}
+    <div class="chain-type">
+      <h4>{{.TypeShort}}{{if not .EnabledTarget}} <span class="pill warn">not enabled at target</span>{{end}}{{if not .EnabledSource}} <span class="pill warn">not enabled at source</span>{{end}}</h4>
+      <div class="grid2">
+        <ol class="chain">{{range .SourceChain}}<li><span class="lvl">{{.Node.Name}}</span> {{range .Policies}}<span class="chip {{if .AWSManaged}}managed{{end}}" title="{{.Description}}">{{.Name}}</span>{{else}}<span class="muted">none</span>{{end}}</li>{{end}}</ol>
+        <ol class="chain">{{range .TargetChain}}<li><span class="lvl">{{.Node.Name}}</span> {{range .Policies}}<span class="chip {{if .AWSManaged}}managed{{end}}" title="{{.Description}}">{{.Name}}</span>{{else}}<span class="muted">none</span>{{end}}</li>{{end}}</ol>
+      </div>
+    </div>
+    {{end}}
+  {{end}}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>What changes: effective policies</h2>
+  {{range $r.Diff}}
+  <div class="diff-type">
+    <h3>{{.TypeShort}} <span class="muted small">{{len .Added}} added · {{len .Removed}} removed · {{len .Changed}} changed · {{len .Unchanged}} unchanged</span></h3>
+    {{if and (not .Added) (not .Removed) (not .Changed)}}<p class="ok">No change in the {{.TypeShort}} chain.</p>{{end}}
+    <div class="grid3">
+      <div>
+        <h4 class="added">Added at the target</h4>
+        {{range .Added}}{{template "policy_ref" .}}{{else}}<p class="muted small">none</p>{{end}}
+      </div>
+      <div>
+        <h4 class="removed">Removed from the chain</h4>
+        {{range .Removed}}{{template "policy_ref" .}}{{else}}<p class="muted small">none</p>{{end}}
+      </div>
+      <div>
+        <h4 class="changed">Same name, different document</h4>
+        {{range .Changed}}{{template "policy_ref" .}}{{else}}<p class="muted small">none</p>{{end}}
+      </div>
+    </div>
+  </div>
+  {{end}}
+</section>
+
+{{if .Usage}}
+<section class="panel">
+  <h2>Inputs used for {{$s.AccountName}}</h2>
+  <div class="grid3">
+    <div>
+      <h4>Actions in use ({{len .Usage.Actions}})</h4>
+      <ul class="compact">{{range .Usage.Actions}}<li><code>{{.Action}}</code>{{if .Regions}} <span class="muted small">{{join .Regions ", "}}</span>{{end}}{{if .Note}} <span class="muted small">— {{.Note}}</span>{{end}}</li>{{end}}</ul>
+    </div>
+    <div>
+      <h4>Inbound access ({{len .Usage.InboundAccess}})</h4>
+      <ul class="compact">{{range .Usage.InboundAccess}}<li><code>{{.Principal}}</code>{{if .PrincipalOrgID}} <span class="muted small">{{.PrincipalOrgID}}</span>{{end}}: {{join .Actions ", "}}{{if .Note}} <span class="muted small">— {{.Note}}</span>{{end}}</li>{{end}}</ul>
+    </div>
+    <div>
+      <h4>Account</h4>
+      <ul class="compact">
+        <li>Enabled regions: {{if .Account.EnabledRegions}}{{join .Account.EnabledRegions ", "}}{{else}}<span class="muted">unknown</span>{{end}}</li>
+        {{range $k := sortedKeys .Account.Tags}}<li>Tag <code>{{$k}}</code> = {{index $.Account.Tags $k}}</li>{{end}}
+        <li>Tagged resources sampled: {{len .Usage.TaggedResources}}</li>
+      </ul>
+    </div>
+  </div>
+</section>
+{{end}}
+
+{{define "policy_ref"}}
+<details class="policy">
+  <summary><strong>{{.Name}}</strong> <code>{{.ID}}</code> <span class="muted small">at {{.Level}}</span>{{if .AWSManaged}} <span class="pill side">AWS managed</span>{{end}}</summary>
+  {{if .Description}}<p class="muted">{{.Description}}</p>{{end}}
+  {{if .Statements}}
+  <ul class="statements">
+    {{range .Statements}}<li><span class="effect {{lower .Effect}}">{{.Effect}}</span> {{if .NotActions}}<em>NotAction</em> {{join .NotActions ", "}}{{else}}{{join .Actions ", "}}{{end}}{{if .HasCondition}} <span class="muted">when {{join .Conditions " and "}}</span>{{end}}{{if .Sid}} <code class="sid">{{.Sid}}</code>{{end}}</li>{{end}}
+  </ul>
+  {{end}}
+  <pre class="json">{{pretty .Document}}</pre>
+</details>
+{{end}}

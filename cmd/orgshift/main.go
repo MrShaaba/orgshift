@@ -16,7 +16,7 @@ func printUsage() {
 Usage:
   orgshift fixtures --out DIR               write the fictional fixture organizations
   orgshift simulate --from A.json [--to B.json] --account ID --target-ou OU [flags]
-  orgshift serve [--from A.json --to B.json] [--listen :8080]
+  orgshift serve [--from A.json --to B.json] [--fixtures] [--listen 127.0.0.1:8080]
   orgshift collect --profile NAME --out FILE [flags]
   orgshift version
 
@@ -37,6 +37,8 @@ func main() {
 		err = runFixtures(os.Args[2:])
 	case "simulate":
 		err = runSimulate(os.Args[2:])
+	case "serve":
+		err = runServe(os.Args[2:])
 	case "-h", "--help", "help":
 		printUsage()
 	default:

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orgshift</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">⇄</span> <strong>orgshift</strong> <span class="muted">go / no-go simulator for moving AWS accounts between OUs and organizations</span></div>
+  <div class="muted small">offline · snapshots only · nothing is written to AWS</div>
+</header>
+
+<main>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash error">{{.Error}}</div>{{end}}
+
+<section class="panel" id="snapshots">
+  <h2>1. Snapshots</h2>
+  <div class="row">
+    <form method="post" action="/snapshots" enctype="multipart/form-data" class="upload">
+      <label>Source snapshot <input type="file" name="source" accept="application/json,.json"></label>
+      <label>Target snapshot <span class="muted">(optional, for a cross-organization move)</span> <input type="file" name="target" accept="application/json,.json"></label>
+      <button type="submit">Load snapshots</button>
+    </form>
+    <form method="post" action="/snapshots/fixtures" class="fixtures">
+      <p class="muted">No snapshots yet? Load the two fictional organizations that ship with orgshift.</p>
+      <button type="submit" class="secondary">Load fixtures (Larkspur Holdings → Fernhill Group)</button>
+    </form>
+  </div>
+  {{if .Snapshots}}
+  <table class="snaps">
+    <thead><tr><th>Name</th><th>Organization</th><th>Accounts</th><th>Source</th></tr></thead>
+    <tbody>
+    {{range .Snapshots}}<tr><td>{{.Name}}</td><td><code>{{.OrgID}}</code></td><td>{{.Accounts}}</td><td>{{.Source}}</td></tr>{{end}}
+    </tbody>
+  </table>
+  {{end}}
+</section>
+
+<section class="panel" id="plan">
+  <h2>2. Plan a move</h2>
+  {{if .Snapshots}}
+  <form hx-post="/simulate" hx-target="#result" hx-indicator="#busy" hx-swap="innerHTML show:#result:top" method="get" action="/simulate" class="plan">
+    <div class="grid4">
+      <label>Source snapshot
+        <select name="from" hx-get="/partials/accounts" hx-target="#account-select" hx-trigger="load, change" hx-swap="innerHTML" hx-include="[name=account_preselect]">
+          {{range .Snapshots}}<option value="{{.Name}}" {{if eq .Name $.Form.From}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </label>
+      <label>Account to move
+        <span id="account-select"><select name="account" required><option value="">loading…</option></select></span>
+      </label>
+      <label>Target snapshot
+        <select name="to" hx-get="/partials/ous" hx-target="#ou-select" hx-trigger="load, change" hx-swap="innerHTML" hx-include="[name=target_ou_preselect]">
+          {{range .Snapshots}}<option value="{{.Name}}" {{if eq .Name $.Form.To}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </label>
+      <label>Target OU
+        <span id="ou-select"><select name="target_ou" required><option value="">loading…</option></select></span>
+      </label>
+    </div>
+    <input type="hidden" name="account_preselect" value="{{.Form.Account}}">
+    <input type="hidden" name="target_ou_preselect" value="{{.Form.TargetOU}}">
+    <div class="actions">
+      <button type="submit">Simulate the move</button>
+      <span id="busy" class="htmx-indicator">evaluating…</span>
+      <span class="muted small">Pick the same snapshot twice for a move inside one organization.</span>
+    </div>
+  </form>
+  {{else}}
+  <p class="muted">Load snapshots or the fixtures first.</p>
+  {{end}}
+</section>
+
+<section id="result">
+  {{if .Result}}{{template "result.html" .Result}}{{end}}
+</section>
+</main>
+<footer class="muted small">orgshift reads snapshots only. Collect them with read-only credentials (<code>orgshift collect</code>) or generate fixtures (<code>orgshift fixtures</code>).</footer>
+</body>
+</html>

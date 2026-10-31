@@ -1,0 +1,4 @@
+<select name="account" required>
+{{if not .}}<option value="">no accounts</option>{{end}}
+{{range .}}<optgroup label="{{.Label}}">{{range .Options}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</optgroup>{{end}}
+</select>

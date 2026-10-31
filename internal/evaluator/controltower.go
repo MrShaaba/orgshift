@@ -275,38 +275,10 @@ func (e *evaluation) controlChanges(c *Check, src, dst ctSide) {
 func controlNames(list []snapshot.EnabledControl) string {
 	names := make([]string, 0, len(list))
 	for _, ctl := range list {
-		names = append(names, controlLabel(ctl))
+		names = append(names, ctl.Label())
 	}
 	sort.Strings(names)
 	return strings.Join(names, ", ")
-}
-
-// controlLabel is the short name of a control: the readable identifier
-// (AWS-GR_ENCRYPTED_VOLUMES) when there is one, otherwise the alias at the
-// start of the catalog name (CT.S3.PR.1) or the whole name.
-func controlLabel(c snapshot.EnabledControl) string {
-	id := snapshot.ControlShortID(c.ControlIdentifier)
-	if !opaqueID(id) || c.Name == "" {
-		return id
-	}
-	if i := strings.Index(c.Name, ": "); i > 0 && i <= 24 {
-		return c.Name[:i]
-	}
-	return c.Name
-}
-
-// opaqueID reports whether a control identifier is a Control Catalog opaque
-// ID (a long run of lower-case letters and digits) rather than a name.
-func opaqueID(id string) bool {
-	if len(id) < 16 {
-		return false
-	}
-	for _, r := range id {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9') {
-			return false
-		}
-	}
-	return true
 }
 
 func controlEvidenceList(side string, list []snapshot.EnabledControl) []Evidence {

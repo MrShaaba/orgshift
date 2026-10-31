@@ -161,6 +161,9 @@ func OUMarkdown(r *evaluator.OUResult) string {
 			if at.AWSManaged {
 				managed = " (AWS managed)"
 			}
+			if at.ControlTowerManaged {
+				managed = " (Control Tower guardrail)"
+			}
 			fmt.Fprintf(&b, "| %s (`%s`) | %s | `%s`%s | %s |\n", at.OUName, at.OUID, at.PolicyType, at.PolicyName, managed, at.Fate)
 		}
 		b.WriteString("\n")
@@ -210,7 +213,11 @@ func chainCell(ch []evaluator.ChainLink, i int) string {
 	l := ch[i]
 	names := make([]string, 0, len(l.Policies))
 	for _, p := range l.Policies {
-		names = append(names, "`"+p.Name+"`")
+		if p.ControlTowerManaged {
+			names = append(names, "`"+p.Name+"` (Control Tower guardrail)")
+		} else {
+			names = append(names, "`"+p.Name+"`")
+		}
 	}
 	if len(names) == 0 {
 		names = append(names, "(none)")
@@ -225,6 +232,9 @@ func writeRefs(b *strings.Builder, title string, refs []evaluator.PolicyRef) {
 	fmt.Fprintf(b, "**%s**\n\n", title)
 	for _, p := range refs {
 		fmt.Fprintf(b, "- `%s` (%s) at %s", p.Name, p.ID, p.Level)
+		if p.ControlTowerManaged {
+			b.WriteString(", Control Tower guardrail")
+		}
 		if p.Description != "" {
 			fmt.Fprintf(b, ": %s", p.Description)
 		}

@@ -5,7 +5,7 @@
     <code class="node-id">{{.Node.ID}}</code>
     {{if and .Ghost .IsSubject}}<span class="pill ghost">after the move</span>{{end}}
     {{if and .IsSubject (not .Ghost)}}<span class="pill subject">moving</span>{{end}}
-    <span class="badges">{{range .Badges}}<span class="badge {{lower .Type}}" title="{{.Names}}">{{.Type}} {{.Count}}</span>{{end}}</span>
+    <span class="badges">{{range .Badges}}<span class="badge {{lower .Type}}" title="{{.Names}}">{{if .Label}}{{.Label}}{{else}}{{.Type}} {{.Count}}{{end}}</span>{{end}}</span>
   </div>
   {{if or .Children .Accounts}}
   <ul>

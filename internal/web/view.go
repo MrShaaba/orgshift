@@ -25,6 +25,8 @@ type badge struct {
 	Type  string
 	Names string
 	Count int
+	// Label replaces "Type Count" when set.
+	Label string
 }
 
 func badgesFor(ix *snapshot.Index, id string) []badge {
@@ -36,9 +38,27 @@ func badgesFor(ix *snapshot.Index, id string) []badge {
 		}
 		names := make([]string, 0, len(pols))
 		for _, p := range pols {
-			names = append(names, p.Name)
+			if p.ControlTowerManaged() {
+				names = append(names, p.Name+" (Control Tower guardrail)")
+			} else {
+				names = append(names, p.Name)
+			}
 		}
 		out = append(out, badge{Type: t.Short(), Names: strings.Join(names, ", "), Count: len(pols)})
+	}
+	if ct := ix.Snapshot.ControlTower; ct != nil {
+		if r := ct.RegisteredOU(id); r != nil {
+			controls := ct.ControlsOn(id)
+			names := make([]string, 0, len(controls))
+			for _, c := range controls {
+				names = append(names, c.Label())
+			}
+			title := fmt.Sprintf("Registered with Control Tower (baseline %s, %s)", r.BaselineVersion, r.Status)
+			if len(names) > 0 {
+				title += "; controls enabled here: " + strings.Join(names, ", ")
+			}
+			out = append(out, badge{Type: "CT", Names: title, Count: len(controls), Label: "CT"})
+		}
 	}
 	return out
 }

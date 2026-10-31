@@ -216,3 +216,32 @@ func TestOUExports(t *testing.T) {
 		t.Fatalf("ou markdown export: %d", resp.StatusCode)
 	}
 }
+
+func TestControlTowerInTheUI(t *testing.T) {
+	ts := newTestServer(t, true)
+	q := "from=" + escape(fixtures.FernhillName) + "&to=" + escape(fixtures.FernhillName) + "&account=" + fixtures.FernhillRetailProd + "&target_ou=" + fixtures.FernhillSandboxOU
+	resp, body := get(t, ts, "/simulate?"+q, nil)
+	if resp.StatusCode != 200 || !strings.Contains(body, "verdict-pill review") {
+		t.Fatalf("simulate: %d", resp.StatusCode)
+	}
+	for _, want := range []string{
+		"<h3>Control Tower</h3>",
+		"Moving out of the registered OU Retail unenrolls the account from Control Tower",
+		"vended by Account Factory",
+		`<span class="kind">landing-zone</span>`,
+		`class="chip  ct"`, `<span class="ctmark">CT</span>`,
+		`<span class="pill ct" title="A preventive control enforced by Control Tower`,
+		`class="badge ct" title="Registered with Control Tower (baseline 4.0, SUCCEEDED); controls enabled here: AWS-GR_CLOUDTRAIL_ENABLED`,
+		`aws-guardrails-kjwqpf (Control Tower guardrail)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("result page missing %q", want)
+		}
+	}
+	// A cross-org OU move shows the guardrail's fate.
+	q = "kind=ou&from=" + escape(fixtures.FernhillName) + "&to=" + escape(fixtures.LarkspurName) + "&ou=" + fixtures.FernhillBusinessUnitsOU + "&target_ou=ou-lark-work"
+	resp, body = get(t, ts, "/simulate?"+q, nil)
+	if resp.StatusCode != 200 || !strings.Contains(body, "re-attached by Control Tower when the new OU is registered") || !strings.Contains(body, "registered OU(s) in the moved tree have to be deregistered") {
+		t.Errorf("OU result should show the guardrail fate and the registered OU finding (%d)", resp.StatusCode)
+	}
+}

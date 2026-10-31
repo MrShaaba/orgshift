@@ -51,7 +51,7 @@
   <table class="rollup attachments">
     <thead><tr><th>OU</th><th>Type</th><th>Policy</th><th>Fate</th></tr></thead>
     <tbody>
-    {{range $r.Attachments}}<tr><td>{{.OUName}} <code>{{.OUID}}</code></td><td><span class="badge {{lower .PolicyType}}">{{.PolicyType}}</span></td><td>{{.PolicyName}} <code>{{.PolicyID}}</code>{{if .AWSManaged}} <span class="pill side">AWS managed</span>{{end}}</td><td>{{if eq .Fate "carried"}}<span class="pill go">moves with the OU</span>{{else if eq .Fate "automatic"}}<span class="pill side">attached automatically</span>{{else}}<span class="pill review">recreate in the target</span>{{end}}</td></tr>{{end}}
+    {{range $r.Attachments}}<tr><td>{{.OUName}} <code>{{.OUID}}</code></td><td><span class="badge {{lower .PolicyType}}">{{.PolicyType}}</span></td><td>{{.PolicyName}} <code>{{.PolicyID}}</code>{{if .AWSManaged}} <span class="pill side">AWS managed</span>{{end}}{{if .ControlTowerManaged}} <span class="pill ct">Control Tower guardrail</span>{{end}}</td><td>{{if eq .Fate "carried"}}<span class="pill go">moves with the OU</span>{{else if eq .Fate "automatic"}}<span class="pill side">attached automatically</span>{{else if eq .Fate "control-tower"}}<span class="pill ct">re-attached by Control Tower when the new OU is registered</span>{{else}}<span class="pill review">recreate in the target</span>{{end}}</td></tr>{{end}}
     </tbody>
   </table>
   {{end}}

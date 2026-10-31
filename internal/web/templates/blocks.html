@@ -50,8 +50,8 @@
   <div class="chain-type">
     <h4>{{.TypeShort}}{{if not .EnabledTarget}} <span class="pill warn">not enabled at target</span>{{end}}{{if not .EnabledSource}} <span class="pill warn">not enabled at source</span>{{end}}</h4>
     <div class="grid2">
-      <ol class="chain">{{range .SourceChain}}<li><span class="lvl">{{.Node.Name}}</span> {{range .Policies}}<span class="chip {{if .AWSManaged}}managed{{end}}" title="{{.Description}}">{{.Name}}</span>{{else}}<span class="muted">none</span>{{end}}</li>{{end}}</ol>
-      <ol class="chain">{{range .TargetChain}}<li><span class="lvl">{{.Node.Name}}</span> {{range .Policies}}<span class="chip {{if .AWSManaged}}managed{{end}}" title="{{.Description}}">{{.Name}}</span>{{else}}<span class="muted">none</span>{{end}}</li>{{end}}</ol>
+      <ol class="chain">{{range .SourceChain}}<li><span class="lvl">{{.Node.Name}}</span> {{range .Policies}}<span class="chip {{if .AWSManaged}}managed{{end}} {{if .ControlTowerManaged}}ct{{end}}" title="{{if .ControlTowerManaged}}Control Tower guardrail. {{end}}{{.Description}}">{{.Name}}{{if .ControlTowerManaged}} <span class="ctmark">CT</span>{{end}}</span>{{else}}<span class="muted">none</span>{{end}}</li>{{end}}</ol>
+      <ol class="chain">{{range .TargetChain}}<li><span class="lvl">{{.Node.Name}}</span> {{range .Policies}}<span class="chip {{if .AWSManaged}}managed{{end}} {{if .ControlTowerManaged}}ct{{end}}" title="{{if .ControlTowerManaged}}Control Tower guardrail. {{end}}{{.Description}}">{{.Name}}{{if .ControlTowerManaged}} <span class="ctmark">CT</span>{{end}}</span>{{else}}<span class="muted">none</span>{{end}}</li>{{end}}</ol>
     </div>
   </div>
   {{end}}
@@ -84,7 +84,7 @@
 
 {{define "policy_ref"}}
 <details class="policy">
-  <summary><strong>{{.Name}}</strong> <code>{{.ID}}</code> <span class="muted small">at {{.Level}}</span>{{if .AWSManaged}} <span class="pill side">AWS managed</span>{{end}}</summary>
+  <summary><strong>{{.Name}}</strong> <code>{{.ID}}</code> <span class="muted small">at {{.Level}}</span>{{if .AWSManaged}} <span class="pill side">AWS managed</span>{{end}}{{if .ControlTowerManaged}} <span class="pill ct" title="A preventive control enforced by Control Tower; change it by disabling the control, not by editing the SCP">Control Tower guardrail</span>{{end}}</summary>
   {{if .Description}}<p class="muted">{{.Description}}</p>{{end}}
   {{if .Statements}}
   <ul class="statements">

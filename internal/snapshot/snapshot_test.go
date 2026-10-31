@@ -151,3 +151,17 @@ func TestControlTowerValidationAndLookups(t *testing.T) {
 		}
 	}
 }
+
+func TestControlLabel(t *testing.T) {
+	cases := map[string]EnabledControl{
+		"AWS-GR_ENCRYPTED_VOLUMES": {ControlIdentifier: "arn:aws:controltower:eu-west-1::control/AWS-GR_ENCRYPTED_VOLUMES", Name: "Detect whether encryption is enabled"},
+		"CT.S3.PR.1":               {ControlIdentifier: "arn:aws:controlcatalog:::control/7f3kq9x2m1pz8r4v6t0nb5cy", Name: "CT.S3.PR.1: Require block public access"},
+		"Some long catalog name":   {ControlIdentifier: "arn:aws:controlcatalog:::control/7f3kq9x2m1pz8r4v6t0nb5cy", Name: "Some long catalog name"},
+		"7f3kq9x2m1pz8r4v6t0nb5cy": {ControlIdentifier: "arn:aws:controlcatalog:::control/7f3kq9x2m1pz8r4v6t0nb5cy"},
+	}
+	for want, c := range cases {
+		if got := c.Label(); got != want {
+			t.Errorf("Label(%+v) = %q, want %q", c, got, want)
+		}
+	}
+}

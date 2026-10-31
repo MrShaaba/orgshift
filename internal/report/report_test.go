@@ -60,3 +60,38 @@ func TestOURenderers(t *testing.T) {
 		t.Errorf("OU text summary incomplete:\n%s", txt)
 	}
 }
+
+func TestControlTowerRendering(t *testing.T) {
+	f := fixtures.Fernhill()
+	res, err := evaluator.Evaluate(evaluator.Input{From: f, AccountID: fixtures.FernhillRetailProd, TargetOUID: fixtures.FernhillSandboxOU})
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := Markdown(res)
+	for _, want := range []string{"| Control Tower | REVIEW |", "### REVIEW: Moving out of the registered OU Retail unenrolls the account from Control Tower",
+		"- Evidence (landing-zone): source, `arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001`",
+		"`aws-guardrails-kjwqpf` (Control Tower guardrail)", "- `aws-guardrails-kjwqpf` (p-fern0010) at OU Business Units (ou-fern-bu), Control Tower guardrail"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown missing %q", want)
+		}
+	}
+	txt := Text(res)
+	if !strings.Contains(txt, "[REVIEW] Control Tower - 1 item(s) to settle") || !strings.Contains(txt, "unenrolls the account") {
+		t.Errorf("text summary should list the Control Tower check:\n%s", txt)
+	}
+
+	ou, err := evaluator.EvaluateOU(evaluator.OUInput{From: fixtures.Larkspur(), To: f, OUID: fixtures.LarkspurWorkloadsOU, TargetParentID: fixtures.FernhillBusinessUnitsOU})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if omd := OUMarkdown(ou); !strings.Contains(omd, "### INFO: The new parent Business Units is registered with Control Tower; register the moved OU too") {
+		t.Errorf("OU markdown should carry the registered-parent note")
+	}
+	same, err := evaluator.EvaluateOU(evaluator.OUInput{From: f, OUID: fixtures.FernhillBusinessUnitsOU, TargetParentID: fixtures.FernhillSandboxOU})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if omd := OUMarkdown(same); !strings.Contains(omd, "| Business Units (`ou-fern-bu`) | SCP | `aws-guardrails-kjwqpf` (Control Tower guardrail) | carried |") {
+		t.Errorf("OU attachments table should label the guardrail:\n%s", omd)
+	}
+}

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/MrShaaba/orgshift/internal/fixtures"
-	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
 
 func TestControlTowerLeavingRegisteredOU(t *testing.T) {
@@ -187,19 +186,5 @@ func TestControlTowerAssumedEnrolmentAndAbsence(t *testing.T) {
 	}
 	if c := check(res, "control-tower"); c.Status != StatusGo || len(c.Findings) != 0 || !strings.Contains(c.Summary, "Neither") {
 		t.Errorf("no landing zone anywhere should be a quiet GO: %+v", c)
-	}
-}
-
-func TestControlLabel(t *testing.T) {
-	cases := map[string]snapshot.EnabledControl{
-		"AWS-GR_ENCRYPTED_VOLUMES": {ControlIdentifier: "arn:aws:controltower:eu-west-1::control/AWS-GR_ENCRYPTED_VOLUMES", Name: "Detect whether encryption is enabled"},
-		"CT.S3.PR.1":               {ControlIdentifier: "arn:aws:controlcatalog:::control/7f3kq9x2m1pz8r4v6t0nb5cy", Name: "CT.S3.PR.1: Require block public access"},
-		"Some long catalog name":   {ControlIdentifier: "arn:aws:controlcatalog:::control/7f3kq9x2m1pz8r4v6t0nb5cy", Name: "Some long catalog name"},
-		"7f3kq9x2m1pz8r4v6t0nb5cy": {ControlIdentifier: "arn:aws:controlcatalog:::control/7f3kq9x2m1pz8r4v6t0nb5cy"},
-	}
-	for want, c := range cases {
-		if got := controlLabel(c); got != want {
-			t.Errorf("controlLabel(%+v) = %q, want %q", c, got, want)
-		}
 	}
 }

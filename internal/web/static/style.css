@@ -55,9 +55,9 @@ table.snaps th, table.snaps td { text-align: left; padding: 4px 12px 4px 0; bord
 .check.go { border-left-color: var(--go); } .check.review { border-left-color: var(--review); } .check.nogo { border-left-color: var(--nogo); }
 .check header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .check header h3 { margin: 0; } .check header .counts { margin-left: auto; }
 details.finding { border-top: 1px solid var(--line); padding: 6px 0; }
-details.finding summary { cursor: pointer; display: flex; gap: 8px; align-items: center; list-style: none; }
+details.finding summary { cursor: pointer; display: flex; gap: 4px 8px; align-items: center; list-style: none; flex-wrap: wrap; }
 details.finding summary::-webkit-details-marker { display: none; }
-details.finding summary .ftitle { flex: 1; } details.finding summary .regions { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+details.finding summary .ftitle { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; } details.finding summary .regions { flex: 0 0 100%; padding-left: 18px; color: var(--muted); font-size: 0.8rem; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 .dot.go { background: var(--go); } .dot.review { background: var(--review); } .dot.nogo { background: var(--nogo); } .dot.info { background: #a0aec0; }
 .fbody { padding: 6px 0 4px 18px; font-size: 0.92rem; }

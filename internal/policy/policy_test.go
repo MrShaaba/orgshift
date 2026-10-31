@@ -132,6 +132,10 @@ func TestConditionSemantics(t *testing.T) {
 		{"forallvalues", Condition{"ForAllValues:StringEquals", "aws:TagKeys", []string{"a", "b"}}, ctxWith(map[string]Value{"aws:TagKeys": Known("a", "b")}), Yes},
 		{"forallvalues fail", Condition{"ForAllValues:StringEquals", "aws:TagKeys", []string{"a"}}, ctxWith(map[string]Value{"aws:TagKeys": Known("a", "b")}), No},
 		{"foranyvalue", Condition{"ForAnyValue:StringEquals", "aws:TagKeys", []string{"b"}}, ctxWith(map[string]Value{"aws:TagKeys": Known("a", "b")}), Yes},
+		{"root pattern vs role pattern", Condition{"StringLike", "aws:PrincipalArn", []string{"arn:aws:iam::*:root"}}, ctxWith(map[string]Value{"aws:PrincipalArn": Known("arn:aws:iam::111111111111:role/*")}), No},
+		{"role pattern partly overlaps", Condition{"StringNotLike", "aws:PrincipalArn", []string{"arn:aws:iam::*:role/Platform*"}}, ctxWith(map[string]Value{"aws:PrincipalArn": Known("arn:aws:iam::111111111111:role/*")}), Unknown},
+		{"role pattern covered", Condition{"ArnLike", "aws:PrincipalArn", []string{"arn:aws:iam::111111111111:*"}}, ctxWith(map[string]Value{"aws:PrincipalArn": Known("arn:aws:iam::111111111111:role/*")}), Yes},
+		{"equals vs pattern", Condition{"StringEquals", "aws:PrincipalArn", []string{"arn:aws:iam::111111111111:role/Admin"}}, ctxWith(map[string]Value{"aws:PrincipalArn": Known("arn:aws:iam::111111111111:role/*")}), Unknown},
 	}
 	for _, c := range cases {
 		got, _ := evalCondition(c.cond, c.ctx)

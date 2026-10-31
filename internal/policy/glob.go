@@ -48,7 +48,28 @@ func covers(p, v string, fold bool) bool {
 	if fold {
 		p, v = strings.ToLower(p), strings.ToLower(v)
 	}
+	if ps, vs, ok := arnSegments(p, v); ok {
+		for i := range ps {
+			if !coverRec(ps[i], vs[i]) {
+				return false
+			}
+		}
+		return true
+	}
 	return coverRec(p, v)
+}
+
+// arnSegments splits two ARN-shaped values into their six colon-separated
+// segments so wildcards are matched per segment, as IAM does for ARNs.
+func arnSegments(a, b string) ([]string, []string, bool) {
+	if !strings.HasPrefix(a, "arn:") || !strings.HasPrefix(b, "arn:") {
+		return nil, nil, false
+	}
+	as, bs := strings.SplitN(a, ":", 6), strings.SplitN(b, ":", 6)
+	if len(as) != 6 || len(bs) != 6 {
+		return nil, nil, false
+	}
+	return as, bs, true
 }
 
 func coverRec(p, v string) bool {
@@ -84,6 +105,18 @@ func overlaps(a, b string, fold bool) bool {
 	if fold {
 		a, b = strings.ToLower(a), strings.ToLower(b)
 	}
+	if as, bs, ok := arnSegments(a, b); ok {
+		for i := range as {
+			if !overlapsFlat(as[i], bs[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return overlapsFlat(a, b)
+}
+
+func overlapsFlat(a, b string) bool {
 	memo := map[[2]int]bool{}
 	var rec func(i, j int) bool
 	rec = func(i, j int) bool {

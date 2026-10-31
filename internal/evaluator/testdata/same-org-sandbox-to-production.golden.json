@@ -1,0 +1,1522 @@
+{
+  "tool": "orgshift",
+  "result_schema_version": 1,
+  "subject": {
+    "account_id": "111111111117",
+    "account_name": "larkspur-sandbox-1",
+    "source_org": {
+      "id": "o-larkspur0001",
+      "name": "Larkspur Holdings"
+    },
+    "target_org": {
+      "id": "o-larkspur0001",
+      "name": "Larkspur Holdings"
+    },
+    "cross_org": false,
+    "source_path": [
+      {
+        "id": "r-lark",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-lark-sand",
+        "name": "Sandbox",
+        "kind": "ou"
+      },
+      {
+        "id": "111111111117",
+        "name": "larkspur-sandbox-1",
+        "kind": "account"
+      }
+    ],
+    "target_path": [
+      {
+        "id": "r-lark",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-lark-work",
+        "name": "Workloads",
+        "kind": "ou"
+      },
+      {
+        "id": "ou-lark-prod",
+        "name": "Production",
+        "kind": "ou"
+      },
+      {
+        "id": "111111111117",
+        "name": "larkspur-sandbox-1",
+        "kind": "account"
+      }
+    ],
+    "source_parent_id": "ou-lark-sand",
+    "target_ou_id": "ou-lark-prod",
+    "actions_in_use": 3,
+    "inbound_access": 0,
+    "tagged_resources": 0,
+    "regions_assumed": [
+      "us-east-1"
+    ]
+  },
+  "verdict": "GO",
+  "summary": "Moving larkspur-sandbox-1 (111111111117) from Root / Sandbox to Root / Workloads / Production: GO. Every evaluated action stays allowed, no networking share is lost and nothing needs review.",
+  "checks": [
+    {
+      "id": "scp",
+      "title": "Service control policies",
+      "status": "GO",
+      "summary": "3 actions evaluated against the SCP chain; 1 flagged.",
+      "findings": [
+        {
+          "status": "INFO",
+          "title": "redshift:CreateCluster becomes allowed after the move",
+          "detail": "Denied today () and allowed after the move. Note from the usage list: denied today by Larkspur-Sandbox-Limits.",
+          "action": "redshift:CreateCluster",
+          "regions": [
+            "us-east-1"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "source",
+              "level": "OU Sandbox (ou-lark-sand)",
+              "policy_id": "p-lark0003",
+              "policy_name": "Larkspur-Sandbox-Limits",
+              "policy_type": "SCP",
+              "statement": "NoExpensiveServices",
+              "statement_json": {
+                "Sid": "NoExpensiveServices",
+                "Effect": "Deny",
+                "Action": [
+                  "redshift:*",
+                  "sagemaker:CreateNotebookInstance",
+                  "ec2:CreateTransitGateway*",
+                  "directconnect:*"
+                ],
+                "Resource": "*"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rcp",
+      "title": "Resource control policies",
+      "status": "GO",
+      "summary": "1 actions evaluated against the RCP chain; 0 flagged.",
+      "findings": []
+    },
+    {
+      "id": "tags",
+      "title": "Tag policies",
+      "status": "GO",
+      "summary": "1 tag keys governed; unchanged by the move.",
+      "findings": [
+        {
+          "status": "INFO",
+          "title": "The effective tag policy is the same before and after the move",
+          "detail": "The merged tag rules on the source path and on the target path are identical, so the move changes no tag compliance.",
+          "evidence": [
+            {
+              "kind": "effective-tag-policy",
+              "side": "target",
+              "policy_type": "TAG",
+              "statement_json": [
+                {
+                  "key": "owner",
+                  "key_case_enforced": true,
+                  "sources": [
+                    "Larkspur-Tagging-Standard"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ram",
+      "title": "Resource shares (RAM)",
+      "status": "GO",
+      "summary": "2 share(s) kept, 0 lost or uncertain, 1 newly available.",
+      "findings": [
+        {
+          "status": "INFO",
+          "title": "Share larkspur-workload-prefix-lists becomes available after the move: ec2:PrefixList",
+          "detail": "Shared by account 111111111112 with OU ou-lark-work.",
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "target",
+              "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
+              "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "org-services",
+      "title": "Organization services",
+      "status": "GO",
+      "summary": "Same organization: only StackSet targeting changes.",
+      "findings": [
+        {
+          "status": "INFO",
+          "title": "StackSet larkspur-baseline-roles starts targeting the account",
+          "detail": "Audit and break-glass IAM roles for workload accounts. Stack instances are created automatically when auto-deployment is on.",
+          "evidence": [
+            {
+              "kind": "stackset",
+              "side": "source",
+              "reference": "larkspur-baseline-roles",
+              "note": "admin 111111111111; targets OUs ou-lark-work accounts ; regions us-east-1; auto-deployment true; retain on removal false"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "diff": [
+    {
+      "type": "SERVICE_CONTROL_POLICY",
+      "type_short": "SCP",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-lark)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-lark0001",
+              "name": "Larkspur-Baseline-Guardrails",
+              "description": "Protects organization-wide logging and membership",
+              "aws_managed": false,
+              "level": "root Root (r-lark)",
+              "statements": [
+                {
+                  "sid": "DenyLeaveOrganization",
+                  "effect": "Deny",
+                  "actions": [
+                    "organizations:LeaveOrganization"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "ProtectOrgTrail",
+                  "effect": "Deny",
+                  "actions": [
+                    "cloudtrail:StopLogging",
+                    "cloudtrail:DeleteTrail",
+                    "cloudtrail:UpdateTrail"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "DenyRootUser",
+                  "effect": "Deny",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyLeaveOrganization",
+                    "Effect": "Deny",
+                    "Action": [
+                      "organizations:LeaveOrganization"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "ProtectOrgTrail",
+                    "Effect": "Deny",
+                    "Action": [
+                      "cloudtrail:StopLogging",
+                      "cloudtrail:DeleteTrail",
+                      "cloudtrail:UpdateTrail"
+                    ],
+                    "Resource": "arn:aws:cloudtrail:*:*:trail/larkspur-org-trail"
+                  },
+                  {
+                    "Sid": "DenyRootUser",
+                    "Effect": "Deny",
+                    "Action": "*",
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:root"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-sand",
+            "name": "Sandbox",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Sandbox (ou-lark-sand)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-lark0003",
+              "name": "Larkspur-Sandbox-Limits",
+              "description": "Stops sandboxes from running expensive or networked services",
+              "aws_managed": false,
+              "level": "OU Sandbox (ou-lark-sand)",
+              "statements": [
+                {
+                  "sid": "NoExpensiveServices",
+                  "effect": "Deny",
+                  "actions": [
+                    "redshift:*",
+                    "sagemaker:CreateNotebookInstance",
+                    "ec2:CreateTransitGateway*",
+                    "directconnect:*"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "NoLargeInstances",
+                  "effect": "Deny",
+                  "actions": [
+                    "ec2:RunInstances"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringNotLike ec2:InstanceType = t3.* | t4g.*"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "NoExpensiveServices",
+                    "Effect": "Deny",
+                    "Action": [
+                      "redshift:*",
+                      "sagemaker:CreateNotebookInstance",
+                      "ec2:CreateTransitGateway*",
+                      "directconnect:*"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "NoLargeInstances",
+                    "Effect": "Deny",
+                    "Action": "ec2:RunInstances",
+                    "Resource": "arn:aws:ec2:*:*:instance/*",
+                    "Condition": {
+                      "StringNotLike": {
+                        "ec2:InstanceType": [
+                          "t3.*",
+                          "t4g.*"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111117",
+            "name": "larkspur-sandbox-1",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account larkspur-sandbox-1 (111111111117)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-lark)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-lark0001",
+              "name": "Larkspur-Baseline-Guardrails",
+              "description": "Protects organization-wide logging and membership",
+              "aws_managed": false,
+              "level": "root Root (r-lark)",
+              "statements": [
+                {
+                  "sid": "DenyLeaveOrganization",
+                  "effect": "Deny",
+                  "actions": [
+                    "organizations:LeaveOrganization"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "ProtectOrgTrail",
+                  "effect": "Deny",
+                  "actions": [
+                    "cloudtrail:StopLogging",
+                    "cloudtrail:DeleteTrail",
+                    "cloudtrail:UpdateTrail"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "DenyRootUser",
+                  "effect": "Deny",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyLeaveOrganization",
+                    "Effect": "Deny",
+                    "Action": [
+                      "organizations:LeaveOrganization"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "ProtectOrgTrail",
+                    "Effect": "Deny",
+                    "Action": [
+                      "cloudtrail:StopLogging",
+                      "cloudtrail:DeleteTrail",
+                      "cloudtrail:UpdateTrail"
+                    ],
+                    "Resource": "arn:aws:cloudtrail:*:*:trail/larkspur-org-trail"
+                  },
+                  {
+                    "Sid": "DenyRootUser",
+                    "Effect": "Deny",
+                    "Action": "*",
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:root"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Workloads (ou-lark-work)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-lark0002",
+              "name": "Larkspur-Allowed-Regions",
+              "description": "Keeps workloads in the three regions Larkspur operates in",
+              "aws_managed": false,
+              "level": "OU Workloads (ou-lark-work)",
+              "statements": [
+                {
+                  "sid": "DenyOutsideApprovedRegions",
+                  "effect": "Deny",
+                  "not_actions": [
+                    "iam:*",
+                    "sts:*",
+                    "organizations:*",
+                    "support:*",
+                    "budgets:*",
+                    "cloudfront:*",
+                    "route53:*",
+                    "waf:*",
+                    "health:*",
+                    "account:*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringNotEquals aws:RequestedRegion = us-east-1 | eu-west-1 | ap-southeast-1"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyOutsideApprovedRegions",
+                    "Effect": "Deny",
+                    "NotAction": [
+                      "iam:*",
+                      "sts:*",
+                      "organizations:*",
+                      "support:*",
+                      "budgets:*",
+                      "cloudfront:*",
+                      "route53:*",
+                      "waf:*",
+                      "health:*",
+                      "account:*"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringNotEquals": {
+                        "aws:RequestedRegion": [
+                          "us-east-1",
+                          "eu-west-1",
+                          "ap-southeast-1"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Production (ou-lark-prod)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111117",
+            "name": "larkspur-sandbox-1",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account larkspur-sandbox-1 (111111111117)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "added": [
+        {
+          "id": "p-lark0002",
+          "name": "Larkspur-Allowed-Regions",
+          "description": "Keeps workloads in the three regions Larkspur operates in",
+          "aws_managed": false,
+          "level": "OU Workloads (ou-lark-work)",
+          "statements": [
+            {
+              "sid": "DenyOutsideApprovedRegions",
+              "effect": "Deny",
+              "not_actions": [
+                "iam:*",
+                "sts:*",
+                "organizations:*",
+                "support:*",
+                "budgets:*",
+                "cloudfront:*",
+                "route53:*",
+                "waf:*",
+                "health:*",
+                "account:*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringNotEquals aws:RequestedRegion = us-east-1 | eu-west-1 | ap-southeast-1"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DenyOutsideApprovedRegions",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "us-east-1",
+                      "eu-west-1",
+                      "ap-southeast-1"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "removed": [
+        {
+          "id": "p-lark0003",
+          "name": "Larkspur-Sandbox-Limits",
+          "description": "Stops sandboxes from running expensive or networked services",
+          "aws_managed": false,
+          "level": "OU Sandbox (ou-lark-sand)",
+          "statements": [
+            {
+              "sid": "NoExpensiveServices",
+              "effect": "Deny",
+              "actions": [
+                "redshift:*",
+                "sagemaker:CreateNotebookInstance",
+                "ec2:CreateTransitGateway*",
+                "directconnect:*"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "NoLargeInstances",
+              "effect": "Deny",
+              "actions": [
+                "ec2:RunInstances"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringNotLike ec2:InstanceType = t3.* | t4g.*"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "NoExpensiveServices",
+                "Effect": "Deny",
+                "Action": [
+                  "redshift:*",
+                  "sagemaker:CreateNotebookInstance",
+                  "ec2:CreateTransitGateway*",
+                  "directconnect:*"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "NoLargeInstances",
+                "Effect": "Deny",
+                "Action": "ec2:RunInstances",
+                "Resource": "arn:aws:ec2:*:*:instance/*",
+                "Condition": {
+                  "StringNotLike": {
+                    "ec2:InstanceType": [
+                      "t3.*",
+                      "t4g.*"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "changed": null,
+      "unchanged": [
+        {
+          "id": "p-FullAWSAccess",
+          "name": "FullAWSAccess",
+          "description": "Allows access to every operation",
+          "aws_managed": true,
+          "level": "account larkspur-sandbox-1 (111111111117)",
+          "statements": [
+            {
+              "effect": "Allow",
+              "actions": [
+                "*"
+              ],
+              "has_condition": false
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": "*",
+                "Resource": "*"
+              }
+            ]
+          }
+        },
+        {
+          "id": "p-lark0001",
+          "name": "Larkspur-Baseline-Guardrails",
+          "description": "Protects organization-wide logging and membership",
+          "aws_managed": false,
+          "level": "root Root (r-lark)",
+          "statements": [
+            {
+              "sid": "DenyLeaveOrganization",
+              "effect": "Deny",
+              "actions": [
+                "organizations:LeaveOrganization"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "ProtectOrgTrail",
+              "effect": "Deny",
+              "actions": [
+                "cloudtrail:StopLogging",
+                "cloudtrail:DeleteTrail",
+                "cloudtrail:UpdateTrail"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "DenyRootUser",
+              "effect": "Deny",
+              "actions": [
+                "*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DenyLeaveOrganization",
+                "Effect": "Deny",
+                "Action": [
+                  "organizations:LeaveOrganization"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "ProtectOrgTrail",
+                "Effect": "Deny",
+                "Action": [
+                  "cloudtrail:StopLogging",
+                  "cloudtrail:DeleteTrail",
+                  "cloudtrail:UpdateTrail"
+                ],
+                "Resource": "arn:aws:cloudtrail:*:*:trail/larkspur-org-trail"
+              },
+              {
+                "Sid": "DenyRootUser",
+                "Effect": "Deny",
+                "Action": "*",
+                "Resource": "*",
+                "Condition": {
+                  "StringLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:root"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "RESOURCE_CONTROL_POLICY",
+      "type_short": "RCP",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-lark)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-sand",
+            "name": "Sandbox",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Sandbox (ou-lark-sand)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111117",
+            "name": "larkspur-sandbox-1",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account larkspur-sandbox-1 (111111111117)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-lark)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Workloads (ou-lark-work)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Production (ou-lark-prod)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111117",
+            "name": "larkspur-sandbox-1",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account larkspur-sandbox-1 (111111111117)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "added": null,
+      "removed": null,
+      "changed": null,
+      "unchanged": [
+        {
+          "id": "p-RCPFullAWSAccess",
+          "name": "RCPFullAWSAccess",
+          "description": "Allows access to every operation",
+          "aws_managed": true,
+          "level": "account larkspur-sandbox-1 (111111111117)",
+          "statements": [
+            {
+              "effect": "Allow",
+              "actions": [
+                "*"
+              ],
+              "has_condition": false
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "*",
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "TAG_POLICY",
+      "type_short": "TAG",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-lark0004",
+              "name": "Larkspur-Tagging-Standard",
+              "description": "Owner tag, reporting only",
+              "aws_managed": false,
+              "level": "root Root (r-lark)",
+              "document": {
+                "tags": {
+                  "owner": {
+                    "tag_key": {
+                      "@@assign": "owner"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-sand",
+            "name": "Sandbox",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "111111111117",
+            "name": "larkspur-sandbox-1",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-lark0004",
+              "name": "Larkspur-Tagging-Standard",
+              "description": "Owner tag, reporting only",
+              "aws_managed": false,
+              "level": "root Root (r-lark)",
+              "document": {
+                "tags": {
+                  "owner": {
+                    "tag_key": {
+                      "@@assign": "owner"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "111111111117",
+            "name": "larkspur-sandbox-1",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "added": null,
+      "removed": null,
+      "changed": null,
+      "unchanged": [
+        {
+          "id": "p-lark0004",
+          "name": "Larkspur-Tagging-Standard",
+          "description": "Owner tag, reporting only",
+          "aws_managed": false,
+          "level": "root Root (r-lark)",
+          "document": {
+            "tags": {
+              "owner": {
+                "tag_key": {
+                  "@@assign": "owner"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "BACKUP_POLICY",
+      "type_short": "BACKUP",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-lark-sand",
+            "name": "Sandbox",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "111111111117",
+            "name": "larkspur-sandbox-1",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-lark0005",
+              "name": "Larkspur-Daily-Backups",
+              "description": "Daily backups for production",
+              "aws_managed": false,
+              "level": "OU Production (ou-lark-prod)",
+              "document": {
+                "plans": {
+                  "larkspur-daily": {
+                    "regions": {
+                      "@@assign": [
+                        "us-east-1",
+                        "eu-west-1"
+                      ]
+                    },
+                    "rules": {
+                      "daily": {
+                        "schedule_expression": {
+                          "@@assign": "cron(0 3 ? * * *)"
+                        },
+                        "target_backup_vault_name": {
+                          "@@assign": "Default"
+                        },
+                        "lifecycle": {
+                          "delete_after_days": {
+                            "@@assign": "35"
+                          }
+                        }
+                      }
+                    },
+                    "selections": {
+                      "tags": {
+                        "prod": {
+                          "iam_role_arn": {
+                            "@@assign": "arn:aws:iam::$account:role/LarkspurBackupRole"
+                          },
+                          "tag_key": {
+                            "@@assign": "environment"
+                          },
+                          "tag_value": {
+                            "@@assign": [
+                              "production"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111117",
+            "name": "larkspur-sandbox-1",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "added": [
+        {
+          "id": "p-lark0005",
+          "name": "Larkspur-Daily-Backups",
+          "description": "Daily backups for production",
+          "aws_managed": false,
+          "level": "OU Production (ou-lark-prod)",
+          "document": {
+            "plans": {
+              "larkspur-daily": {
+                "regions": {
+                  "@@assign": [
+                    "us-east-1",
+                    "eu-west-1"
+                  ]
+                },
+                "rules": {
+                  "daily": {
+                    "schedule_expression": {
+                      "@@assign": "cron(0 3 ? * * *)"
+                    },
+                    "target_backup_vault_name": {
+                      "@@assign": "Default"
+                    },
+                    "lifecycle": {
+                      "delete_after_days": {
+                        "@@assign": "35"
+                      }
+                    }
+                  }
+                },
+                "selections": {
+                  "tags": {
+                    "prod": {
+                      "iam_role_arn": {
+                        "@@assign": "arn:aws:iam::$account:role/LarkspurBackupRole"
+                      },
+                      "tag_key": {
+                        "@@assign": "environment"
+                      },
+                      "tag_value": {
+                        "@@assign": [
+                          "production"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "removed": null,
+      "changed": null,
+      "unchanged": null
+    }
+  ]
+}

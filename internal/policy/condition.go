@@ -54,52 +54,101 @@ func evalCondition(c Condition, ctx Context) (Outcome, string) {
 		return Unknown, fmt.Sprintf("condition operator %s is not supported by the offline evaluator", c.Operator)
 	}
 
-	matches := make([]bool, 0, len(val.Values))
+	// Each context value yields Yes, No or Unknown (a wildcard context value
+	// that only partly overlaps the policy value). Negation flips Yes and No.
+	results := make([]Outcome, 0, len(val.Values))
 	for _, have := range val.Values {
-		m := false
+		r := No
 		for _, want := range c.Values {
-			if cmp(want, have) {
-				m = true
+			o := cmp(want, have)
+			if o == Yes {
+				r = Yes
 				break
+			}
+			if o == Unknown {
+				r = Unknown
 			}
 		}
 		if negated {
-			m = !m
+			switch r {
+			case Yes:
+				r = No
+			case No:
+				r = Yes
+			}
 		}
-		matches = append(matches, m)
+		results = append(results, r)
 	}
-	switch setOp {
-	case "ForAllValues":
-		for _, m := range matches {
-			if !m {
+	if setOp == "ForAllValues" {
+		unknown := false
+		for _, r := range results {
+			if r == No {
 				return No, ""
 			}
-		}
-		return Yes, ""
-	default: // ForAnyValue and single-valued keys
-		for _, m := range matches {
-			if m {
-				return Yes, ""
+			if r == Unknown {
+				unknown = true
 			}
 		}
-		return No, ""
+		if unknown {
+			return Unknown, fmt.Sprintf("%s %s: the value of %s is only partly known", c.Operator, c.Key, c.Key)
+		}
+		return Yes, ""
 	}
+	unknown := false
+	for _, r := range results {
+		if r == Yes {
+			return Yes, ""
+		}
+		if r == Unknown {
+			unknown = true
+		}
+	}
+	if unknown {
+		return Unknown, fmt.Sprintf("%s %s: the value of %s is only partly known (%s)", c.Operator, c.Key, c.Key, strings.Join(val.Values, ", "))
+	}
+	return No, ""
 }
 
 // comparator returns the positive comparison for an operator (the "Not" is
-// handled by the caller).
-func comparator(op string) (func(want, have string) bool, bool) {
+// handled by the caller). The context value may itself contain wildcards,
+// in which case the result is Yes only when the policy value covers every
+// possible context value, Unknown when they merely overlap.
+func comparator(op string) (func(want, have string) Outcome, bool) {
+	like := func(fold bool) func(w, h string) Outcome {
+		return func(w, h string) Outcome {
+			if covers(w, h, fold) {
+				return Yes
+			}
+			if hasWildcard(h) && overlaps(w, h, fold) {
+				return Unknown
+			}
+			return No
+		}
+	}
+	exact := func(fold bool) func(w, h string) Outcome {
+		return func(w, h string) Outcome {
+			eq := w == h
+			if fold {
+				eq = strings.EqualFold(w, h)
+			}
+			if eq {
+				return Yes
+			}
+			if hasWildcard(h) && globMatch(h, w, fold) {
+				return Unknown
+			}
+			return No
+		}
+	}
 	switch strings.ReplaceAll(op, "Not", "") {
 	case "StringEquals":
-		return func(w, h string) bool { return w == h }, true
+		return exact(false), true
 	case "StringEqualsIgnoreCase":
-		return strings.EqualFold, true
-	case "StringLike":
-		return func(w, h string) bool { return globMatch(w, h, false) }, true
-	case "ArnEquals", "ArnLike":
-		return func(w, h string) bool { return globMatch(w, h, false) }, true
+		return exact(true), true
+	case "StringLike", "ArnEquals", "ArnLike":
+		return like(false), true
 	case "Bool":
-		return strings.EqualFold, true
+		return exact(true), true
 	}
 	return nil, false
 }

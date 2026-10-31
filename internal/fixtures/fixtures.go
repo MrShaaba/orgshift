@@ -237,7 +237,7 @@ func paymentsUsage(g *gen) *snapshot.AccountUsage {
 		return out
 	}
 	var resources []snapshot.TaggedResource
-	resources = append(resources, instances(3, map[string]string{"Name": "pay-api", "CostCenter": "payments", "environment": "production", "owner": "payments-team"})...)
+	resources = append(resources, instances(3, map[string]string{"Name": "pay-api", "Cost-Center": "CC-1001", "environment": "production", "owner": "payments-team"})...)
 	resources = append(resources, instances(2, map[string]string{"Name": "pay-worker", "environment": "production", "owner": "payments-team"})...)
 	resources = append(resources,
 		snapshot.TaggedResource{ARN: "arn:aws:rds:us-east-1:111111111115:db:payments-ledger", Type: "rds:db", Region: "us-east-1",

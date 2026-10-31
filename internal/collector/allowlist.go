@@ -33,6 +33,15 @@ var Allowlist = map[string][]string{
 	"account": {
 		"ListRegions",
 	},
+	"controltower": {
+		"ListLandingZones",
+		"GetLandingZone",
+		"ListEnabledBaselines",
+		"ListEnabledControls",
+	},
+	"controlcatalog": {
+		"GetControl",
+	},
 }
 
 // readOnlyPrefixes are the only verbs an allowlisted operation may start with.

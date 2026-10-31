@@ -50,12 +50,13 @@ func TestOnlyAllowlistedOperationsAreReferenced(t *testing.T) {
 }
 
 func TestAllowlistRejectsWriteVerbs(t *testing.T) {
-	for _, op := range []string{"MoveAccount", "AttachPolicy", "CreateOrganizationalUnit", "DeletePolicy", "UpdatePolicy", "LeaveOrganization", "InviteAccountToOrganization"} {
+	for _, op := range []string{"MoveAccount", "AttachPolicy", "CreateOrganizationalUnit", "DeletePolicy", "UpdatePolicy", "LeaveOrganization", "InviteAccountToOrganization",
+		"EnableControl", "DisableControl", "EnableBaseline", "ResetEnabledBaseline", "UpdateLandingZone", "ResetLandingZone", "DeleteLandingZone"} {
 		if Allowed(op) || IsReadOnly(op) {
 			t.Errorf("%s must never be allowed", op)
 		}
 	}
-	if len(IAMActions()) != 15 || IAMActions()[0] != "account:ListRegions" {
+	if len(IAMActions()) != 20 || IAMActions()[0] != "account:ListRegions" || IAMActions()[1] != "controlcatalog:GetControl" {
 		t.Errorf("unexpected IAM action list: %v", IAMActions())
 	}
 }

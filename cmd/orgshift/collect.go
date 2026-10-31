@@ -13,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/account"
+	"github.com/aws/aws-sdk-go-v2/service/controlcatalog"
+	"github.com/aws/aws-sdk-go-v2/service/controltower"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
 
@@ -29,6 +31,7 @@ func runCollect(args []string) error {
 	ramProfiles := fs.String("ram-profiles", "", "comma-separated extra profiles whose owned RAM shares should be included (for example the network account)")
 	skipRAM := fs.Bool("skip-ram", false, "do not list resource shares owned by the main profile")
 	skipRegions := fs.Bool("skip-regions", false, "do not call account:ListRegions for every account")
+	skipControlTower := fs.Bool("skip-control-tower", false, "do not read the Control Tower landing zone (its APIs answer only in the home region, so set --region to it)")
 	timeout := fs.Duration("timeout", 10*time.Minute, "overall timeout")
 	// Optional data sources that can cost money. Off by default, and in this
 	// version they only print the cost warning; see ROADMAP.md.
@@ -86,6 +89,10 @@ func runCollect(args []string) error {
 	if !*skipRegions {
 		opts.Account = account.NewFromConfig(cfg)
 	}
+	if !*skipControlTower {
+		opts.ControlTower = controltower.NewFromConfig(cfg)
+		opts.ControlCatalog = controlcatalog.NewFromConfig(cfg)
+	}
 	snap, err := collector.Collect(ctx, opts)
 	if err != nil {
 		return err
@@ -95,5 +102,8 @@ func runCollect(args []string) error {
 	}
 	fmt.Printf("wrote %s\n%s\n", *out, collector.Summary(snap))
 	fmt.Println("Next: add usage.actions (or use --last-accessed at simulate time) for the account you plan to move.")
+	if snap.ControlTower != nil {
+		fmt.Println("Control Tower: list control_tower.enrolled_accounts by hand if you want Account Factory provenance; otherwise accounts in registered OUs are assumed enrolled.")
+	}
 	return nil
 }

@@ -6,6 +6,8 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.2
 	github.com/aws/aws-sdk-go-v2/config v1.32.10
 	github.com/aws/aws-sdk-go-v2/service/account v1.30.2
+	github.com/aws/aws-sdk-go-v2/service/controlcatalog v1.14.6
+	github.com/aws/aws-sdk-go-v2/service/controltower v1.28.6
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.50.3
 	github.com/aws/aws-sdk-go-v2/service/ram v1.36.0
 )

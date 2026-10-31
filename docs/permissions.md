@@ -28,6 +28,11 @@ Organizations. The action list is exactly the allowlist.
       "Effect": "Allow",
       "Action": [
         "account:ListRegions",
+        "controlcatalog:GetControl",
+        "controltower:GetLandingZone",
+        "controltower:ListEnabledBaselines",
+        "controltower:ListEnabledControls",
+        "controltower:ListLandingZones",
         "organizations:DescribeOrganization",
         "organizations:DescribePolicy",
         "organizations:ListAWSServiceAccessForOrganization",
@@ -59,6 +64,13 @@ Notes:
   gateway, subnets or resolver rules are shared from a network account, run
   the collector with `--ram-profiles network-account-profile` so those shares
   are included. Each extra profile needs the three `ram:*` actions above.
+- The Control Tower landing zone APIs answer only in the landing zone's
+  home region, so run the collector with `--region` set to it. If
+  `ListLandingZones` fails or finds nothing the collector logs a line and
+  writes the snapshot without a `control_tower` block; `--skip-control-tower`
+  avoids the five calls entirely. `controlcatalog:GetControl` is used to
+  name each enabled control and record whether it is preventive, detective
+  or proactive; without it controls are kept by identifier only.
 - The AWS managed `ReadOnlyAccess` or `AWSOrganizationsReadOnlyAccess`
   policies also cover these calls, but are far broader than needed.
 
@@ -67,6 +79,7 @@ Notes:
 | Data | Status | Cost |
 | --- | --- | --- |
 | Organization trails, Config aggregators, StackSets | Not collected in this version; add them to the snapshot by hand (see `docs/snapshot.md`). On the roadmap. | Free API calls when added. |
+| Control Tower enrolled accounts and Account Factory provenance | Not collected: Service Catalog only exposes provisioned products through `SearchProvisionedProducts`, which is outside the `List`/`Describe`/`Get` rule. Accounts in registered OUs are assumed enrolled; list `control_tower.enrolled_accounts` by hand to be exact. | Free. |
 | Actions in use | Entered by hand or imported from an IAM last-accessed export with `orgshift simulate --last-accessed export.json`. Generating that export (`aws iam generate-service-last-accessed-details`) is free. | Free. |
 | Actions in use from CloudTrail Lake | `--with-cloudtrail-lake` exists but is refused in this version. | Billed per TB of event data scanned per query. Will stay opt-in and off by default. |
 | Resource inventories from Config advanced queries | `--with-config-queries` exists but is refused in this version. | Billed per advanced query against an aggregator. Will stay opt-in and off by default. |
@@ -74,5 +87,6 @@ Notes:
 
 Nothing in orgshift calls `MoveAccount`, `AttachPolicy`, `DetachPolicy`,
 `CreateOrganizationalUnit`, `InviteAccountToOrganization`,
-`LeaveOrganization` or any other write operation, and the tests keep it that
+`LeaveOrganization`, `EnableControl`, `DisableControl`, `EnableBaseline`,
+`UpdateLandingZone` or any other write operation, and the tests keep it that
 way.

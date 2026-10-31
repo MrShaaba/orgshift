@@ -8,6 +8,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/account"
 	accounttypes "github.com/aws/aws-sdk-go-v2/service/account/types"
+	"github.com/aws/aws-sdk-go-v2/service/controlcatalog"
+	cctypes "github.com/aws/aws-sdk-go-v2/service/controlcatalog/types"
+	"github.com/aws/aws-sdk-go-v2/service/controltower"
+	"github.com/aws/aws-sdk-go-v2/service/controltower/document"
+	cttypes "github.com/aws/aws-sdk-go-v2/service/controltower/types"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
@@ -29,7 +34,7 @@ func (fakeOrgs) ListRoots(context.Context, *organizations.ListRootsInput, ...fun
 }
 func (fakeOrgs) ListOrganizationalUnitsForParent(_ context.Context, in *organizations.ListOrganizationalUnitsForParentInput, _ ...func(*organizations.Options)) (*organizations.ListOrganizationalUnitsForParentOutput, error) {
 	if aws.ToString(in.ParentId) == "r-fake" {
-		return &organizations.ListOrganizationalUnitsForParentOutput{OrganizationalUnits: []orgtypes.OrganizationalUnit{{Id: aws.String("ou-fake-work"), Name: aws.String("Workloads")}}}, nil
+		return &organizations.ListOrganizationalUnitsForParentOutput{OrganizationalUnits: []orgtypes.OrganizationalUnit{{Id: aws.String("ou-fake-work"), Name: aws.String("Workloads"), Arn: aws.String(fakeOUARN)}}}, nil
 	}
 	return &organizations.ListOrganizationalUnitsForParentOutput{}, nil
 }
@@ -83,6 +88,61 @@ func (fakeRAM) ListResources(context.Context, *ram.ListResourcesInput, ...func(*
 	return &ram.ListResourcesOutput{Resources: []ramtypes.Resource{{Arn: aws.String("arn:aws:ec2:us-east-1:111111111111:transit-gateway/tgw-1"), Type: aws.String("ec2:TransitGateway")}}}, nil
 }
 
+const fakeOUARN = "arn:aws:organizations::111111111111:ou/o-fake00000001/ou-fake-work"
+
+type fakeControlTower struct{ fail bool }
+
+func (f fakeControlTower) ListLandingZones(context.Context, *controltower.ListLandingZonesInput, ...func(*controltower.Options)) (*controltower.ListLandingZonesOutput, error) {
+	if f.fail {
+		return nil, context.DeadlineExceeded
+	}
+	return &controltower.ListLandingZonesOutput{LandingZones: []cttypes.LandingZoneSummary{{Arn: aws.String("arn:aws:controltower:us-east-1:111111111111:landingzone/FAKELZ0000000001")}}}, nil
+}
+func (fakeControlTower) GetLandingZone(context.Context, *controltower.GetLandingZoneInput, ...func(*controltower.Options)) (*controltower.GetLandingZoneOutput, error) {
+	manifest := map[string]any{
+		"governedRegions":    []any{"us-east-1", "eu-west-1"},
+		"centralizedLogging": map[string]any{"accountId": "111111111112", "enabled": true},
+		"securityRoles":      map[string]any{"accountId": "111111111111"},
+	}
+	return &controltower.GetLandingZoneOutput{LandingZone: &cttypes.LandingZoneDetail{
+		Version: aws.String("3.3"), Status: cttypes.LandingZoneStatusActive,
+		DriftStatus: &cttypes.LandingZoneDriftStatusSummary{Status: cttypes.LandingZoneDriftStatusInSync},
+		Manifest:    document.NewLazyDocument(manifest),
+	}}, nil
+}
+func (fakeControlTower) ListEnabledBaselines(context.Context, *controltower.ListEnabledBaselinesInput, ...func(*controltower.Options)) (*controltower.ListEnabledBaselinesOutput, error) {
+	status := &cttypes.EnablementStatusSummary{Status: cttypes.EnablementStatusSucceeded}
+	return &controltower.ListEnabledBaselinesOutput{EnabledBaselines: []cttypes.EnabledBaselineSummary{
+		{Arn: aws.String("arn:aws:controltower:us-east-1:111111111111:enabledbaseline/A"), BaselineIdentifier: aws.String("arn:aws:controltower:us-east-1::baseline/17BSJV3IGJ2QSGA2"),
+			TargetIdentifier: aws.String(fakeOUARN), BaselineVersion: aws.String("4.0"), StatusSummary: status,
+			DriftStatusSummary: &cttypes.EnabledBaselineDriftStatusSummary{Types: &cttypes.EnabledBaselineDriftTypes{Inheritance: &cttypes.EnabledBaselineInheritanceDrift{Status: cttypes.EnabledBaselineDriftStatusInSync}}}},
+		// A child baseline on the same OU must not register it twice.
+		{Arn: aws.String("arn:aws:controltower:us-east-1:111111111111:enabledbaseline/B"), BaselineIdentifier: aws.String("arn:aws:controltower:us-east-1::baseline/LN25R72TTG6IGPTQ"),
+			TargetIdentifier: aws.String(fakeOUARN), ParentIdentifier: aws.String("arn:aws:controltower:us-east-1:111111111111:enabledbaseline/A"), StatusSummary: status},
+		// Baselines on accounts are not OU registrations.
+		{Arn: aws.String("arn:aws:controltower:us-east-1:111111111111:enabledbaseline/C"), BaselineIdentifier: aws.String("arn:aws:controltower:us-east-1::baseline/J8VYYMGXZ4GQZ7SM"),
+			TargetIdentifier: aws.String("111111111112"), StatusSummary: status},
+	}}, nil
+}
+func (fakeControlTower) ListEnabledControls(_ context.Context, in *controltower.ListEnabledControlsInput, _ ...func(*controltower.Options)) (*controltower.ListEnabledControlsOutput, error) {
+	if aws.ToString(in.TargetIdentifier) != fakeOUARN {
+		return nil, context.DeadlineExceeded
+	}
+	return &controltower.ListEnabledControlsOutput{EnabledControls: []cttypes.EnabledControlSummary{
+		{ControlIdentifier: aws.String("arn:aws:controltower:us-east-1::control/AWS-GR_ENCRYPTED_VOLUMES"), TargetIdentifier: aws.String(fakeOUARN),
+			StatusSummary: &cttypes.EnablementStatusSummary{Status: cttypes.EnablementStatusSucceeded}, DriftStatusSummary: &cttypes.DriftStatusSummary{DriftStatus: cttypes.DriftStatusInSync}},
+		{ControlIdentifier: aws.String("arn:aws:controltower:us-east-1::control/AWS-GR_CONFIG_ENABLED"), TargetIdentifier: aws.String(fakeOUARN),
+			ParentIdentifier: aws.String("arn:aws:controltower:us-east-1:111111111111:enabledcontrol/parent")},
+	}}, nil
+}
+
+type fakeCatalog struct{}
+
+func (fakeCatalog) GetControl(context.Context, *controlcatalog.GetControlInput, ...func(*controlcatalog.Options)) (*controlcatalog.GetControlOutput, error) {
+	return &controlcatalog.GetControlOutput{Name: aws.String("Detect whether encryption is enabled for Amazon EBS volumes"), Behavior: cctypes.ControlBehaviorDetective,
+		Implementation: &cctypes.ImplementationDetails{Type: aws.String("AWS::Config::ConfigRule")}}, nil
+}
+
 type fakeAccount struct{}
 
 func (fakeAccount) ListRegions(context.Context, *account.ListRegionsInput, ...func(*account.Options)) (*account.ListRegionsOutput, error) {
@@ -92,10 +152,27 @@ func (fakeAccount) ListRegions(context.Context, *account.ListRegionsInput, ...fu
 func TestCollectBuildsAValidSnapshot(t *testing.T) {
 	snap, err := Collect(context.Background(), Options{
 		Name: "Fake Org", Organizations: fakeOrgs{}, RAM: []RAMAPI{fakeRAM{}}, Account: fakeAccount{},
+		ControlTower: fakeControlTower{}, ControlCatalog: fakeCatalog{},
 		Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	ct := snap.ControlTower
+	if ct == nil || ct.Version != "3.3" || ct.Status != "ACTIVE" || ct.DriftStatus != "IN_SYNC" || ct.HomeRegion != "us-east-1" {
+		t.Fatalf("landing zone wrong: %+v", ct)
+	}
+	if len(ct.GovernedRegions) != 2 || ct.LogArchiveAccountID != "111111111112" || ct.AuditAccountID != "111111111111" {
+		t.Errorf("manifest fields wrong: %+v", ct)
+	}
+	if len(ct.RegisteredOUs) != 1 || ct.RegisteredOUs[0].OUID != "ou-fake-work" || ct.RegisteredOUs[0].BaselineVersion != "4.0" || ct.RegisteredOUs[0].DriftStatus != "IN_SYNC" {
+		t.Errorf("registered OUs wrong (one OU, deduplicated, accounts skipped): %+v", ct.RegisteredOUs)
+	}
+	if len(ct.EnabledControls) != 1 || ct.EnabledControls[0].Behavior != snapshot.ControlDetective || ct.EnabledControls[0].Implementation != "AWS::Config::ConfigRule" || ct.EnabledControls[0].TargetOUID != "ou-fake-work" {
+		t.Errorf("enabled controls wrong (inherited child skipped, catalog applied): %+v", ct.EnabledControls)
+	}
+	if len(ct.EnrolledAccounts) != 0 {
+		t.Error("the collector must not invent enrolled accounts")
 	}
 	if snap.Organization.ID != "o-fake00000001" || snap.Organization.Name != "Fake Org" || snap.GeneratedAt != "2026-01-01T00:00:00Z" {
 		t.Errorf("organization block wrong: %+v", snap.Organization)
@@ -127,6 +204,23 @@ func TestCollectBuildsAValidSnapshot(t *testing.T) {
 	}
 	if _, err := snapshot.Parse(data); err != nil {
 		t.Fatalf("collected snapshot does not round-trip: %v", err)
+	}
+}
+
+func TestControlTowerIsOptional(t *testing.T) {
+	snap, err := Collect(context.Background(), Options{Organizations: fakeOrgs{}, ControlTower: fakeControlTower{fail: true}})
+	if err != nil {
+		t.Fatalf("a failing Control Tower call must not fail the collection: %v", err)
+	}
+	if snap.ControlTower != nil {
+		t.Error("no landing zone should be recorded when the API cannot be read")
+	}
+	snap, err = Collect(context.Background(), Options{Organizations: fakeOrgs{}, ControlTower: fakeControlTower{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := snap.ControlTower.EnabledControls[0]; c.Behavior != "" || c.Name != "" || c.ControlIdentifier == "" {
+		t.Errorf("without a catalog client controls are recorded by identifier only: %+v", c)
 	}
 }
 

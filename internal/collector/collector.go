@@ -2,14 +2,18 @@ package collector
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/account"
 	accounttypes "github.com/aws/aws-sdk-go-v2/service/account/types"
+	"github.com/aws/aws-sdk-go-v2/service/controlcatalog"
+	"github.com/aws/aws-sdk-go-v2/service/controltower"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
@@ -46,6 +50,20 @@ type AccountAPI interface {
 	ListRegions(context.Context, *account.ListRegionsInput, ...func(*account.Options)) (*account.ListRegionsOutput, error)
 }
 
+// ControlTowerAPI is the subset of the Control Tower client the collector
+// uses. The landing zone APIs only answer in the landing zone's home region.
+type ControlTowerAPI interface {
+	ListLandingZones(context.Context, *controltower.ListLandingZonesInput, ...func(*controltower.Options)) (*controltower.ListLandingZonesOutput, error)
+	GetLandingZone(context.Context, *controltower.GetLandingZoneInput, ...func(*controltower.Options)) (*controltower.GetLandingZoneOutput, error)
+	ListEnabledBaselines(context.Context, *controltower.ListEnabledBaselinesInput, ...func(*controltower.Options)) (*controltower.ListEnabledBaselinesOutput, error)
+	ListEnabledControls(context.Context, *controltower.ListEnabledControlsInput, ...func(*controltower.Options)) (*controltower.ListEnabledControlsOutput, error)
+}
+
+// ControlCatalogAPI describes controls (name, behavior, implementation).
+type ControlCatalogAPI interface {
+	GetControl(context.Context, *controlcatalog.GetControlInput, ...func(*controlcatalog.Options)) (*controlcatalog.GetControlOutput, error)
+}
+
 // Options configure a collection run.
 type Options struct {
 	// Name is the friendly organization name stored in the snapshot.
@@ -58,6 +76,13 @@ type Options struct {
 	RAM []RAMAPI
 	// Account lists enabled regions per account. Optional.
 	Account AccountAPI
+	// ControlTower reads the landing zone, registered OUs and enabled
+	// controls. Optional; a failing ListLandingZones call is logged and the
+	// snapshot is written without a control_tower block.
+	ControlTower ControlTowerAPI
+	// ControlCatalog names each enabled control and tells its behavior.
+	// Optional; without it controls are recorded by identifier only.
+	ControlCatalog ControlCatalogAPI
 	// Logger receives progress and warnings. Optional.
 	Logger *log.Logger
 	// Now overrides the timestamp, for tests.
@@ -89,6 +114,7 @@ func Collect(ctx context.Context, opts Options) (*snapshot.Snapshot, error) {
 		{"trusted access", c.trustedAccess},
 		{"resource shares", c.shares},
 		{"enabled regions", c.regions},
+		{"control tower", c.controlTower},
 	}
 	for _, s := range steps {
 		opts.Logger.Printf("collecting %s", s.name)
@@ -108,9 +134,10 @@ type logDiscard struct{}
 func (logDiscard) Write(p []byte) (int, error) { return len(p), nil }
 
 type run struct {
-	opts Options
-	ctx  context.Context
-	snap *snapshot.Snapshot
+	opts     Options
+	ctx      context.Context
+	snap     *snapshot.Snapshot
+	controls map[string]*controlcatalog.GetControlOutput
 }
 
 func (r *run) organization() error {
@@ -361,8 +388,171 @@ func (r *run) regions() error {
 	return nil
 }
 
+// controlTower reads the landing zone, the registered OUs (OUs with an
+// enabled baseline) and the controls enabled on each of them. Enrolled
+// accounts are not collected: there is no List/Describe/Get call for them.
+func (r *run) controlTower() error {
+	client := r.opts.ControlTower
+	if client == nil {
+		return nil
+	}
+	zones, err := client.ListLandingZones(r.ctx, &controltower.ListLandingZonesInput{})
+	if err != nil {
+		r.opts.Logger.Printf("warning: Control Tower: %v (the landing zone APIs answer only in the home region; pass --region accordingly or --skip-control-tower)", err)
+		return nil
+	}
+	if len(zones.LandingZones) == 0 {
+		r.opts.Logger.Printf("no Control Tower landing zone in this region")
+		return nil
+	}
+	arn := aws.ToString(zones.LandingZones[0].Arn)
+	ct := &snapshot.ControlTower{LandingZoneARN: arn, HomeRegion: arnRegion(arn), RegisteredOUs: []snapshot.RegisteredOU{}, EnabledControls: []snapshot.EnabledControl{}}
+	lz, err := client.GetLandingZone(r.ctx, &controltower.GetLandingZoneInput{LandingZoneIdentifier: aws.String(arn)})
+	if err != nil {
+		return fmt.Errorf("get landing zone: %w", err)
+	}
+	if d := lz.LandingZone; d != nil {
+		ct.Version = aws.ToString(d.Version)
+		ct.Status = string(d.Status)
+		if d.DriftStatus != nil {
+			ct.DriftStatus = string(d.DriftStatus.Status)
+		}
+		if d.Manifest != nil {
+			// The manifest is a free-form document; go through its JSON form.
+			var m struct {
+				GovernedRegions    []string `json:"governedRegions"`
+				CentralizedLogging struct {
+					AccountID string `json:"accountId"`
+				} `json:"centralizedLogging"`
+				SecurityRoles struct {
+					AccountID string `json:"accountId"`
+				} `json:"securityRoles"`
+			}
+			raw, err := d.Manifest.MarshalSmithyDocument()
+			if err == nil {
+				err = json.Unmarshal(raw, &m)
+			}
+			if err != nil {
+				r.opts.Logger.Printf("warning: landing zone manifest could not be decoded: %v", err)
+			} else {
+				ct.GovernedRegions = m.GovernedRegions
+				ct.LogArchiveAccountID = m.CentralizedLogging.AccountID
+				ct.AuditAccountID = m.SecurityRoles.AccountID
+			}
+		}
+	}
+
+	ouByARN, arnByOU := map[string]string{}, map[string]string{}
+	for _, ou := range r.snap.OUs {
+		ouByARN[ou.ARN] = ou.ID
+		arnByOU[ou.ID] = ou.ARN
+	}
+	seen := map[string]bool{}
+	baselines := controltower.NewListEnabledBaselinesPaginator(client, &controltower.ListEnabledBaselinesInput{IncludeChildren: true})
+	for baselines.HasMorePages() {
+		page, err := baselines.NextPage(r.ctx)
+		if err != nil {
+			return fmt.Errorf("enabled baselines: %w", err)
+		}
+		for _, b := range page.EnabledBaselines {
+			target := aws.ToString(b.TargetIdentifier)
+			id := ouByARN[target]
+			if id == "" {
+				if !strings.Contains(target, ":ou/") {
+					continue // baselines on accounts or the root
+				}
+				id = target[strings.LastIndex(target, "/")+1:]
+			}
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			ro := snapshot.RegisteredOU{OUID: id, BaselineVersion: aws.ToString(b.BaselineVersion)}
+			if b.StatusSummary != nil {
+				ro.Status = string(b.StatusSummary.Status)
+			}
+			if b.DriftStatusSummary != nil && b.DriftStatusSummary.Types != nil && b.DriftStatusSummary.Types.Inheritance != nil {
+				ro.DriftStatus = string(b.DriftStatusSummary.Types.Inheritance.Status)
+			}
+			ct.RegisteredOUs = append(ct.RegisteredOUs, ro)
+		}
+	}
+
+	for _, ro := range ct.RegisteredOUs {
+		ouARN := arnByOU[ro.OUID]
+		if ouARN == "" {
+			r.opts.Logger.Printf("warning: registered OU %s is not in the organization tree; its controls were not listed", ro.OUID)
+			continue
+		}
+		controls := controltower.NewListEnabledControlsPaginator(client, &controltower.ListEnabledControlsInput{TargetIdentifier: aws.String(ouARN)})
+		for controls.HasMorePages() {
+			page, err := controls.NextPage(r.ctx)
+			if err != nil {
+				return fmt.Errorf("enabled controls on %s: %w", ro.OUID, err)
+			}
+			for _, c := range page.EnabledControls {
+				if c.ParentIdentifier != nil {
+					continue // inherited from a parent OU; recorded there
+				}
+				ec := snapshot.EnabledControl{ControlIdentifier: aws.ToString(c.ControlIdentifier), TargetOUID: ro.OUID}
+				if c.StatusSummary != nil {
+					ec.Status = string(c.StatusSummary.Status)
+				}
+				if c.DriftStatusSummary != nil {
+					ec.DriftStatus = string(c.DriftStatusSummary.DriftStatus)
+				}
+				r.describeControl(&ec)
+				ct.EnabledControls = append(ct.EnabledControls, ec)
+			}
+		}
+	}
+	r.snap.ControlTower = ct
+	return nil
+}
+
+// describeControl fills the name, behavior and implementation of a control
+// from the Control Catalog, caching per identifier.
+func (r *run) describeControl(ec *snapshot.EnabledControl) {
+	if r.opts.ControlCatalog == nil {
+		return
+	}
+	if r.controls == nil {
+		r.controls = map[string]*controlcatalog.GetControlOutput{}
+	}
+	out, cached := r.controls[ec.ControlIdentifier]
+	if !cached {
+		var err error
+		out, err = r.opts.ControlCatalog.GetControl(r.ctx, &controlcatalog.GetControlInput{ControlArn: aws.String(ec.ControlIdentifier)})
+		if err != nil {
+			r.opts.Logger.Printf("warning: control %s: %v (needs controlcatalog:GetControl)", ec.ControlIdentifier, err)
+			out = nil
+		}
+		r.controls[ec.ControlIdentifier] = out
+	}
+	if out == nil {
+		return
+	}
+	ec.Name = aws.ToString(out.Name)
+	ec.Behavior = string(out.Behavior)
+	if out.Implementation != nil {
+		ec.Implementation = aws.ToString(out.Implementation.Type)
+	}
+}
+
+func arnRegion(arn string) string {
+	parts := strings.SplitN(arn, ":", 6)
+	if len(parts) == 6 {
+		return parts[3]
+	}
+	return ""
+}
+
 // Summary describes what a snapshot contains, for the CLI.
 func Summary(s *snapshot.Snapshot) string {
-	return fmt.Sprintf("organization %s: %d OUs, %d accounts, %d policies, %d resource shares, %d delegated administrators, %d trusted services",
+	out := fmt.Sprintf("organization %s: %d OUs, %d accounts, %d policies, %d resource shares, %d delegated administrators, %d trusted services",
 		s.Organization.ID, len(s.OUs), len(s.Accounts), len(s.Policies), len(s.ResourceShares), len(s.DelegatedAdministrators), len(s.TrustedAccessServices))
+	if ct := s.ControlTower; ct != nil {
+		out += fmt.Sprintf("; Control Tower %s with %d registered OUs and %d enabled controls", ct.Version, len(ct.RegisteredOUs), len(ct.EnabledControls))
+	}
+	return out
 }

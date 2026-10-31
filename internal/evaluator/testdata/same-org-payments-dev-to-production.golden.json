@@ -126,6 +126,13 @@
       "status": "GO",
       "summary": "Same organization: delegated administration, the org trail and Config aggregation are unchanged.",
       "findings": []
+    },
+    {
+      "id": "control-tower",
+      "title": "Control Tower",
+      "status": "GO",
+      "summary": "Neither organization has a Control Tower landing zone.",
+      "findings": []
     }
   ],
   "diff": [

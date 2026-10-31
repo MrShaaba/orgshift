@@ -150,6 +150,9 @@ func (d decision) evidence(side string, t snapshot.PolicyType) []Evidence {
 		}
 		ev := Evidence{Kind: "policy-statement", Side: side, Level: levelLabel(d.node),
 			PolicyID: d.policy.ID, PolicyName: d.policy.Name, PolicyType: t.Short(), Note: d.reason}
+		if d.policy.ControlTowerManaged() {
+			ev.Note = "Control Tower guardrail (a preventive control; change it by disabling the control, not by editing the SCP). " + d.reason
+		}
 		if d.statement != nil {
 			ev.Statement = d.statement.Label()
 			ev.StatementJSON = d.statement.Raw

@@ -137,13 +137,16 @@ type ChainLink struct {
 
 // PolicyRef is a compact description of a policy for diffs and chains.
 type PolicyRef struct {
-	ID          string             `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description,omitempty"`
-	AWSManaged  bool               `json:"aws_managed"`
-	Level       string             `json:"level,omitempty"`
-	Statements  []StatementSummary `json:"statements,omitempty"`
-	Document    json.RawMessage    `json:"document,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	AWSManaged  bool   `json:"aws_managed"`
+	// ControlTowerManaged marks the aws-guardrails-* SCPs that implement
+	// Control Tower's preventive controls.
+	ControlTowerManaged bool               `json:"control_tower_managed,omitempty"`
+	Level               string             `json:"level,omitempty"`
+	Statements          []StatementSummary `json:"statements,omitempty"`
+	Document            json.RawMessage    `json:"document,omitempty"`
 }
 
 // StatementSummary is a one-line view of an SCP or RCP statement.

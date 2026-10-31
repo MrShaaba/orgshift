@@ -73,9 +73,13 @@ type OUAttachment struct {
 	PolicyName string `json:"policy_name"`
 	PolicyType string `json:"policy_type"`
 	AWSManaged bool   `json:"aws_managed"`
+	// ControlTowerManaged marks an aws-guardrails-* SCP.
+	ControlTowerManaged bool `json:"control_tower_managed,omitempty"`
 	// Fate is "carried" for a move inside the organization; across
-	// organizations it is "recreate" for customer-managed policies and
-	// "automatic" for the AWS managed defaults Organizations attaches itself.
+	// organizations it is "recreate" for customer-managed policies,
+	// "automatic" for the AWS managed defaults Organizations attaches itself
+	// and "control-tower" for guardrails, which Control Tower re-attaches
+	// when the recreated OU is registered.
 	Fate string `json:"fate"`
 }
 
@@ -177,11 +181,15 @@ func EvaluateOU(in OUInput) (*OUResult, error) {
 			if crossOrg && p.AWSManaged {
 				f = "automatic"
 			}
+			if crossOrg && p.ControlTowerManaged() {
+				f = "control-tower"
+			}
 			res.Attachments = append(res.Attachments, OUAttachment{OUID: o.ID, OUName: o.Name, PolicyID: p.ID, PolicyName: p.Name,
-				PolicyType: p.Type.Short(), AWSManaged: p.AWSManaged, Fate: f})
+				PolicyType: p.Type.Short(), AWSManaged: p.AWSManaged, ControlTowerManaged: p.ControlTowerManaged(), Fate: f})
 		}
 	}
 	res.Findings = append(res.Findings, ouFindings(in.From, to, ou, ous, accounts, res.Attachments, crossOrg, parentNode)...)
+	res.Findings = append(res.Findings, ouControlTowerFindings(in.From, to, ous, crossOrg, parentNode)...)
 	if crossOrg {
 		res.Notes = append(res.Notes, "Recreated OUs keep their source IDs in this report as placeholders; the target organization assigns new IDs.")
 	}
@@ -232,7 +240,7 @@ func ouFindings(from, to *snapshot.Snapshot, ou *snapshot.OU, ous []*snapshot.OU
 	byOU := map[string][]string{}
 	var ouOrder []string
 	for _, at := range attachments {
-		if at.AWSManaged {
+		if at.AWSManaged || at.ControlTowerManaged {
 			continue
 		}
 		if _, ok := byOU[at.OUID]; !ok {
@@ -305,4 +313,40 @@ func summarizeOU(r *OUResult) string {
 		return fmt.Sprintf("%s: REVIEW. %s; nothing blocks the move outright but decisions are needed.", move, byVerdict)
 	}
 	return fmt.Sprintf("%s: GO. %s.", move, byVerdict)
+}
+
+// ouControlTowerFindings flags registered OUs in the moved subtree and a
+// registered target parent, which both mean the move has to go through
+// Control Tower.
+func ouControlTowerFindings(from, to *snapshot.Snapshot, ous []*snapshot.OU, crossOrg bool, parent snapshot.Node) []Finding {
+	var out []Finding
+	if ct := from.ControlTower; ct != nil {
+		var registered []string
+		var evidence []Evidence
+		for _, o := range ous {
+			if r := ct.RegisteredOU(o.ID); r != nil {
+				registered = append(registered, o.Name)
+				evidence = append(evidence, registrationEvidence("source", snapshot.Node{ID: o.ID, Name: o.Name, Kind: snapshot.KindOU}, r))
+			}
+		}
+		if len(registered) > 0 {
+			detail := "Control Tower registers OUs by their identity, so the registration does not follow the OU. Every enrolled account under them is unenrolled while the OU is recreated and stays that way until the new OU is registered and the accounts are re-enrolled through Account Factory. Guardrail SCPs (aws-guardrails-*) are attached again by Control Tower at registration; they do not need to be recreated by hand."
+			if !crossOrg {
+				detail = "Control Tower expects registered OUs to stay where they were registered. Re-parenting one is not a supported operation: deregister the OU (which unenrolls its accounts), recreate it under the new parent, register it again and re-enroll the accounts through Account Factory. Guardrail SCPs (aws-guardrails-*) are attached again by Control Tower at registration."
+			}
+			out = append(out, Finding{Status: StatusReview,
+				Title:    fmt.Sprintf("%d registered OU(s) in the moved tree have to be deregistered and registered again: %s", len(registered), strings.Join(registered, ", ")),
+				Detail:   detail,
+				Evidence: evidence})
+		}
+	}
+	if ct := to.ControlTower; ct != nil {
+		if r := ct.RegisteredOU(parent.ID); r != nil {
+			out = append(out, Finding{Status: StatusInfo,
+				Title:    fmt.Sprintf("The new parent %s is registered with Control Tower; register the moved OU too", parent.Name),
+				Detail:   "Registration is not inherited. Nested OUs under a registered parent inherit its controls through the SCPs, but Control Tower only governs the accounts in an OU once that OU is registered itself. The per-account findings below list what enrolment needs.",
+				Evidence: []Evidence{registrationEvidence("target", parent, r)}})
+		}
+	}
+	return out
 }

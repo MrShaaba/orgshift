@@ -79,13 +79,19 @@ func TestOUCrossOrgRecreatesTree(t *testing.T) {
 	if res.Verdict != StatusNoGo {
 		t.Fatalf("expected NO-GO, got %s: %s", res.Verdict, res.Summary)
 	}
-	// The OU itself: one REVIEW saying it has to be recreated, with the attachments as evidence.
-	if len(res.Findings) != 1 || res.Findings[0].Status != StatusReview || !strings.Contains(res.Findings[0].Title, "must be recreated under Business Units") {
-		t.Fatalf("expected one recreate finding, got %+v", res.Findings)
+	// The OU itself: a REVIEW saying it has to be recreated, with the attachments as evidence.
+	var recreate *Finding
+	for i := range res.Findings {
+		if strings.Contains(res.Findings[i].Title, "must be recreated under Business Units") {
+			recreate = &res.Findings[i]
+		}
+	}
+	if recreate == nil || recreate.Status != StatusReview {
+		t.Fatalf("expected a recreate finding, got %+v", res.Findings)
 	}
 	notes := strings.Join(func() []string {
 		var out []string
-		for _, ev := range res.Findings[0].Evidence {
+		for _, ev := range recreate.Evidence {
 			out = append(out, ev.Note)
 		}
 		return out
@@ -224,4 +230,51 @@ func TestOUInputErrors(t *testing.T) {
 	if _, err := EvaluateOU(OUInput{From: l, To: f, OUID: "ou-fern-bu", TargetParentID: "r-fern"}); err == nil {
 		t.Fatal("the OU must be in the source snapshot")
 	}
+}
+
+func TestOUControlTowerFindings(t *testing.T) {
+	f := fixtures.Fernhill()
+	// A registered OU re-parented inside the organization.
+	res, err := EvaluateOU(OUInput{From: f, OUID: fixtures.FernhillPaymentsOU, TargetParentID: fixtures.FernhillSandboxOU})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reg *Finding
+	for i := range res.Findings {
+		if strings.Contains(res.Findings[i].Title, "registered OU(s) in the moved tree") {
+			reg = &res.Findings[i]
+		}
+	}
+	if reg == nil || reg.Status != StatusReview || !strings.Contains(reg.Title, "Payments") || !strings.Contains(reg.Detail, "deregister") {
+		t.Fatalf("expected a REVIEW about the registered OU, got %+v", res.Findings)
+	}
+	// The account keeps its OU, so it must not be told it changes OU; only inherited controls change.
+	acct := res.Accounts[0].Result
+	for _, fd := range check(acct, "control-tower").Findings {
+		if strings.Contains(fd.Title, "between registered OUs") || strings.Contains(fd.Title, "unenrolls") || strings.Contains(fd.Title, "has to be enrolled") {
+			t.Errorf("account stays in its OU; unexpected finding %q", fd.Title)
+		}
+	}
+	find(t, acct, "control-tower", func(fd Finding) bool { return strings.HasPrefix(fd.Title, "3 preventive control(s) stop applying") })
+
+	// Cross-org into a registered parent: the recreated OU is not registered.
+	res, err = EvaluateOU(OUInput{From: fixtures.Larkspur(), To: f, OUID: fixtures.LarkspurWorkloadsOU, TargetParentID: fixtures.FernhillBusinessUnitsOU})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, fd := range res.Findings {
+		if fd.Status == StatusInfo && strings.Contains(fd.Title, "register the moved OU too") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected the registered-parent note, got %+v", res.Findings)
+	}
+	find(t, res.Accounts[0].Result, "control-tower", func(fd Finding) bool {
+		return fd.Status == StatusInfo && strings.Contains(fd.Title, "is not a registered OU")
+	})
+	find(t, res.Accounts[0].Result, "control-tower", func(fd Finding) bool {
+		return fd.Status == StatusInfo && strings.HasPrefix(fd.Title, "3 preventive control(s) start applying")
+	})
 }

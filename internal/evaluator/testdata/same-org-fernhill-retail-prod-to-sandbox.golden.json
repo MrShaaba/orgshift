@@ -1,0 +1,2023 @@
+{
+  "tool": "orgshift",
+  "result_schema_version": 1,
+  "subject": {
+    "account_id": "222222222225",
+    "account_name": "fernhill-retail-prod",
+    "source_org": {
+      "id": "o-fernhill0001",
+      "name": "Fernhill Group"
+    },
+    "target_org": {
+      "id": "o-fernhill0001",
+      "name": "Fernhill Group"
+    },
+    "cross_org": false,
+    "source_path": [
+      {
+        "id": "r-fern",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-fern-bu",
+        "name": "Business Units",
+        "kind": "ou"
+      },
+      {
+        "id": "ou-fern-ret",
+        "name": "Retail",
+        "kind": "ou"
+      },
+      {
+        "id": "222222222225",
+        "name": "fernhill-retail-prod",
+        "kind": "account"
+      }
+    ],
+    "target_path": [
+      {
+        "id": "r-fern",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-fern-sand",
+        "name": "Sandbox",
+        "kind": "ou"
+      },
+      {
+        "id": "222222222225",
+        "name": "fernhill-retail-prod",
+        "kind": "account"
+      }
+    ],
+    "source_parent_id": "ou-fern-ret",
+    "target_ou_id": "ou-fern-sand",
+    "actions_in_use": 7,
+    "inbound_access": 0,
+    "tagged_resources": 0,
+    "regions_assumed": [
+      "eu-central-1",
+      "eu-west-1"
+    ]
+  },
+  "verdict": "REVIEW",
+  "summary": "Moving fernhill-retail-prod (222222222225) from Root / Business Units / Retail to Root / Sandbox: REVIEW. Nothing blocks the move outright, but 2 finding(s) could not be decided offline or need a decision.",
+  "checks": [
+    {
+      "id": "scp",
+      "title": "Service control policies",
+      "status": "GO",
+      "summary": "7 actions evaluated against the SCP chain; 0 flagged.",
+      "findings": []
+    },
+    {
+      "id": "rcp",
+      "title": "Resource control policies",
+      "status": "GO",
+      "summary": "2 actions evaluated against the RCP chain; 0 flagged.",
+      "findings": []
+    },
+    {
+      "id": "tags",
+      "title": "Tag policies",
+      "status": "GO",
+      "summary": "2 tag keys governed; unchanged by the move.",
+      "findings": [
+        {
+          "status": "INFO",
+          "title": "The effective tag policy is the same before and after the move",
+          "detail": "The merged tag rules on the source path and on the target path are identical, so the move changes no tag compliance.",
+          "evidence": [
+            {
+              "kind": "effective-tag-policy",
+              "side": "target",
+              "policy_type": "TAG",
+              "statement_json": [
+                {
+                  "key": "cost-center",
+                  "key_case_enforced": true,
+                  "values": [
+                    "CC-1001",
+                    "CC-1002",
+                    "CC-2001",
+                    "CC-2002"
+                  ],
+                  "enforced_for": [
+                    "ec2:instance",
+                    "ec2:volume",
+                    "rds:db",
+                    "s3:bucket",
+                    "lambda:function"
+                  ],
+                  "sources": [
+                    "Fernhill-Cost-Allocation"
+                  ]
+                },
+                {
+                  "key": "environment",
+                  "key_case_enforced": true,
+                  "values": [
+                    "production",
+                    "staging",
+                    "development"
+                  ],
+                  "sources": [
+                    "Fernhill-Cost-Allocation"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ram",
+      "title": "Resource shares (RAM)",
+      "status": "GO",
+      "summary": "1 share(s) kept, 0 lost or uncertain, 0 newly available.",
+      "findings": []
+    },
+    {
+      "id": "org-services",
+      "title": "Organization services",
+      "status": "REVIEW",
+      "summary": "Same organization: only StackSet targeting changes.",
+      "findings": [
+        {
+          "status": "REVIEW",
+          "title": "StackSet fernhill-baseline stops targeting the account; stack instances are deleted from the account",
+          "detail": "Service-managed StackSets deploy by OU. Baseline IAM roles and GuardDuty membership. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
+          "evidence": [
+            {
+              "kind": "stackset",
+              "side": "source",
+              "reference": "fernhill-baseline",
+              "note": "admin 222222222221; targets OUs ou-fern-bu accounts ; regions eu-west-1; auto-deployment true; retain on removal false"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "control-tower",
+      "title": "Control Tower",
+      "status": "REVIEW",
+      "summary": "1 item(s) to settle with Control Tower, 4 informational.",
+      "findings": [
+        {
+          "status": "REVIEW",
+          "title": "Moving out of the registered OU Retail unenrolls the account from Control Tower",
+          "detail": "Control Tower governs accounts through their OU, and Sandbox (ou-fern-sand) is not registered with Control Tower. After the move the account is no longer enrolled: the 3 preventive guardrail SCP(s) of the old OU chain stop applying (see the SCP diff), 4 detective control(s) stop reporting, baseline updates stop and the landing zone shows the account as drifted until it is unenrolled properly. Unenroll it from Account Factory first if leaving governance is the intent; otherwise register Sandbox and move the account with Control Tower's update-account flow.",
+          "evidence": [
+            {
+              "kind": "landing-zone",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+            },
+            {
+              "kind": "registered-ou",
+              "side": "source",
+              "reference": "ou-fern-ret",
+              "note": "OU Retail registered: baseline 4.0, status SUCCEEDED, drift IN_SYNC"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "3 preventive control(s) stop applying: AWS-GR_CLOUDTRAIL_ENABLED, AWS-GR_CONFIG_ENABLED, AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+          "detail": "Enabled on the source OU chain and not on the target's. Preventive controls stop applying to the account after the move.",
+          "evidence": [
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CLOUDTRAIL_ENABLED",
+              "note": "Disallow changes to CloudTrail set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CONFIG_ENABLED",
+              "note": "Disallow changes to AWS Config set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+              "note": "Disallow creation of access keys for the root user\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "4 detective control(s) stop applying: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_COMMON_PORTS, AWS-GR_RESTRICTED_SSH",
+          "detail": "Enabled on the source OU chain and not on the target's. Detective controls stop applying to the account after the move. The Config rules they deployed are removed when the account is unenrolled or moved through Control Tower; moved by hand, they linger unmanaged.",
+          "evidence": [
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_ENCRYPTED_VOLUMES",
+              "note": "Detect whether encryption is enabled for Amazon EBS volumes attached to Amazon EC2 instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICTED_SSH",
+              "note": "Detect whether unrestricted incoming SSH traffic is allowed\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RDS_STORAGE_ENCRYPTED",
+              "note": "Detect whether storage encryption is enabled for Amazon RDS database instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICTED_COMMON_PORTS",
+              "note": "Detect whether unrestricted incoming TCP traffic is allowed on common ports\ndetective control on OU ou-fern-ret; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "Account was vended by Account Factory; move it by updating provisioned product fernhill-retail-prod",
+          "detail": "Account Factory records the OU as a parameter of the provisioned product. Changing the OU through the product (Service Catalog, update provisioned product, or the Control Tower console) performs the move and re-applies the baseline; moving it in Organizations directly leaves the product and the landing zone in drift.",
+          "evidence": [
+            {
+              "kind": "account-factory",
+              "side": "source",
+              "reference": "fernhill-retail-prod",
+              "note": "status ENROLLED"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "Sandbox is not a registered OU; the account stays outside Control Tower governance there",
+          "detail": "The landing zone of o-fernhill0001 governs only its registered OUs. No Control Tower controls apply to the account at Root / Sandbox, and Account Factory cannot enroll it until that OU is registered.",
+          "evidence": [
+            {
+              "kind": "landing-zone",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "diff": [
+    {
+      "type": "SERVICE_CONTROL_POLICY",
+      "type_short": "SCP",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-fern0001",
+              "name": "Fernhill-Root-Guardrails",
+              "description": "Organization-wide guardrails: no leaving, no IAM users, protected logging",
+              "aws_managed": false,
+              "level": "root Root (r-fern)",
+              "statements": [
+                {
+                  "sid": "DenyLeaveOrganization",
+                  "effect": "Deny",
+                  "actions": [
+                    "organizations:LeaveOrganization"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "NoIAMUsers",
+                  "effect": "Deny",
+                  "actions": [
+                    "iam:CreateUser",
+                    "iam:CreateAccessKey",
+                    "iam:CreateLoginProfile"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "ProtectLogging",
+                  "effect": "Deny",
+                  "actions": [
+                    "cloudtrail:StopLogging",
+                    "cloudtrail:DeleteTrail",
+                    "config:DeleteConfigurationRecorder",
+                    "config:StopConfigurationRecorder",
+                    "guardduty:DeleteDetector"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "DenyRootUser",
+                  "effect": "Deny",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyLeaveOrganization",
+                    "Effect": "Deny",
+                    "Action": [
+                      "organizations:LeaveOrganization"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "NoIAMUsers",
+                    "Effect": "Deny",
+                    "Action": [
+                      "iam:CreateUser",
+                      "iam:CreateAccessKey",
+                      "iam:CreateLoginProfile"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "ProtectLogging",
+                    "Effect": "Deny",
+                    "Action": [
+                      "cloudtrail:StopLogging",
+                      "cloudtrail:DeleteTrail",
+                      "config:DeleteConfigurationRecorder",
+                      "config:StopConfigurationRecorder",
+                      "guardduty:DeleteDetector"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "DenyRootUser",
+                    "Effect": "Deny",
+                    "Action": "*",
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:root"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-fern)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-bu",
+            "name": "Business Units",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-fern0002",
+              "name": "Fernhill-EU-Only-Regions",
+              "description": "Business unit workloads stay inside the EU",
+              "aws_managed": false,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "sid": "DenyOutsideEU",
+                  "effect": "Deny",
+                  "not_actions": [
+                    "iam:*",
+                    "sts:*",
+                    "organizations:*",
+                    "support:*",
+                    "budgets:*",
+                    "cloudfront:*",
+                    "route53:*",
+                    "waf:*",
+                    "health:*",
+                    "account:*",
+                    "access-analyzer:*",
+                    "trustedadvisor:*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringNotEquals aws:RequestedRegion = eu-west-1 | eu-central-1"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyOutsideEU",
+                    "Effect": "Deny",
+                    "NotAction": [
+                      "iam:*",
+                      "sts:*",
+                      "organizations:*",
+                      "support:*",
+                      "budgets:*",
+                      "cloudfront:*",
+                      "route53:*",
+                      "waf:*",
+                      "health:*",
+                      "account:*",
+                      "access-analyzer:*",
+                      "trustedadvisor:*"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringNotEquals": {
+                        "aws:RequestedRegion": [
+                          "eu-west-1",
+                          "eu-central-1"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-fern0010",
+              "name": "aws-guardrails-kjwqpf",
+              "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+              "aws_managed": false,
+              "control_tower_managed": true,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "sid": "GRCLOUDTRAILENABLED",
+                  "effect": "Deny",
+                  "actions": [
+                    "cloudtrail:DeleteTrail",
+                    "cloudtrail:PutEventSelectors",
+                    "cloudtrail:StopLogging",
+                    "cloudtrail:UpdateTrail"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+                  ]
+                },
+                {
+                  "sid": "GRCONFIGENABLED",
+                  "effect": "Deny",
+                  "actions": [
+                    "config:DeleteConfigurationRecorder",
+                    "config:DeleteDeliveryChannel",
+                    "config:PutConfigurationRecorder",
+                    "config:PutDeliveryChannel",
+                    "config:StopConfigurationRecorder"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+                  ]
+                },
+                {
+                  "sid": "GRRESTRICTROOTUSERACCESSKEYS",
+                  "effect": "Deny",
+                  "actions": [
+                    "iam:CreateAccessKey"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "GRCLOUDTRAILENABLED",
+                    "Effect": "Deny",
+                    "Action": [
+                      "cloudtrail:DeleteTrail",
+                      "cloudtrail:PutEventSelectors",
+                      "cloudtrail:StopLogging",
+                      "cloudtrail:UpdateTrail"
+                    ],
+                    "Resource": "arn:aws:cloudtrail:*:*:trail/aws-controltower-*",
+                    "Condition": {
+                      "ArnNotLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                      }
+                    }
+                  },
+                  {
+                    "Sid": "GRCONFIGENABLED",
+                    "Effect": "Deny",
+                    "Action": [
+                      "config:DeleteConfigurationRecorder",
+                      "config:DeleteDeliveryChannel",
+                      "config:PutConfigurationRecorder",
+                      "config:PutDeliveryChannel",
+                      "config:StopConfigurationRecorder"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "ArnNotLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                      }
+                    }
+                  },
+                  {
+                    "Sid": "GRRESTRICTROOTUSERACCESSKEYS",
+                    "Effect": "Deny",
+                    "Action": "iam:CreateAccessKey",
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:root"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-ret",
+            "name": "Retail",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Retail (ou-fern-ret)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "222222222225",
+            "name": "fernhill-retail-prod",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account fernhill-retail-prod (222222222225)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-fern0001",
+              "name": "Fernhill-Root-Guardrails",
+              "description": "Organization-wide guardrails: no leaving, no IAM users, protected logging",
+              "aws_managed": false,
+              "level": "root Root (r-fern)",
+              "statements": [
+                {
+                  "sid": "DenyLeaveOrganization",
+                  "effect": "Deny",
+                  "actions": [
+                    "organizations:LeaveOrganization"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "NoIAMUsers",
+                  "effect": "Deny",
+                  "actions": [
+                    "iam:CreateUser",
+                    "iam:CreateAccessKey",
+                    "iam:CreateLoginProfile"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "ProtectLogging",
+                  "effect": "Deny",
+                  "actions": [
+                    "cloudtrail:StopLogging",
+                    "cloudtrail:DeleteTrail",
+                    "config:DeleteConfigurationRecorder",
+                    "config:StopConfigurationRecorder",
+                    "guardduty:DeleteDetector"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "DenyRootUser",
+                  "effect": "Deny",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyLeaveOrganization",
+                    "Effect": "Deny",
+                    "Action": [
+                      "organizations:LeaveOrganization"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "NoIAMUsers",
+                    "Effect": "Deny",
+                    "Action": [
+                      "iam:CreateUser",
+                      "iam:CreateAccessKey",
+                      "iam:CreateLoginProfile"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "ProtectLogging",
+                    "Effect": "Deny",
+                    "Action": [
+                      "cloudtrail:StopLogging",
+                      "cloudtrail:DeleteTrail",
+                      "config:DeleteConfigurationRecorder",
+                      "config:StopConfigurationRecorder",
+                      "guardduty:DeleteDetector"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "DenyRootUser",
+                    "Effect": "Deny",
+                    "Action": "*",
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:root"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-fern)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-sand",
+            "name": "Sandbox",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-fern0004",
+              "name": "Fernhill-Sandbox-Limits",
+              "aws_managed": false,
+              "level": "OU Sandbox (ou-fern-sand)",
+              "statements": [
+                {
+                  "sid": "NoExpensiveServices",
+                  "effect": "Deny",
+                  "actions": [
+                    "redshift:*",
+                    "emr:*",
+                    "directconnect:*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "NoExpensiveServices",
+                    "Effect": "Deny",
+                    "Action": [
+                      "redshift:*",
+                      "emr:*",
+                      "directconnect:*"
+                    ],
+                    "Resource": "*"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Sandbox (ou-fern-sand)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "222222222225",
+            "name": "fernhill-retail-prod",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account fernhill-retail-prod (222222222225)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "added": [
+        {
+          "id": "p-fern0004",
+          "name": "Fernhill-Sandbox-Limits",
+          "aws_managed": false,
+          "level": "OU Sandbox (ou-fern-sand)",
+          "statements": [
+            {
+              "sid": "NoExpensiveServices",
+              "effect": "Deny",
+              "actions": [
+                "redshift:*",
+                "emr:*",
+                "directconnect:*"
+              ],
+              "has_condition": false
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "NoExpensiveServices",
+                "Effect": "Deny",
+                "Action": [
+                  "redshift:*",
+                  "emr:*",
+                  "directconnect:*"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ],
+      "removed": [
+        {
+          "id": "p-fern0002",
+          "name": "Fernhill-EU-Only-Regions",
+          "description": "Business unit workloads stay inside the EU",
+          "aws_managed": false,
+          "level": "OU Business Units (ou-fern-bu)",
+          "statements": [
+            {
+              "sid": "DenyOutsideEU",
+              "effect": "Deny",
+              "not_actions": [
+                "iam:*",
+                "sts:*",
+                "organizations:*",
+                "support:*",
+                "budgets:*",
+                "cloudfront:*",
+                "route53:*",
+                "waf:*",
+                "health:*",
+                "account:*",
+                "access-analyzer:*",
+                "trustedadvisor:*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringNotEquals aws:RequestedRegion = eu-west-1 | eu-central-1"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DenyOutsideEU",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*",
+                  "access-analyzer:*",
+                  "trustedadvisor:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "eu-west-1",
+                      "eu-central-1"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "p-fern0010",
+          "name": "aws-guardrails-kjwqpf",
+          "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+          "aws_managed": false,
+          "control_tower_managed": true,
+          "level": "OU Business Units (ou-fern-bu)",
+          "statements": [
+            {
+              "sid": "GRCLOUDTRAILENABLED",
+              "effect": "Deny",
+              "actions": [
+                "cloudtrail:DeleteTrail",
+                "cloudtrail:PutEventSelectors",
+                "cloudtrail:StopLogging",
+                "cloudtrail:UpdateTrail"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+              ]
+            },
+            {
+              "sid": "GRCONFIGENABLED",
+              "effect": "Deny",
+              "actions": [
+                "config:DeleteConfigurationRecorder",
+                "config:DeleteDeliveryChannel",
+                "config:PutConfigurationRecorder",
+                "config:PutDeliveryChannel",
+                "config:StopConfigurationRecorder"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+              ]
+            },
+            {
+              "sid": "GRRESTRICTROOTUSERACCESSKEYS",
+              "effect": "Deny",
+              "actions": [
+                "iam:CreateAccessKey"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "GRCLOUDTRAILENABLED",
+                "Effect": "Deny",
+                "Action": [
+                  "cloudtrail:DeleteTrail",
+                  "cloudtrail:PutEventSelectors",
+                  "cloudtrail:StopLogging",
+                  "cloudtrail:UpdateTrail"
+                ],
+                "Resource": "arn:aws:cloudtrail:*:*:trail/aws-controltower-*",
+                "Condition": {
+                  "ArnNotLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                  }
+                }
+              },
+              {
+                "Sid": "GRCONFIGENABLED",
+                "Effect": "Deny",
+                "Action": [
+                  "config:DeleteConfigurationRecorder",
+                  "config:DeleteDeliveryChannel",
+                  "config:PutConfigurationRecorder",
+                  "config:PutDeliveryChannel",
+                  "config:StopConfigurationRecorder"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "ArnNotLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                  }
+                }
+              },
+              {
+                "Sid": "GRRESTRICTROOTUSERACCESSKEYS",
+                "Effect": "Deny",
+                "Action": "iam:CreateAccessKey",
+                "Resource": "*",
+                "Condition": {
+                  "StringLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:root"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "changed": null,
+      "unchanged": [
+        {
+          "id": "p-fern0001",
+          "name": "Fernhill-Root-Guardrails",
+          "description": "Organization-wide guardrails: no leaving, no IAM users, protected logging",
+          "aws_managed": false,
+          "level": "root Root (r-fern)",
+          "statements": [
+            {
+              "sid": "DenyLeaveOrganization",
+              "effect": "Deny",
+              "actions": [
+                "organizations:LeaveOrganization"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "NoIAMUsers",
+              "effect": "Deny",
+              "actions": [
+                "iam:CreateUser",
+                "iam:CreateAccessKey",
+                "iam:CreateLoginProfile"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "ProtectLogging",
+              "effect": "Deny",
+              "actions": [
+                "cloudtrail:StopLogging",
+                "cloudtrail:DeleteTrail",
+                "config:DeleteConfigurationRecorder",
+                "config:StopConfigurationRecorder",
+                "guardduty:DeleteDetector"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "DenyRootUser",
+              "effect": "Deny",
+              "actions": [
+                "*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DenyLeaveOrganization",
+                "Effect": "Deny",
+                "Action": [
+                  "organizations:LeaveOrganization"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "NoIAMUsers",
+                "Effect": "Deny",
+                "Action": [
+                  "iam:CreateUser",
+                  "iam:CreateAccessKey",
+                  "iam:CreateLoginProfile"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "ProtectLogging",
+                "Effect": "Deny",
+                "Action": [
+                  "cloudtrail:StopLogging",
+                  "cloudtrail:DeleteTrail",
+                  "config:DeleteConfigurationRecorder",
+                  "config:StopConfigurationRecorder",
+                  "guardduty:DeleteDetector"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "DenyRootUser",
+                "Effect": "Deny",
+                "Action": "*",
+                "Resource": "*",
+                "Condition": {
+                  "StringLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:root"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "p-FullAWSAccess",
+          "name": "FullAWSAccess",
+          "description": "Allows access to every operation",
+          "aws_managed": true,
+          "level": "account fernhill-retail-prod (222222222225)",
+          "statements": [
+            {
+              "effect": "Allow",
+              "actions": [
+                "*"
+              ],
+              "has_condition": false
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": "*",
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "RESOURCE_CONTROL_POLICY",
+      "type_short": "RCP",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-fern)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-bu",
+            "name": "Business Units",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-fern0006",
+              "name": "Fernhill-Block-External-Principals",
+              "description": "Resources in business unit accounts can only be used from inside the organization",
+              "aws_managed": false,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "sid": "EnforceOrgIdentities",
+                  "effect": "Deny",
+                  "actions": [
+                    "s3:*",
+                    "sts:AssumeRole",
+                    "sts:SetContext",
+                    "kms:*",
+                    "sqs:*",
+                    "secretsmanager:*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "BoolIfExists aws:PrincipalIsAWSService = false",
+                    "StringNotEqualsIfExists aws:PrincipalOrgID = o-fernhill0001"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "EnforceOrgIdentities",
+                    "Effect": "Deny",
+                    "Principal": "*",
+                    "Action": [
+                      "s3:*",
+                      "sts:AssumeRole",
+                      "sts:SetContext",
+                      "kms:*",
+                      "sqs:*",
+                      "secretsmanager:*"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringNotEqualsIfExists": {
+                        "aws:PrincipalOrgID": "o-fernhill0001"
+                      },
+                      "BoolIfExists": {
+                        "aws:PrincipalIsAWSService": "false"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-ret",
+            "name": "Retail",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Retail (ou-fern-ret)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "222222222225",
+            "name": "fernhill-retail-prod",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account fernhill-retail-prod (222222222225)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-fern)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-sand",
+            "name": "Sandbox",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Sandbox (ou-fern-sand)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "222222222225",
+            "name": "fernhill-retail-prod",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account fernhill-retail-prod (222222222225)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "added": null,
+      "removed": [
+        {
+          "id": "p-fern0006",
+          "name": "Fernhill-Block-External-Principals",
+          "description": "Resources in business unit accounts can only be used from inside the organization",
+          "aws_managed": false,
+          "level": "OU Business Units (ou-fern-bu)",
+          "statements": [
+            {
+              "sid": "EnforceOrgIdentities",
+              "effect": "Deny",
+              "actions": [
+                "s3:*",
+                "sts:AssumeRole",
+                "sts:SetContext",
+                "kms:*",
+                "sqs:*",
+                "secretsmanager:*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "BoolIfExists aws:PrincipalIsAWSService = false",
+                "StringNotEqualsIfExists aws:PrincipalOrgID = o-fernhill0001"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "EnforceOrgIdentities",
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": [
+                  "s3:*",
+                  "sts:AssumeRole",
+                  "sts:SetContext",
+                  "kms:*",
+                  "sqs:*",
+                  "secretsmanager:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEqualsIfExists": {
+                    "aws:PrincipalOrgID": "o-fernhill0001"
+                  },
+                  "BoolIfExists": {
+                    "aws:PrincipalIsAWSService": "false"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "changed": null,
+      "unchanged": [
+        {
+          "id": "p-RCPFullAWSAccess",
+          "name": "RCPFullAWSAccess",
+          "description": "Allows access to every operation",
+          "aws_managed": true,
+          "level": "account fernhill-retail-prod (222222222225)",
+          "statements": [
+            {
+              "effect": "Allow",
+              "actions": [
+                "*"
+              ],
+              "has_condition": false
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "*",
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "TAG_POLICY",
+      "type_short": "TAG",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-fern0007",
+              "name": "Fernhill-Cost-Allocation",
+              "description": "Every billable resource carries a cost-center code",
+              "aws_managed": false,
+              "level": "root Root (r-fern)",
+              "document": {
+                "tags": {
+                  "cost-center": {
+                    "tag_key": {
+                      "@@assign": "cost-center"
+                    },
+                    "tag_value": {
+                      "@@assign": [
+                        "CC-1001",
+                        "CC-1002",
+                        "CC-2001",
+                        "CC-2002"
+                      ]
+                    },
+                    "enforced_for": {
+                      "@@assign": [
+                        "ec2:instance",
+                        "ec2:volume",
+                        "rds:db",
+                        "s3:bucket",
+                        "lambda:function"
+                      ]
+                    }
+                  },
+                  "environment": {
+                    "tag_key": {
+                      "@@assign": "environment"
+                    },
+                    "tag_value": {
+                      "@@assign": [
+                        "production",
+                        "staging",
+                        "development"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-bu",
+            "name": "Business Units",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-fern-ret",
+            "name": "Retail",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "222222222225",
+            "name": "fernhill-retail-prod",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-fern0007",
+              "name": "Fernhill-Cost-Allocation",
+              "description": "Every billable resource carries a cost-center code",
+              "aws_managed": false,
+              "level": "root Root (r-fern)",
+              "document": {
+                "tags": {
+                  "cost-center": {
+                    "tag_key": {
+                      "@@assign": "cost-center"
+                    },
+                    "tag_value": {
+                      "@@assign": [
+                        "CC-1001",
+                        "CC-1002",
+                        "CC-2001",
+                        "CC-2002"
+                      ]
+                    },
+                    "enforced_for": {
+                      "@@assign": [
+                        "ec2:instance",
+                        "ec2:volume",
+                        "rds:db",
+                        "s3:bucket",
+                        "lambda:function"
+                      ]
+                    }
+                  },
+                  "environment": {
+                    "tag_key": {
+                      "@@assign": "environment"
+                    },
+                    "tag_value": {
+                      "@@assign": [
+                        "production",
+                        "staging",
+                        "development"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-sand",
+            "name": "Sandbox",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "222222222225",
+            "name": "fernhill-retail-prod",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "added": null,
+      "removed": null,
+      "changed": null,
+      "unchanged": [
+        {
+          "id": "p-fern0007",
+          "name": "Fernhill-Cost-Allocation",
+          "description": "Every billable resource carries a cost-center code",
+          "aws_managed": false,
+          "level": "root Root (r-fern)",
+          "document": {
+            "tags": {
+              "cost-center": {
+                "tag_key": {
+                  "@@assign": "cost-center"
+                },
+                "tag_value": {
+                  "@@assign": [
+                    "CC-1001",
+                    "CC-1002",
+                    "CC-2001",
+                    "CC-2002"
+                  ]
+                },
+                "enforced_for": {
+                  "@@assign": [
+                    "ec2:instance",
+                    "ec2:volume",
+                    "rds:db",
+                    "s3:bucket",
+                    "lambda:function"
+                  ]
+                }
+              },
+              "environment": {
+                "tag_key": {
+                  "@@assign": "environment"
+                },
+                "tag_value": {
+                  "@@assign": [
+                    "production",
+                    "staging",
+                    "development"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "BACKUP_POLICY",
+      "type_short": "BACKUP",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-fern-bu",
+            "name": "Business Units",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-fern0009",
+              "name": "Fernhill-Core-Backups",
+              "aws_managed": false,
+              "level": "OU Business Units (ou-fern-bu)",
+              "document": {
+                "plans": {
+                  "fernhill-hourly": {
+                    "regions": {
+                      "@@assign": [
+                        "eu-west-1",
+                        "eu-central-1"
+                      ]
+                    },
+                    "rules": {
+                      "hourly": {
+                        "schedule_expression": {
+                          "@@assign": "cron(0 * ? * * *)"
+                        },
+                        "target_backup_vault_name": {
+                          "@@assign": "FernhillVault"
+                        },
+                        "lifecycle": {
+                          "delete_after_days": {
+                            "@@assign": "14"
+                          }
+                        }
+                      }
+                    },
+                    "selections": {
+                      "tags": {
+                        "all": {
+                          "iam_role_arn": {
+                            "@@assign": "arn:aws:iam::$account:role/FernhillBackupRole"
+                          },
+                          "tag_key": {
+                            "@@assign": "backup"
+                          },
+                          "tag_value": {
+                            "@@assign": [
+                              "true"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-ret",
+            "name": "Retail",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "222222222225",
+            "name": "fernhill-retail-prod",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-fern-sand",
+            "name": "Sandbox",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "222222222225",
+            "name": "fernhill-retail-prod",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "added": null,
+      "removed": [
+        {
+          "id": "p-fern0009",
+          "name": "Fernhill-Core-Backups",
+          "aws_managed": false,
+          "level": "OU Business Units (ou-fern-bu)",
+          "document": {
+            "plans": {
+              "fernhill-hourly": {
+                "regions": {
+                  "@@assign": [
+                    "eu-west-1",
+                    "eu-central-1"
+                  ]
+                },
+                "rules": {
+                  "hourly": {
+                    "schedule_expression": {
+                      "@@assign": "cron(0 * ? * * *)"
+                    },
+                    "target_backup_vault_name": {
+                      "@@assign": "FernhillVault"
+                    },
+                    "lifecycle": {
+                      "delete_after_days": {
+                        "@@assign": "14"
+                      }
+                    }
+                  }
+                },
+                "selections": {
+                  "tags": {
+                    "all": {
+                      "iam_role_arn": {
+                        "@@assign": "arn:aws:iam::$account:role/FernhillBackupRole"
+                      },
+                      "tag_key": {
+                        "@@assign": "backup"
+                      },
+                      "tag_value": {
+                        "@@assign": [
+                          "true"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "changed": null,
+      "unchanged": null
+    }
+  ]
+}

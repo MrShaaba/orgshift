@@ -59,7 +59,7 @@
     ]
   },
   "verdict": "NO-GO",
-  "summary": "Moving larkspur-security (111111111113) from Root / Security to Root / Core (organization o-larkspur0001 to o-fernhill0001): NO-GO. 3 blocking finding(s) and 11 to review.",
+  "summary": "Moving larkspur-security (111111111113) from Root / Security to Root / Core (organization o-larkspur0001 to o-fernhill0001): NO-GO. 3 blocking finding(s) and 12 to review.",
   "checks": [
     {
       "id": "scp",
@@ -334,6 +334,59 @@
               "kind": "org-trail",
               "side": "target",
               "reference": "arn:aws:cloudtrail:eu-west-1:222222222224:trail/fernhill-org-trail"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "control-tower",
+      "title": "Control Tower",
+      "status": "REVIEW",
+      "summary": "1 item(s) to settle with Control Tower, 2 informational.",
+      "findings": [
+        {
+          "status": "REVIEW",
+          "title": "Target OU Core is registered with Control Tower; the account has to be enrolled",
+          "detail": "Moving into a registered OU does not enroll the account by itself. The 1 preventive guardrail SCP(s) on the OU chain apply immediately because they are attached to the OUs, but the 1 detective control(s) do not report and the baseline is not deployed until the account is enrolled from Account Factory. Enrolment needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no conflicting Config recorder or delivery channel in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
+          "evidence": [
+            {
+              "kind": "landing-zone",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+            },
+            {
+              "kind": "registered-ou",
+              "side": "target",
+              "reference": "ou-fern-core",
+              "note": "OU Core registered: baseline 4.0, status SUCCEEDED, drift IN_SYNC"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "1 detective control(s) start applying at Core: AWS-GR_AUDIT_BUCKET_PUBLIC_READ_PROHIBITED",
+          "detail": "Detective controls are AWS Config rules that Control Tower deploys when the account is enrolled. Findings appear in the audit account's Security Hub and Config aggregator; nothing is blocked. They start reporting only once the account is enrolled.",
+          "evidence": [
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_AUDIT_BUCKET_PUBLIC_READ_PROHIBITED",
+              "note": "Detect whether public read access to Amazon S3 buckets created by AWS Control Tower is allowed\ndetective control on OU ou-fern-core; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "1 preventive control(s) start applying at Core: AWS-GR_AUDIT_BUCKET_POLICY_CHANGES_PROHIBITED",
+          "detail": "Preventive controls are the aws-guardrails-* SCPs attached to the OU chain; they apply as soon as the account is in the OU and the SCP check on this board evaluates them against the actions in use.",
+          "evidence": [
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_AUDIT_BUCKET_POLICY_CHANGES_PROHIBITED",
+              "note": "Disallow changes to bucket policy for Amazon S3 buckets created by AWS Control Tower\npreventive control on OU ou-fern-core; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
             }
           ]
         }
@@ -695,6 +748,7 @@
               "name": "aws-guardrails-ztmvqe",
               "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
               "aws_managed": false,
+              "control_tower_managed": true,
               "level": "OU Core (ou-fern-core)",
               "statements": [
                 {
@@ -870,6 +924,7 @@
           "name": "aws-guardrails-ztmvqe",
           "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
           "aws_managed": false,
+          "control_tower_managed": true,
           "level": "OU Core (ou-fern-core)",
           "statements": [
             {

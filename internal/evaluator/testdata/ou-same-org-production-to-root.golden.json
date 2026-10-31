@@ -227,6 +227,13 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "control-tower",
+            "title": "Control Tower",
+            "status": "GO",
+            "summary": "Neither organization has a Control Tower landing zone.",
+            "findings": []
           }
         ],
         "diff": [
@@ -1660,6 +1667,13 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "control-tower",
+            "title": "Control Tower",
+            "status": "GO",
+            "summary": "Neither organization has a Control Tower landing zone.",
+            "findings": []
           }
         ],
         "diff": [

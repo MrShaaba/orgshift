@@ -75,6 +75,19 @@
           "note": "OU Production: BACKUP Larkspur-Daily-Backups"
         }
       ]
+    },
+    {
+      "status": "INFO",
+      "title": "The new parent Business Units is registered with Control Tower; register the moved OU too",
+      "detail": "Registration is not inherited. Nested OUs under a registered parent inherit its controls through the SCPs, but Control Tower only governs the accounts in an OU once that OU is registered itself. The per-account findings below list what enrolment needs.",
+      "evidence": [
+        {
+          "kind": "registered-ou",
+          "side": "target",
+          "reference": "ou-fern-bu",
+          "note": "OU Business Units registered: baseline 4.0, status SUCCEEDED, drift IN_SYNC"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -85,7 +98,7 @@
       "verdict": "NO-GO",
       "blocking": 11,
       "review": 8,
-      "info": 8,
+      "info": 11,
       "blocking_titles": [
         "athena:StartQueryExecution becomes denied after the move",
         "ec2:CreateTransitGatewayVpcAttachment becomes denied after the move",
@@ -820,6 +833,77 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "control-tower",
+            "title": "Control Tower",
+            "status": "GO",
+            "summary": "0 item(s) to settle with Control Tower, 3 informational.",
+            "findings": [
+              {
+                "status": "INFO",
+                "title": "3 detective control(s) start applying at Production: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_SSH",
+                "detail": "Detective controls are AWS Config rules that Control Tower deploys when the account is enrolled. Findings appear in the audit account's Security Hub and Config aggregator; nothing is blocked. They start reporting only once the account is enrolled.",
+                "evidence": [
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_ENCRYPTED_VOLUMES",
+                    "note": "Detect whether encryption is enabled for Amazon EBS volumes attached to Amazon EC2 instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICTED_SSH",
+                    "note": "Detect whether unrestricted incoming SSH traffic is allowed\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RDS_STORAGE_ENCRYPTED",
+                    "note": "Detect whether storage encryption is enabled for Amazon RDS database instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "title": "3 preventive control(s) start applying at Production: AWS-GR_CLOUDTRAIL_ENABLED, AWS-GR_CONFIG_ENABLED, AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+                "detail": "Preventive controls are the aws-guardrails-* SCPs attached to the OU chain; they apply as soon as the account is in the OU and the SCP check on this board evaluates them against the actions in use.",
+                "evidence": [
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CLOUDTRAIL_ENABLED",
+                    "note": "Disallow changes to CloudTrail set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CONFIG_ENABLED",
+                    "note": "Disallow changes to AWS Config set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+                    "note": "Disallow creation of access keys for the root user\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "title": "Production is not a registered OU; the account stays outside Control Tower governance there",
+                "detail": "The landing zone of o-fernhill0001 governs only its registered OUs. No Control Tower controls apply to the account at Root / Business Units / Workloads / Production, and Account Factory cannot enroll it until that OU is registered.",
+                "evidence": [
+                  {
+                    "kind": "landing-zone",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+                    "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "diff": [
@@ -1335,6 +1419,7 @@
                     "name": "aws-guardrails-kjwqpf",
                     "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
                     "aws_managed": false,
+                    "control_tower_managed": true,
                     "level": "OU Business Units (ou-fern-bu)",
                     "statements": [
                       {
@@ -1701,6 +1786,7 @@
                 "name": "aws-guardrails-kjwqpf",
                 "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
                 "aws_managed": false,
+                "control_tower_managed": true,
                 "level": "OU Business Units (ou-fern-bu)",
                 "statements": [
                   {
@@ -2946,7 +3032,7 @@
       "verdict": "NO-GO",
       "blocking": 6,
       "review": 7,
-      "info": 8,
+      "info": 11,
       "blocking_titles": [
         "ec2:CreateVpc becomes denied after the move",
         "ec2:RunInstances becomes denied after the move",
@@ -3423,6 +3509,77 @@
                     "side": "target",
                     "reference": "fernhill-baseline",
                     "note": "admin 222222222221; targets OUs ou-fern-bu; regions eu-west-1"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "control-tower",
+            "title": "Control Tower",
+            "status": "GO",
+            "summary": "0 item(s) to settle with Control Tower, 3 informational.",
+            "findings": [
+              {
+                "status": "INFO",
+                "title": "3 detective control(s) start applying at Development: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_SSH",
+                "detail": "Detective controls are AWS Config rules that Control Tower deploys when the account is enrolled. Findings appear in the audit account's Security Hub and Config aggregator; nothing is blocked. They start reporting only once the account is enrolled.",
+                "evidence": [
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_ENCRYPTED_VOLUMES",
+                    "note": "Detect whether encryption is enabled for Amazon EBS volumes attached to Amazon EC2 instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICTED_SSH",
+                    "note": "Detect whether unrestricted incoming SSH traffic is allowed\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RDS_STORAGE_ENCRYPTED",
+                    "note": "Detect whether storage encryption is enabled for Amazon RDS database instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "title": "3 preventive control(s) start applying at Development: AWS-GR_CLOUDTRAIL_ENABLED, AWS-GR_CONFIG_ENABLED, AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+                "detail": "Preventive controls are the aws-guardrails-* SCPs attached to the OU chain; they apply as soon as the account is in the OU and the SCP check on this board evaluates them against the actions in use.",
+                "evidence": [
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CLOUDTRAIL_ENABLED",
+                    "note": "Disallow changes to CloudTrail set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CONFIG_ENABLED",
+                    "note": "Disallow changes to AWS Config set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+                    "note": "Disallow creation of access keys for the root user\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "title": "Development is not a registered OU; the account stays outside Control Tower governance there",
+                "detail": "The landing zone of o-fernhill0001 governs only its registered OUs. No Control Tower controls apply to the account at Root / Business Units / Workloads / Development, and Account Factory cannot enroll it until that OU is registered.",
+                "evidence": [
+                  {
+                    "kind": "landing-zone",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+                    "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
                   }
                 ]
               }
@@ -3978,6 +4135,7 @@
                     "name": "aws-guardrails-kjwqpf",
                     "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
                     "aws_managed": false,
+                    "control_tower_managed": true,
                     "level": "OU Business Units (ou-fern-bu)",
                     "statements": [
                       {
@@ -4344,6 +4502,7 @@
                 "name": "aws-guardrails-kjwqpf",
                 "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
                 "aws_managed": false,
+                "control_tower_managed": true,
                 "level": "OU Business Units (ou-fern-bu)",
                 "statements": [
                   {
@@ -5521,7 +5680,7 @@
       "verdict": "NO-GO",
       "blocking": 23,
       "review": 11,
-      "info": 10,
+      "info": 13,
       "blocking_titles": [
         "cloudwatch:PutMetricData becomes denied after the move",
         "dynamodb:* becomes denied after the move",
@@ -6923,6 +7082,77 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "control-tower",
+            "title": "Control Tower",
+            "status": "GO",
+            "summary": "0 item(s) to settle with Control Tower, 3 informational.",
+            "findings": [
+              {
+                "status": "INFO",
+                "title": "3 detective control(s) start applying at Production: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_SSH",
+                "detail": "Detective controls are AWS Config rules that Control Tower deploys when the account is enrolled. Findings appear in the audit account's Security Hub and Config aggregator; nothing is blocked. They start reporting only once the account is enrolled.",
+                "evidence": [
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_ENCRYPTED_VOLUMES",
+                    "note": "Detect whether encryption is enabled for Amazon EBS volumes attached to Amazon EC2 instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICTED_SSH",
+                    "note": "Detect whether unrestricted incoming SSH traffic is allowed\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RDS_STORAGE_ENCRYPTED",
+                    "note": "Detect whether storage encryption is enabled for Amazon RDS database instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "title": "3 preventive control(s) start applying at Production: AWS-GR_CLOUDTRAIL_ENABLED, AWS-GR_CONFIG_ENABLED, AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+                "detail": "Preventive controls are the aws-guardrails-* SCPs attached to the OU chain; they apply as soon as the account is in the OU and the SCP check on this board evaluates them against the actions in use.",
+                "evidence": [
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CLOUDTRAIL_ENABLED",
+                    "note": "Disallow changes to CloudTrail set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CONFIG_ENABLED",
+                    "note": "Disallow changes to AWS Config set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+                  },
+                  {
+                    "kind": "enabled-control",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+                    "note": "Disallow creation of access keys for the root user\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "title": "Production is not a registered OU; the account stays outside Control Tower governance there",
+                "detail": "The landing zone of o-fernhill0001 governs only its registered OUs. No Control Tower controls apply to the account at Root / Business Units / Workloads / Production, and Account Factory cannot enroll it until that OU is registered.",
+                "evidence": [
+                  {
+                    "kind": "landing-zone",
+                    "side": "target",
+                    "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+                    "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "diff": [
@@ -7438,6 +7668,7 @@
                     "name": "aws-guardrails-kjwqpf",
                     "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
                     "aws_managed": false,
+                    "control_tower_managed": true,
                     "level": "OU Business Units (ou-fern-bu)",
                     "statements": [
                       {
@@ -7804,6 +8035,7 @@
                 "name": "aws-guardrails-kjwqpf",
                 "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
                 "aws_managed": false,
+                "control_tower_managed": true,
                 "level": "OU Business Units (ou-fern-bu)",
                 "statements": [
                   {
@@ -9569,6 +9801,7 @@
               "name": "aws-guardrails-kjwqpf",
               "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
               "aws_managed": false,
+              "control_tower_managed": true,
               "level": "OU Business Units (ou-fern-bu)",
               "statements": [
                 {
@@ -9865,6 +10098,7 @@
           "name": "aws-guardrails-kjwqpf",
           "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
           "aws_managed": false,
+          "control_tower_managed": true,
           "level": "OU Business Units (ou-fern-bu)",
           "statements": [
             {

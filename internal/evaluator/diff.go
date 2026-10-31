@@ -9,7 +9,7 @@ import (
 )
 
 func (e *evaluation) policyRef(p *snapshot.Policy, level string) PolicyRef {
-	ref := PolicyRef{ID: p.ID, Name: p.Name, Description: p.Description, AWSManaged: p.AWSManaged, Level: level, Document: p.Document}
+	ref := PolicyRef{ID: p.ID, Name: p.Name, Description: p.Description, AWSManaged: p.AWSManaged, ControlTowerManaged: p.ControlTowerManaged(), Level: level, Document: p.Document}
 	if p.Type == snapshot.PolicyTypeSCP || p.Type == snapshot.PolicyTypeRCP {
 		if doc, err := e.parsed(p); err == nil {
 			for _, st := range doc.Statements {

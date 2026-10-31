@@ -1,0 +1,162 @@
+# Snapshot schema (version 1)
+
+A snapshot is a JSON file that describes one AWS organization well enough for
+orgshift to simulate moves offline. It is produced by `orgshift collect`
+(read-only API calls), by `orgshift fixtures` (fictional organizations) or by
+hand. Snapshots are plain data and contain no credentials.
+
+The loader rejects files with a `schema_version` newer than the build supports
+and files with unknown fields, so typos are caught early. Referential
+integrity is validated on load: every parent, policy target and usage key
+must exist.
+
+Go types live in `internal/snapshot/snapshot.go`; this document is the
+human-readable contract.
+
+## Top level
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `schema_version` | int | Always `1` for this version. Required. |
+| `generated_at` | string | RFC 3339 timestamp. Informational. |
+| `source` | string | `collector`, `fixture` or `manual`. |
+| `organization` | object | See [Organization](#organization). |
+| `root` | object | See [Root](#root). |
+| `organizational_units` | array | See [OU](#ou). |
+| `accounts` | array | See [Account](#account). |
+| `policies` | array | See [Policy](#policy). |
+| `resource_shares` | array | See [Resource share](#resource-share). |
+| `delegated_administrators` | array | `{account_id, service_principal, delegation_date}` |
+| `trusted_access_services` | array of string | Service principals with trusted access enabled, for example `cloudtrail.amazonaws.com`. |
+| `organization_trails` | array | `{name, arn, owner_account_id, home_region, s3_bucket_name}`; only trails with `IsOrganizationTrail=true`. |
+| `config_aggregators` | array | `{name, account_id, region, organization_source}` |
+| `stack_sets` | array | See [StackSet](#stackset). |
+| `usage` | object | Map of account ID to [Account usage](#account-usage). Optional. |
+
+## Organization
+
+| Field | Notes |
+| --- | --- |
+| `id` | `o-…` identifier. Required. Two snapshots with different IDs describe a cross-organization move. |
+| `arn` | Organization ARN. |
+| `management_account_id` | 12 digit account ID. |
+| `feature_set` | `ALL` or `CONSOLIDATED_BILLING`. |
+| `name` | Friendly label. AWS has no such attribute; the collector takes it from `--name`. |
+
+## Root
+
+| Field | Notes |
+| --- | --- |
+| `id` | `r-…` identifier. Required. |
+| `name` | Usually `Root`. |
+| `enabled_policy_types` | Subset of `SERVICE_CONTROL_POLICY`, `RESOURCE_CONTROL_POLICY`, `TAG_POLICY`, `BACKUP_POLICY`. A type that is not enabled is not evaluated. |
+
+## OU
+
+| Field | Notes |
+| --- | --- |
+| `id` | `ou-…` identifier. |
+| `name` | Display name. |
+| `parent_id` | Root or OU ID. Must exist. |
+
+## Account
+
+| Field | Notes |
+| --- | --- |
+| `id` | 12 digit account ID. Fixtures use `111111111111`-style IDs. |
+| `name`, `email`, `status`, `joined_method` | As returned by Organizations. Email is optional and may be redacted. |
+| `parent_id` | Root or OU the account sits in. |
+| `tags` | Account tags as a string map. |
+| `enabled_regions` | Regions that are enabled or opted in for the account. Used as the default region set when evaluating `aws:RequestedRegion`. |
+
+## Policy
+
+| Field | Notes |
+| --- | --- |
+| `id`, `arn`, `name`, `description` | As returned by Organizations. |
+| `type` | One of the four policy type names. |
+| `aws_managed` | `true` for `FullAWSAccess` and `RCPFullAWSAccess`. |
+| `document` | The policy document, verbatim. IAM JSON for SCP and RCP; the tag or backup policy syntax otherwise. |
+| `targets` | Root, OU and account IDs the policy is attached to. Each must exist. |
+
+## Resource share
+
+AWS RAM shares as seen from the owning organization.
+
+| Field | Notes |
+| --- | --- |
+| `arn`, `name`, `owner_account_id`, `status` | As returned by RAM. |
+| `allow_external_principals` | Whether the share can reach accounts outside the organization. |
+| `principals` | Account IDs, organization ARNs (`arn:aws:organizations::123456789012:organization/o-…`), OU ARNs (`arn:aws:organizations::123456789012:ou/o-…/ou-…`), IAM ARNs or service principals. The scope (organization, OU, account) is derived from the shape of each value. |
+| `resources` | Array of `{arn, type}` where `type` uses RAM notation: `ec2:TransitGateway`, `ec2:Subnet`, `route53resolver:ResolverRule`, `ec2:IpamPool`, `ec2:PrefixList`, and others. The evaluator treats the five listed types, plus a few more networking types, as networking dependencies. |
+
+## StackSet
+
+| Field | Notes |
+| --- | --- |
+| `name`, `administration_account_id`, `description` | As returned by CloudFormation. |
+| `permission_model` | `SERVICE_MANAGED` or `SELF_MANAGED`. Only service-managed StackSets follow OU membership. |
+| `auto_deployment`, `retain_stacks_on_account_removal` | Auto-deployment settings. |
+| `target_ous`, `target_accounts`, `regions` | Deployment targets. |
+
+## Account usage
+
+Per-account data about how the account is used. Only needed for the accounts
+you plan to move. Keyed by account ID under `usage`.
+
+### `actions`
+
+One entry per IAM action that principals in the account perform.
+
+| Field | Notes |
+| --- | --- |
+| `action` | `service:Action`. Wildcards are accepted, for example `dynamodb:*` for an import that only knows the service was used. |
+| `resource` | Optional ARN or ARN pattern. When empty the resource is unknown and statements that are scoped to specific resources produce a REVIEW instead of a verdict. |
+| `regions` | Optional. Defaults to the account's `enabled_regions`. Global services (IAM, STS, Organizations, Route 53, CloudFront, Support, and similar) are evaluated in `us-east-1`. |
+| `principal_arn`, `principal_tags` | Optional caller description. Needed for `aws:PrincipalArn` and `aws:PrincipalTag/*` conditions; without them those conditions produce a REVIEW. |
+| `source` | `manual` or `iam-last-accessed`. |
+| `last_used`, `note` | Free text. |
+
+Entries can be typed by hand or imported from an IAM last-accessed export
+(`aws iam get-service-last-accessed-details … > export.json`, then
+`orgshift simulate --last-accessed export.json`). Services with tracked
+actions become one entry per action; services without tracked actions become
+`service:*`.
+
+### `inbound_access`
+
+Principals outside the account that call into it. Resource control policies
+at the destination apply to these requests, so they are evaluated against
+RCPs rather than SCPs.
+
+| Field | Notes |
+| --- | --- |
+| `principal` | Account ID, IAM ARN or service principal. |
+| `principal_org_id` | Optional. When omitted the evaluator looks the account up in both snapshots; a principal in neither snapshot and without this field produces a REVIEW for any `aws:PrincipalOrgID` condition. |
+| `actions` | Actions performed. |
+| `resource` | Optional ARN or pattern. |
+| `regions` | Optional, defaults like `actions.regions`. |
+
+### `tagged_resources`
+
+A sample of the account's resources and their tags, as returned by the
+Resource Groups Tagging API. Used to check tag policy compliance.
+
+| Field | Notes |
+| --- | --- |
+| `arn` | Resource ARN. |
+| `type` | Tag policy resource type notation, for example `ec2:instance`, `rds:db`, `s3:bucket`. |
+| `region` | Optional. |
+| `tags` | String map. |
+
+## Which fields the collector fills
+
+`orgshift collect` fills the organization, root, OUs, accounts (including
+tags and enabled regions), policies with targets, resource shares, delegated
+administrators and trusted-access services. Organization trails, Config
+aggregators, StackSets and usage are left empty by the current collector and
+can be added by hand; see `ROADMAP.md`.
+
+## Example
+
+A complete, fictional example is produced by `orgshift fixtures --out ./fixtures`.

@@ -1,0 +1,21 @@
+# binaries and build output
+/orgshift
+/bin/
+/dist/
+*.test
+*.out
+
+# snapshots of real organizations never go into the repo
+snapshots/
+*.snapshot.json
+
+# local environment and credentials
+.env
+.env.*
+*.pem
+
+# editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp

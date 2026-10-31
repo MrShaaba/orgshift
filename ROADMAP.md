@@ -4,22 +4,18 @@ Items the first pass deliberately left out, as concrete pieces of work. None
 of them changes the ground rules: read-only, offline simulation, no real
 organization data in the repo.
 
-Done since the first pass: moving a whole OU at once (`simulate --ou`, the
-UI picker, per-account rollups, attachments carried or flagged for
-recreation, golden scenarios for Workloads into Fernhill Business Units and
-Production to the root).
+Done since the first pass:
 
-## Control Tower awareness
-
-- Snapshot fields for Control Tower: landing zone presence, enrolled
-  accounts, registered OUs, enabled controls per OU.
-- Treat preventive guardrails as SCPs (they already appear as
-  `aws-guardrails-*` policies) and label them as Control Tower managed in the
-  chain and diff views.
-- Flag moves out of a registered OU (the account becomes unenrolled) and
-  into one (enrolment and Account Factory provisioning run), including
-  detective controls that start reporting.
-- Note Account Factory impact when the source account was vended by it.
+- Moving a whole OU at once (`simulate --ou`, the UI picker, per-account
+  rollups, attachments carried or flagged for recreation, golden scenarios
+  for Workloads into Fernhill Business Units and Production to the root).
+- Control Tower awareness (`control_tower` snapshot block collected
+  read-only, guardrail SCPs labelled, the Control Tower check for
+  unenrolment, enrolment, registered-to-registered moves, shared accounts
+  and Account Factory provenance, controls that start or stop applying,
+  golden scenario for fernhill-retail-prod leaving its registered OU). Left
+  open: enrolled accounts cannot be collected with `List`/`Describe`/`Get`
+  calls, so they stay a hand-written list.
 
 ## Actions in use from CloudTrail and CloudTrail Lake (opt-in, cost warning)
 

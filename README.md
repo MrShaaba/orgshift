@@ -49,6 +49,15 @@ offline and reports:
   organizations the OU tree cannot move and is reported as something to
   recreate, with the accounts evaluated under recreated OUs that carry only
   the AWS managed defaults.
+- **Control Tower**: when a snapshot carries a landing zone, the verdict
+  board gets a Control Tower check. Leaving a registered OU (or the
+  organization) is flagged as unenrolling the account, with the guardrail
+  SCPs and detective controls that stop; entering a registered OU lists what
+  enrolment needs; moving between registered OUs has to go through Account
+  Factory; moving the audit or log archive account is a NO-GO. Accounts
+  vended by Account Factory get a note about their provisioned product, and
+  the `aws-guardrails-*` SCPs are labelled as Control Tower managed in the
+  chain, diff and tree views.
 
 ## Who it is for
 
@@ -81,6 +90,11 @@ go build -o orgshift ./cmd/orgshift
 # the same move inside one organization, as Markdown
 ./orgshift simulate --from fixtures/larkspur-holdings.json \
   --account 111111111117 --target-ou ou-lark-prod --format markdown
+
+# Fernhill runs Control Tower: take an enrolled account out of its
+# registered OU and see what unenrolling it means
+./orgshift simulate --from fixtures/fernhill-group.json \
+  --account 222222222225 --target-ou ou-fern-sand
 
 # move the whole Workloads OU (two nested OUs, three accounts) into
 # Fernhill's Business Units; --target-ou is the new parent
@@ -124,7 +138,9 @@ account.
    The minimal IAM policy and the list of operations are in
    [docs/permissions.md](docs/permissions.md). RAM only shows shares owned by
    the calling account, so pass `--ram-profiles network` for accounts that own
-   the shares you care about. Optional data sources that cost money
+   the shares you care about. If the organization runs Control Tower, set
+   `--region` to the landing zone's home region so the registered OUs and
+   enabled controls are collected (`--skip-control-tower` turns that off). Optional data sources that cost money
    (CloudTrail Lake, Config advanced queries) are behind opt-in flags that are
    off by default and refused until they are implemented.
 
@@ -157,6 +173,9 @@ does not end up in the repository.
   does when an account joins.
 - Only SCPs, RCPs and tag policies are evaluated. Backup policies are shown
   in the chain and the diff; comparing them is on the roadmap.
+- Without a `control_tower.enrolled_accounts` list, an account whose parent
+  OU is registered with Control Tower is assumed to be enrolled, and the
+  finding says so. The collector cannot fill that list read-only.
 
 ## Repository layout
 

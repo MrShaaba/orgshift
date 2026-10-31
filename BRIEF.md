@@ -9,7 +9,8 @@ Moving an AWS account, or a whole OU, from one OU to another changes which servi
 policies (SCPs), resource control policies (RCPs), tag policies and other organization policies
 apply to it. Moving it to a different organization changes even more: org-based RAM shares, org
 trails, delegated administrators and service-managed StackSets all stop applying. Today I work
-this out by hand. I want a tool that reads the source and destination setup and gives a
+this out by hand. This is my own tool, for planning moves in AWS organizations I run. I want a
+tool that reads the source and destination setup and gives a
 **GO / REVIEW / NO-GO** call, with every blocker explained and the networking dependencies
 called out.
 

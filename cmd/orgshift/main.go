@@ -39,6 +39,8 @@ func main() {
 		err = runSimulate(os.Args[2:])
 	case "serve":
 		err = runServe(os.Args[2:])
+	case "collect":
+		err = runCollect(os.Args[2:])
 	case "-h", "--help", "help":
 		printUsage()
 	default:

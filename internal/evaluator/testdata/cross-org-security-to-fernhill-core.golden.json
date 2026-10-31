@@ -65,7 +65,7 @@
       "id": "scp",
       "title": "Service control policies",
       "status": "REVIEW",
-      "summary": "",
+      "summary": "No actions in use to evaluate against the SCP chain.",
       "findings": [
         {
           "status": "REVIEW",
@@ -78,7 +78,7 @@
       "id": "rcp",
       "title": "Resource control policies",
       "status": "REVIEW",
-      "summary": "",
+      "summary": "No actions in use to evaluate against the RCP chain.",
       "findings": [
         {
           "status": "REVIEW",

@@ -3,13 +3,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
 
 var version = "dev"
 
-func usage() {
+func printUsage() {
 	fmt.Fprintf(os.Stderr, `orgshift %s - go/no-go simulator for moving AWS accounts and OUs
 
 Usage:
@@ -25,7 +26,7 @@ Run "orgshift <command> -h" for the flags of each command.
 
 func main() {
 	if len(os.Args) < 2 {
-		usage()
+		printUsage()
 		os.Exit(2)
 	}
 	var err error
@@ -34,13 +35,19 @@ func main() {
 		fmt.Println("orgshift", version)
 	case "fixtures":
 		err = runFixtures(os.Args[2:])
+	case "simulate":
+		err = runSimulate(os.Args[2:])
 	case "-h", "--help", "help":
-		usage()
+		printUsage()
 	default:
-		usage()
+		printUsage()
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
 	if err != nil {
+		var v errVerdict
+		if errors.As(err, &v) {
+			os.Exit(v.code)
+		}
 		fmt.Fprintln(os.Stderr, "orgshift:", err)
 		os.Exit(1)
 	}

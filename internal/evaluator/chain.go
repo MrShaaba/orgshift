@@ -226,6 +226,7 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 	if len(usage.Actions) == 0 {
 		c.add(Finding{Status: StatusReview, Title: "No actions in use were provided for this account",
 			Detail: "Add usage.actions to the source snapshot, pass --actions, or import an IAM last-accessed export. Without them nothing can be checked against the policies."})
+		c.Summary = "No actions in use to evaluate against the " + t.Short() + " chain."
 		return
 	}
 	total, flagged := 0, 0

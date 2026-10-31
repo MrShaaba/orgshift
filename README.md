@@ -41,6 +41,14 @@ offline and reports:
   share is lost; REVIEW for anything unevaluable or for tag non-compliance;
   GO otherwise. Every finding carries its evidence, and the result exports
   as JSON and Markdown.
+- **Whole-OU moves**: pick an OU instead of an account and every nested OU
+  and account is evaluated at its new position. The OU verdict is the worst
+  account verdict, with a per-account rollup table (blocking and review
+  counts, the blocking findings) and the full board for each account.
+  Inside one organization the OU's attachments travel with it; across
+  organizations the OU tree cannot move and is reported as something to
+  recreate, with the accounts evaluated under recreated OUs that carry only
+  the AWS managed defaults.
 
 ## Who it is for
 
@@ -73,6 +81,13 @@ go build -o orgshift ./cmd/orgshift
 # the same move inside one organization, as Markdown
 ./orgshift simulate --from fixtures/larkspur-holdings.json \
   --account 111111111117 --target-ou ou-lark-prod --format markdown
+
+# move the whole Workloads OU (two nested OUs, three accounts) into
+# Fernhill's Business Units; --target-ou is the new parent
+./orgshift simulate \
+  --from fixtures/larkspur-holdings.json \
+  --to fixtures/fernhill-group.json \
+  --ou ou-lark-work --target-ou ou-fern-bu
 ```
 
 `simulate` exits 0 for GO, 2 for REVIEW and 3 for NO-GO, so it can gate a
@@ -90,6 +105,12 @@ and the page shows the verdict board with expandable explanations, the two
 organization trees side by side with the policy chain highlighted and the
 account drawn at its future position, the "what changes" diff of effective
 policies, and export buttons.
+
+Switch "What moves" to "a whole OU" to move an OU instead: the result opens
+with the per-account rollup table, the OU's own findings (what travels with
+it, what has to be recreated), the subtree drawn at its new position and the
+inherited-policy diff at the OU, followed by a collapsible verdict board per
+account.
 
 ## Using it on a real organization
 

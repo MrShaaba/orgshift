@@ -4,18 +4,10 @@ Items the first pass deliberately left out, as concrete pieces of work. None
 of them changes the ground rules: read-only, offline simulation, no real
 organization data in the repo.
 
-## Moving a whole OU at once
-
-- Accept an OU as the subject (`--ou ou-…` and the UI picker) and evaluate
-  every account under it, recursively, against the target position.
-- Roll results up per account and for the OU as a whole: the OU verdict is
-  the worst account verdict, with a table of accounts and their blocking
-  findings.
-- Carry the OU's own policy attachments to the target when the move is
-  inside one organization; when it is a cross-organization move, note that
-  the OU and its attachments cannot move and must be recreated.
-- Golden-file scenario: move Larkspur `Workloads` into Fernhill `Business
-  Units`.
+Done since the first pass: moving a whole OU at once (`simulate --ou`, the
+UI picker, per-account rollups, attachments carried or flagged for
+recreation, golden scenarios for Workloads into Fernhill Business Units and
+Production to the root).
 
 ## Control Tower awareness
 

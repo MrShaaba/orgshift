@@ -32,3 +32,5 @@ jobs:
           ./orgshift fixtures --out /tmp/fx
           ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --to /tmp/fx/fernhill-group.json --account 111111111115 --target-ou ou-fern-pay1 --format json --out /tmp/result.json || test $? -eq 3
           test -s /tmp/result.json
+          ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --to /tmp/fx/fernhill-group.json --ou ou-lark-work --target-ou ou-fern-bu --format json --out /tmp/ou-result.json || test $? -eq 3
+          test -s /tmp/ou-result.json

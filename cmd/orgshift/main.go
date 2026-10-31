@@ -32,6 +32,8 @@ func main() {
 	switch os.Args[1] {
 	case "version":
 		fmt.Println("orgshift", version)
+	case "fixtures":
+		err = runFixtures(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:

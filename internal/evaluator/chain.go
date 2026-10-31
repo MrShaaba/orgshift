@@ -20,8 +20,8 @@ func (e *evaluation) chain(s *side, t snapshot.PolicyType) []link {
 	var out []link
 	for _, n := range s.path {
 		var pols []*snapshot.Policy
-		if n.Kind == snapshot.KindAccount && !s.direct {
-			// The account joins the organization fresh: it only carries the
+		if s.fresh[n.ID] {
+			// The node joins the organization fresh: it only carries the
 			// AWS managed defaults that Organizations attaches automatically.
 			for i := range s.snap.Policies {
 				p := &s.snap.Policies[i]

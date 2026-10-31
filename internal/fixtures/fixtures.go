@@ -25,10 +25,13 @@ const (
 	FernhillName = "Fernhill Group"
 )
 
-// Identifiers of the account most of the planted problems are about.
+// Identifiers of the account most of the planted problems are about, and of
+// the OUs used by the whole-OU move scenario.
 const (
-	LarkspurPaymentsProd = "111111111115"
-	FernhillPaymentsOU   = "ou-fern-pay1"
+	LarkspurPaymentsProd    = "111111111115"
+	FernhillPaymentsOU      = "ou-fern-pay1"
+	LarkspurWorkloadsOU     = "ou-lark-work"
+	FernhillBusinessUnitsOU = "ou-fern-bu"
 )
 
 type gen struct {
@@ -144,6 +147,11 @@ func Larkspur() *snapshot.Snapshot {
 					{"Sid":"NoLargeInstances","Effect":"Deny","Action":"ec2:RunInstances","Resource":"arn:aws:ec2:*:*:instance/*",
 					 "Condition":{"StringNotLike":{"ec2:InstanceType":["t3.*","t4g.*"]}}}
 				]}`), Targets: []string{"ou-lark-sand"}},
+			{ID: "p-lark0006", Name: "Larkspur-Dev-Guardrails", Type: snapshot.PolicyTypeSCP,
+				Description: "Development accounts cannot commit to reservations or savings plans",
+				Document: doc(`{"Version":"2012-10-17","Statement":[
+					{"Sid":"NoCommitments","Effect":"Deny","Action":["ec2:PurchaseReservedInstancesOffering","ec2:ModifyReservedInstances","savingsplans:CreateSavingsPlan","rds:PurchaseReservedDBInstancesOffering"],"Resource":"*"}
+				]}`), Targets: []string{"ou-lark-dev"}},
 			{ID: "p-RCPFullAWSAccess", Name: "RCPFullAWSAccess", Type: snapshot.PolicyTypeRCP, AWSManaged: true,
 				Description: "Allows access to every operation", Document: doc(rcpFullAccess), Targets: allSCPTargets},
 			{ID: "p-lark0004", Name: "Larkspur-Tagging-Standard", Type: snapshot.PolicyTypeTag,
@@ -219,6 +227,22 @@ func Larkspur() *snapshot.Snapshot {
 					{Action: "ec2:RunInstances", Source: "manual"},
 					{Action: "ec2:CreateVpc", Source: "manual", Note: "ephemeral test VPCs"},
 					{Action: "lambda:*", Source: "iam-last-accessed"},
+				},
+			},
+			"111111111118": {
+				Actions: []snapshot.ActionInUse{
+					{Action: "glue:StartJobRun", Source: "iam-last-accessed", LastUsed: "2025-12-31T23:30:00Z"},
+					{Action: "athena:StartQueryExecution", Source: "iam-last-accessed", LastUsed: "2025-12-31T23:35:00Z"},
+					{Action: "s3:GetObject", Resource: "arn:aws:s3:::larkspur-payments-settlement-files/*", Source: "manual", Note: "reads the ledger export from the payments account"},
+					{Action: "s3:PutObject", Resource: "arn:aws:s3:::larkspur-data-lake/*", Source: "iam-last-accessed", LastUsed: "2025-12-31T23:36:00Z"},
+					{Action: "kms:Decrypt", Source: "iam-last-accessed", LastUsed: "2025-12-31T23:36:00Z"},
+					{Action: "sts:AssumeRole", Source: "iam-last-accessed", LastUsed: "2025-12-31T23:36:00Z"},
+					{Action: "ec2:RunInstances", Regions: []string{"us-east-1"}, Source: "manual", Note: "spot fleet for nightly model training"},
+					{Action: "ec2:CreateTransitGatewayVpcAttachment", Source: "manual", Note: "data lake VPC hangs off the shared transit gateway"},
+				},
+				InboundAccess: []snapshot.InboundAccess{
+					{Principal: "arn:aws:iam::111111111115:role/SettlementExporter", Actions: []string{"s3:PutObject"},
+						Resource: "arn:aws:s3:::larkspur-data-lake/ledger/*", Note: "payments account pushes the nightly ledger export"},
 				},
 			},
 		},

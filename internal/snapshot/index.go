@@ -191,3 +191,33 @@ func AccountOrg(accountID string, snaps ...*Snapshot) (string, bool) {
 	}
 	return "", false
 }
+
+// Subtree returns every OU below (and including) the given OU in depth-first
+// order, followed by every account under any of them, sorted by name within
+// each parent. It returns nil, nil when the ID is not an OU.
+func (ix *Index) Subtree(ouID string) (ous []*OU, accounts []*Account) {
+	root, ok := ix.OUByID[ouID]
+	if !ok {
+		return nil, nil
+	}
+	var walk func(ou *OU)
+	walk = func(ou *OU) {
+		ous = append(ous, ou)
+		accounts = append(accounts, ix.accountsIn[ou.ID]...)
+		for _, child := range ix.childOUs[ou.ID] {
+			walk(child)
+		}
+	}
+	walk(root)
+	return ous, accounts
+}
+
+// IsUnder reports whether id is ancestorID itself or sits anywhere below it.
+func (ix *Index) IsUnder(id, ancestorID string) bool {
+	for _, n := range ix.PathTo(id) {
+		if n.ID == ancestorID {
+			return true
+		}
+	}
+	return false
+}

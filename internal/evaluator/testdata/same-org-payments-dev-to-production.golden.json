@@ -369,6 +369,42 @@
                   }
                 ]
               }
+            },
+            {
+              "id": "p-lark0006",
+              "name": "Larkspur-Dev-Guardrails",
+              "description": "Development accounts cannot commit to reservations or savings plans",
+              "aws_managed": false,
+              "level": "OU Development (ou-lark-dev)",
+              "statements": [
+                {
+                  "sid": "NoCommitments",
+                  "effect": "Deny",
+                  "actions": [
+                    "ec2:PurchaseReservedInstancesOffering",
+                    "ec2:ModifyReservedInstances",
+                    "savingsplans:CreateSavingsPlan",
+                    "rds:PurchaseReservedDBInstancesOffering"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "NoCommitments",
+                    "Effect": "Deny",
+                    "Action": [
+                      "ec2:PurchaseReservedInstancesOffering",
+                      "ec2:ModifyReservedInstances",
+                      "savingsplans:CreateSavingsPlan",
+                      "rds:PurchaseReservedDBInstancesOffering"
+                    ],
+                    "Resource": "*"
+                  }
+                ]
+              }
             }
           ]
         },
@@ -683,7 +719,44 @@
         }
       ],
       "added": null,
-      "removed": null,
+      "removed": [
+        {
+          "id": "p-lark0006",
+          "name": "Larkspur-Dev-Guardrails",
+          "description": "Development accounts cannot commit to reservations or savings plans",
+          "aws_managed": false,
+          "level": "OU Development (ou-lark-dev)",
+          "statements": [
+            {
+              "sid": "NoCommitments",
+              "effect": "Deny",
+              "actions": [
+                "ec2:PurchaseReservedInstancesOffering",
+                "ec2:ModifyReservedInstances",
+                "savingsplans:CreateSavingsPlan",
+                "rds:PurchaseReservedDBInstancesOffering"
+              ],
+              "has_condition": false
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "NoCommitments",
+                "Effect": "Deny",
+                "Action": [
+                  "ec2:PurchaseReservedInstancesOffering",
+                  "ec2:ModifyReservedInstances",
+                  "savingsplans:CreateSavingsPlan",
+                  "rds:PurchaseReservedDBInstancesOffering"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ],
       "changed": null,
       "unchanged": [
         {

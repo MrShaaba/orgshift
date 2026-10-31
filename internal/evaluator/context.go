@@ -58,9 +58,10 @@ type side struct {
 	ix    *snapshot.Index
 	orgID string
 	path  []snapshot.Node
-	// direct reports whether policies attached directly to the account
-	// still apply on this side (true unless the account changes organization).
-	direct bool
+	// fresh lists the node IDs on the path that join this organization new
+	// (an account changing organization, or an OU that has to be recreated).
+	// They carry only the AWS managed defaults instead of their attachments.
+	fresh map[string]bool
 }
 
 // orgOfAccount finds the organization an account belongs to on either side.

@@ -689,6 +689,46 @@
                   }
                 ]
               }
+            },
+            {
+              "id": "p-fern0011",
+              "name": "aws-guardrails-ztmvqe",
+              "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+              "aws_managed": false,
+              "level": "OU Core (ou-fern-core)",
+              "statements": [
+                {
+                  "sid": "GRAUDITBUCKETPOLICYCHANGESPROHIBITED",
+                  "effect": "Deny",
+                  "actions": [
+                    "s3:DeleteBucketPolicy",
+                    "s3:PutBucketPolicy"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "GRAUDITBUCKETPOLICYCHANGESPROHIBITED",
+                    "Effect": "Deny",
+                    "Action": [
+                      "s3:DeleteBucketPolicy",
+                      "s3:PutBucketPolicy"
+                    ],
+                    "Resource": "arn:aws:s3:::aws-controltower-*",
+                    "Condition": {
+                      "ArnNotLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                      }
+                    }
+                  }
+                ]
+              }
             }
           ]
         },
@@ -819,6 +859,46 @@
                 "Condition": {
                   "StringLike": {
                     "aws:PrincipalArn": "arn:aws:iam::*:root"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "p-fern0011",
+          "name": "aws-guardrails-ztmvqe",
+          "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+          "aws_managed": false,
+          "level": "OU Core (ou-fern-core)",
+          "statements": [
+            {
+              "sid": "GRAUDITBUCKETPOLICYCHANGESPROHIBITED",
+              "effect": "Deny",
+              "actions": [
+                "s3:DeleteBucketPolicy",
+                "s3:PutBucketPolicy"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "GRAUDITBUCKETPOLICYCHANGESPROHIBITED",
+                "Effect": "Deny",
+                "Action": [
+                  "s3:DeleteBucketPolicy",
+                  "s3:PutBucketPolicy"
+                ],
+                "Resource": "arn:aws:s3:::aws-controltower-*",
+                "Condition": {
+                  "ArnNotLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
                   }
                 }
               }

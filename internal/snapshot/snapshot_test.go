@@ -93,3 +93,61 @@ func TestParseRejectsNewerSchemaAndUnknownFields(t *testing.T) {
 		t.Fatal("expected missing schema version error")
 	}
 }
+
+func TestControlTowerValidationAndLookups(t *testing.T) {
+	s := minimal()
+	s.Policies = append(s.Policies, Policy{ID: "p-gr", Name: GuardrailPolicyPrefix + "abcdef", Type: PolicyTypeSCP,
+		Document: json.RawMessage(`{"Version":"2012-10-17","Statement":[]}`), Targets: []string{"ou-test-aaaa"}})
+	s.ControlTower = &ControlTower{
+		LandingZoneARN: "arn:aws:controltower:us-east-1:111111111111:landingzone/TEST", AuditAccountID: "111111111112",
+		RegisteredOUs:    []RegisteredOU{{OUID: "ou-test-aaaa", Status: "SUCCEEDED"}},
+		EnrolledAccounts: []EnrolledAccount{{AccountID: "111111111112", VendedByAccountFactory: true}},
+		EnabledControls: []EnabledControl{
+			{ControlIdentifier: "arn:aws:controltower:us-east-1::control/AWS-GR_ENCRYPTED_VOLUMES", Behavior: ControlDetective, TargetOUID: "ou-test-aaaa"},
+			{ControlIdentifier: "arn:aws:controltower:us-east-1::control/AWS-GR_CONFIG_ENABLED", Behavior: ControlPreventive, TargetOUID: "ou-test-bbbb"},
+		},
+	}
+	if err := s.Validate(); err != nil {
+		t.Fatalf("valid Control Tower block rejected: %v", err)
+	}
+	data, _ := Marshal(s)
+	back, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct := back.ControlTower
+	if ct == nil || ct.RegisteredOU("ou-test-aaaa") == nil || ct.RegisteredOU("ou-test-bbbb") != nil {
+		t.Fatalf("registered OU lookup wrong: %+v", ct)
+	}
+	if e := ct.Enrolled("111111111112"); e == nil || !e.VendedByAccountFactory || ct.Enrolled("111111111111") != nil {
+		t.Fatalf("enrolment lookup wrong: %+v", ct.EnrolledAccounts)
+	}
+	along := ct.ControlsAlong(back.Index().PathTo("111111111112"))
+	if len(along) != 2 || ControlShortID(along[0].ControlIdentifier) != "AWS-GR_ENCRYPTED_VOLUMES" || along[1].TargetOUID != "ou-test-bbbb" {
+		t.Fatalf("controls along the path wrong: %+v", along)
+	}
+	if !back.Policies[1].ControlTowerManaged() || back.Policies[0].ControlTowerManaged() {
+		t.Fatal("guardrail detection by name prefix is wrong")
+	}
+	var nilCT *ControlTower
+	if nilCT.RegisteredOU("x") != nil || nilCT.Enrolled("x") != nil || nilCT.ControlsAlong(nil) != nil {
+		t.Fatal("nil Control Tower must behave as absent")
+	}
+
+	bad := minimal()
+	bad.ControlTower = &ControlTower{
+		AuditAccountID:   "ou-test-aaaa",
+		RegisteredOUs:    []RegisteredOU{{OUID: "111111111112"}, {OUID: "ou-test-aaaa"}, {OUID: "ou-test-aaaa"}},
+		EnrolledAccounts: []EnrolledAccount{{AccountID: "ou-test-aaaa"}},
+		EnabledControls:  []EnabledControl{{TargetOUID: "r-test", Behavior: "SOMETIMES"}},
+	}
+	err = bad.Validate()
+	if err == nil {
+		t.Fatal("expected validation errors")
+	}
+	for _, want := range []string{"shared account", "is not an ou", "listed twice", "is not an account", "no control_identifier", "is not an ou", "unknown behavior"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("validation error should mention %q, got:\n%v", want, err)
+		}
+	}
+}

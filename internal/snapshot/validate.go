@@ -84,6 +84,7 @@ func (s *Snapshot) Validate() error {
 			fail("usage: %q is not an account in this snapshot", id)
 		}
 	}
+	s.validateControlTower(seen, fail)
 	// Cycles: every OU must reach the root.
 	ix := s.Index()
 	for _, ou := range s.OUs {
@@ -92,4 +93,46 @@ func (s *Snapshot) Validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validateControlTower checks that every Control Tower reference points at a
+// node of the right kind.
+func (s *Snapshot) validateControlTower(seen map[string]string, fail func(string, ...any)) {
+	ct := s.ControlTower
+	if ct == nil {
+		return
+	}
+	for _, id := range []string{ct.AuditAccountID, ct.LogArchiveAccountID} {
+		if id != "" && seen[id] != "account" {
+			fail("control_tower: shared account %q is not an account in this snapshot", id)
+		}
+	}
+	registered := map[string]bool{}
+	for _, ou := range ct.RegisteredOUs {
+		if seen[ou.OUID] != "ou" {
+			fail("control_tower.registered_ous: %q is not an ou", ou.OUID)
+		}
+		if registered[ou.OUID] {
+			fail("control_tower.registered_ous: %s is listed twice", ou.OUID)
+		}
+		registered[ou.OUID] = true
+	}
+	for _, a := range ct.EnrolledAccounts {
+		if seen[a.AccountID] != "account" {
+			fail("control_tower.enrolled_accounts: %q is not an account", a.AccountID)
+		}
+	}
+	for _, c := range ct.EnabledControls {
+		if c.ControlIdentifier == "" {
+			fail("control_tower.enabled_controls: a control on %q has no control_identifier", c.TargetOUID)
+		}
+		if seen[c.TargetOUID] != "ou" {
+			fail("control_tower.enabled_controls: target %q of %s is not an ou", c.TargetOUID, c.ControlIdentifier)
+		}
+		switch c.Behavior {
+		case "", ControlPreventive, ControlDetective, ControlProactive:
+		default:
+			fail("control_tower.enabled_controls: %s has unknown behavior %q", c.ControlIdentifier, c.Behavior)
+		}
+	}
 }

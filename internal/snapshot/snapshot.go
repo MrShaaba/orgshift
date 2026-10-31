@@ -61,6 +61,9 @@ type Snapshot struct {
 	ConfigAggregators       []ConfigAggregator       `json:"config_aggregators"`
 	StackSets               []StackSet               `json:"stack_sets"`
 
+	// ControlTower describes the Control Tower landing zone, when there is one.
+	ControlTower *ControlTower `json:"control_tower,omitempty"`
+
 	// Usage holds per-account information that the evaluator needs about the
 	// account being moved: actions in use, inbound access from other
 	// principals and a sample of tagged resources. Keyed by account ID.

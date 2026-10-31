@@ -25,13 +25,19 @@ const (
 	FernhillName = "Fernhill Group"
 )
 
-// Identifiers of the account most of the planted problems are about, and of
-// the OUs used by the whole-OU move scenario.
+// Identifiers of the account most of the planted problems are about, of the
+// OUs used by the whole-OU move scenario, and of the Control Tower scenario
+// inside Fernhill (an enrolled, Account Factory vended account leaving its
+// registered OU for an unregistered one).
 const (
 	LarkspurPaymentsProd    = "111111111115"
 	FernhillPaymentsOU      = "ou-fern-pay1"
 	LarkspurWorkloadsOU     = "ou-lark-work"
 	FernhillBusinessUnitsOU = "ou-fern-bu"
+	FernhillRetailProd      = "222222222225"
+	FernhillRetailOU        = "ou-fern-ret"
+	FernhillSandboxOU       = "ou-fern-sand"
+	FernhillAuditAccount    = "222222222223"
 )
 
 type gen struct {
@@ -392,6 +398,25 @@ func Fernhill() *snapshot.Snapshot {
 			{ID: "p-fern0005", Name: "Fernhill-Suspended", Type: snapshot.PolicyTypeSCP,
 				Document: doc(`{"Version":"2012-10-17","Statement":[{"Sid":"DenyAll","Effect":"Deny","Action":"*","Resource":"*"}]}`),
 				Targets:  []string{"ou-fern-susp"}},
+			// Control Tower attaches one guardrail SCP per registered OU. The
+			// statements are the mandatory preventive controls; the names follow
+			// the aws-guardrails-<random> convention Control Tower uses.
+			{ID: "p-fern0010", Name: "aws-guardrails-kjwqpf", Type: snapshot.PolicyTypeSCP,
+				Description: "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+				Document: doc(`{"Version":"2012-10-17","Statement":[
+					{"Sid":"GRCLOUDTRAILENABLED","Effect":"Deny","Action":["cloudtrail:DeleteTrail","cloudtrail:PutEventSelectors","cloudtrail:StopLogging","cloudtrail:UpdateTrail"],"Resource":"arn:aws:cloudtrail:*:*:trail/aws-controltower-*",
+					 "Condition":{"ArnNotLike":{"aws:PrincipalArn":"arn:aws:iam::*:role/AWSControlTowerExecution"}}},
+					{"Sid":"GRCONFIGENABLED","Effect":"Deny","Action":["config:DeleteConfigurationRecorder","config:DeleteDeliveryChannel","config:PutConfigurationRecorder","config:PutDeliveryChannel","config:StopConfigurationRecorder"],"Resource":"*",
+					 "Condition":{"ArnNotLike":{"aws:PrincipalArn":"arn:aws:iam::*:role/AWSControlTowerExecution"}}},
+					{"Sid":"GRRESTRICTROOTUSERACCESSKEYS","Effect":"Deny","Action":"iam:CreateAccessKey","Resource":"*",
+					 "Condition":{"StringLike":{"aws:PrincipalArn":"arn:aws:iam::*:root"}}}
+				]}`), Targets: []string{"ou-fern-bu"}},
+			{ID: "p-fern0011", Name: "aws-guardrails-ztmvqe", Type: snapshot.PolicyTypeSCP,
+				Description: "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+				Document: doc(`{"Version":"2012-10-17","Statement":[
+					{"Sid":"GRAUDITBUCKETPOLICYCHANGESPROHIBITED","Effect":"Deny","Action":["s3:DeleteBucketPolicy","s3:PutBucketPolicy"],"Resource":"arn:aws:s3:::aws-controltower-*",
+					 "Condition":{"ArnNotLike":{"aws:PrincipalArn":"arn:aws:iam::*:role/AWSControlTowerExecution"}}}
+				]}`), Targets: []string{"ou-fern-core"}},
 			{ID: "p-RCPFullAWSAccess", Name: "RCPFullAWSAccess", Type: snapshot.PolicyTypeRCP, AWSManaged: true,
 				Description: "Allows access to every operation", Document: doc(rcpFullAccess), Targets: allTargets},
 			{ID: "p-fern0006", Name: "Fernhill-Block-External-Principals", Type: snapshot.PolicyTypeRCP,
@@ -444,8 +469,71 @@ func Fernhill() *snapshot.Snapshot {
 				AutoDeployment: true, RetainStacksOnAccountRemoval: false, TargetOUs: []string{"ou-fern-bu"},
 				Regions: []string{"eu-west-1"}, Description: "Baseline IAM roles and GuardDuty membership"},
 		},
+		ControlTower: fernhillControlTower(),
+		Usage: map[string]*snapshot.AccountUsage{
+			FernhillRetailProd: {
+				Actions: []snapshot.ActionInUse{
+					{Action: "ec2:RunInstances", Source: "iam-last-accessed", LastUsed: "2025-12-31T20:00:00Z"},
+					{Action: "ec2:CreateVolume", Source: "iam-last-accessed", LastUsed: "2025-12-31T20:00:00Z"},
+					{Action: "s3:GetObject", Resource: "arn:aws:s3:::fernhill-retail-assets/*", Source: "iam-last-accessed", LastUsed: "2025-12-31T23:59:00Z"},
+					{Action: "s3:PutObject", Resource: "arn:aws:s3:::fernhill-retail-assets/*", Source: "iam-last-accessed", LastUsed: "2025-12-31T23:59:00Z"},
+					{Action: "rds:CreateDBInstance", Regions: []string{"eu-west-1"}, Source: "manual", Note: "catalogue database"},
+					{Action: "lambda:InvokeFunction", Source: "iam-last-accessed", LastUsed: "2025-12-31T23:59:00Z"},
+					{Action: "cloudwatch:PutMetricData", Source: "iam-last-accessed", LastUsed: "2025-12-31T23:59:00Z"},
+				},
+			},
+		},
 	}
 	return s
+}
+
+// fernhillControlTower is the landing zone that governs Fernhill: the Core
+// and Business Units trees are registered, the Sandbox and Suspended OUs are
+// not, and two accounts were vended by Account Factory.
+func fernhillControlTower() *snapshot.ControlTower {
+	control := func(id, name, behavior, ou, impl string) snapshot.EnabledControl {
+		identifier := "arn:aws:controltower:eu-west-1::control/" + id
+		if behavior == snapshot.ControlProactive {
+			identifier = "arn:aws:controlcatalog:::control/" + id
+		}
+		return snapshot.EnabledControl{ControlIdentifier: identifier, Name: name, Behavior: behavior, TargetOUID: ou,
+			Status: "SUCCEEDED", DriftStatus: "IN_SYNC", Implementation: impl}
+	}
+	const (
+		scp  = "AWS::Organizations::Policy"
+		rule = "AWS::Config::ConfigRule"
+		hook = "AWS::CloudFormation::Hook"
+	)
+	registered := func(ou string) snapshot.RegisteredOU {
+		return snapshot.RegisteredOU{OUID: ou, BaselineVersion: "4.0", Status: "SUCCEEDED", DriftStatus: "IN_SYNC"}
+	}
+	return &snapshot.ControlTower{
+		LandingZoneARN: "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+		Version:        "3.3", Status: "ACTIVE", DriftStatus: "IN_SYNC",
+		HomeRegion: "eu-west-1", GovernedRegions: []string{"eu-west-1", "eu-central-1"},
+		AuditAccountID: FernhillAuditAccount, LogArchiveAccountID: "222222222224",
+		RegisteredOUs: []snapshot.RegisteredOU{registered("ou-fern-core"), registered("ou-fern-bu"), registered(FernhillPaymentsOU), registered(FernhillRetailOU)},
+		EnrolledAccounts: []snapshot.EnrolledAccount{
+			{AccountID: "222222222222", Status: "ENROLLED"},
+			{AccountID: FernhillAuditAccount, Status: "ENROLLED"},
+			{AccountID: "222222222224", Status: "ENROLLED"},
+			{AccountID: FernhillRetailProd, VendedByAccountFactory: true, ProvisionedProduct: "fernhill-retail-prod", Status: "ENROLLED"},
+			{AccountID: "222222222226", VendedByAccountFactory: true, ProvisionedProduct: "fernhill-payments-core", Status: "ENROLLED"},
+		},
+		EnabledControls: []snapshot.EnabledControl{
+			control("AWS-GR_AUDIT_BUCKET_POLICY_CHANGES_PROHIBITED", "Disallow changes to bucket policy for Amazon S3 buckets created by AWS Control Tower", snapshot.ControlPreventive, "ou-fern-core", scp),
+			control("AWS-GR_AUDIT_BUCKET_PUBLIC_READ_PROHIBITED", "Detect whether public read access to Amazon S3 buckets created by AWS Control Tower is allowed", snapshot.ControlDetective, "ou-fern-core", rule),
+			control("AWS-GR_CLOUDTRAIL_ENABLED", "Disallow changes to CloudTrail set up by AWS Control Tower", snapshot.ControlPreventive, "ou-fern-bu", scp),
+			control("AWS-GR_CONFIG_ENABLED", "Disallow changes to AWS Config set up by AWS Control Tower", snapshot.ControlPreventive, "ou-fern-bu", scp),
+			control("AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS", "Disallow creation of access keys for the root user", snapshot.ControlPreventive, "ou-fern-bu", scp),
+			control("AWS-GR_ENCRYPTED_VOLUMES", "Detect whether encryption is enabled for Amazon EBS volumes attached to Amazon EC2 instances", snapshot.ControlDetective, "ou-fern-bu", rule),
+			control("AWS-GR_RESTRICTED_SSH", "Detect whether unrestricted incoming SSH traffic is allowed", snapshot.ControlDetective, "ou-fern-bu", rule),
+			control("AWS-GR_RDS_STORAGE_ENCRYPTED", "Detect whether storage encryption is enabled for Amazon RDS database instances", snapshot.ControlDetective, "ou-fern-bu", rule),
+			control("AWS-GR_S3_BUCKET_PUBLIC_READ_PROHIBITED", "Detect whether public read access to Amazon S3 buckets is allowed", snapshot.ControlDetective, FernhillPaymentsOU, rule),
+			control("7f3kq9x2m1pz8r4v6t0nb5cy", "CT.S3.PR.1: Require that an Amazon S3 bucket has block public access settings configured", snapshot.ControlProactive, FernhillPaymentsOU, hook),
+			control("AWS-GR_RESTRICTED_COMMON_PORTS", "Detect whether unrestricted incoming TCP traffic is allowed on common ports", snapshot.ControlDetective, FernhillRetailOU, rule),
+		},
+	}
 }
 
 func acct(id, name, parent, team string, regions []string) snapshot.Account {

@@ -1969,6 +1969,104 @@
                   }
                 ]
               }
+            },
+            {
+              "id": "p-fern0010",
+              "name": "aws-guardrails-kjwqpf",
+              "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+              "aws_managed": false,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "sid": "GRCLOUDTRAILENABLED",
+                  "effect": "Deny",
+                  "actions": [
+                    "cloudtrail:DeleteTrail",
+                    "cloudtrail:PutEventSelectors",
+                    "cloudtrail:StopLogging",
+                    "cloudtrail:UpdateTrail"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+                  ]
+                },
+                {
+                  "sid": "GRCONFIGENABLED",
+                  "effect": "Deny",
+                  "actions": [
+                    "config:DeleteConfigurationRecorder",
+                    "config:DeleteDeliveryChannel",
+                    "config:PutConfigurationRecorder",
+                    "config:PutDeliveryChannel",
+                    "config:StopConfigurationRecorder"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+                  ]
+                },
+                {
+                  "sid": "GRRESTRICTROOTUSERACCESSKEYS",
+                  "effect": "Deny",
+                  "actions": [
+                    "iam:CreateAccessKey"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "GRCLOUDTRAILENABLED",
+                    "Effect": "Deny",
+                    "Action": [
+                      "cloudtrail:DeleteTrail",
+                      "cloudtrail:PutEventSelectors",
+                      "cloudtrail:StopLogging",
+                      "cloudtrail:UpdateTrail"
+                    ],
+                    "Resource": "arn:aws:cloudtrail:*:*:trail/aws-controltower-*",
+                    "Condition": {
+                      "ArnNotLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                      }
+                    }
+                  },
+                  {
+                    "Sid": "GRCONFIGENABLED",
+                    "Effect": "Deny",
+                    "Action": [
+                      "config:DeleteConfigurationRecorder",
+                      "config:DeleteDeliveryChannel",
+                      "config:PutConfigurationRecorder",
+                      "config:PutDeliveryChannel",
+                      "config:StopConfigurationRecorder"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "ArnNotLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                      }
+                    }
+                  },
+                  {
+                    "Sid": "GRRESTRICTROOTUSERACCESSKEYS",
+                    "Effect": "Deny",
+                    "Action": "iam:CreateAccessKey",
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:root"
+                      }
+                    }
+                  }
+                ]
+              }
             }
           ]
         },
@@ -2281,6 +2379,104 @@
                       "eu-west-1",
                       "eu-central-1"
                     ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "p-fern0010",
+          "name": "aws-guardrails-kjwqpf",
+          "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+          "aws_managed": false,
+          "level": "OU Business Units (ou-fern-bu)",
+          "statements": [
+            {
+              "sid": "GRCLOUDTRAILENABLED",
+              "effect": "Deny",
+              "actions": [
+                "cloudtrail:DeleteTrail",
+                "cloudtrail:PutEventSelectors",
+                "cloudtrail:StopLogging",
+                "cloudtrail:UpdateTrail"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+              ]
+            },
+            {
+              "sid": "GRCONFIGENABLED",
+              "effect": "Deny",
+              "actions": [
+                "config:DeleteConfigurationRecorder",
+                "config:DeleteDeliveryChannel",
+                "config:PutConfigurationRecorder",
+                "config:PutDeliveryChannel",
+                "config:StopConfigurationRecorder"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+              ]
+            },
+            {
+              "sid": "GRRESTRICTROOTUSERACCESSKEYS",
+              "effect": "Deny",
+              "actions": [
+                "iam:CreateAccessKey"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "GRCLOUDTRAILENABLED",
+                "Effect": "Deny",
+                "Action": [
+                  "cloudtrail:DeleteTrail",
+                  "cloudtrail:PutEventSelectors",
+                  "cloudtrail:StopLogging",
+                  "cloudtrail:UpdateTrail"
+                ],
+                "Resource": "arn:aws:cloudtrail:*:*:trail/aws-controltower-*",
+                "Condition": {
+                  "ArnNotLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                  }
+                }
+              },
+              {
+                "Sid": "GRCONFIGENABLED",
+                "Effect": "Deny",
+                "Action": [
+                  "config:DeleteConfigurationRecorder",
+                  "config:DeleteDeliveryChannel",
+                  "config:PutConfigurationRecorder",
+                  "config:PutDeliveryChannel",
+                  "config:StopConfigurationRecorder"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "ArnNotLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                  }
+                }
+              },
+              {
+                "Sid": "GRRESTRICTROOTUSERACCESSKEYS",
+                "Effect": "Deny",
+                "Action": "iam:CreateAccessKey",
+                "Resource": "*",
+                "Condition": {
+                  "StringLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:root"
                   }
                 }
               }

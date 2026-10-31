@@ -31,6 +31,7 @@ human-readable contract.
 | `organization_trails` | array | `{name, arn, owner_account_id, home_region, s3_bucket_name}`; only trails with `IsOrganizationTrail=true`. |
 | `config_aggregators` | array | `{name, account_id, region, organization_source}` |
 | `stack_sets` | array | See [StackSet](#stackset). |
+| `control_tower` | object | See [Control Tower](#control-tower). Optional; absent when there is no landing zone. |
 | `usage` | object | Map of account ID to [Account usage](#account-usage). Optional. |
 
 ## Organization
@@ -99,6 +100,27 @@ AWS RAM shares as seen from the owning organization.
 | `auto_deployment`, `retain_stacks_on_account_removal` | Auto-deployment settings. |
 | `target_ous`, `target_accounts`, `regions` | Deployment targets. |
 
+## Control Tower
+
+Present when AWS Control Tower governs the organization. The collector fills
+it from the Control Tower and Control Catalog APIs in the landing zone's home
+region; it can also be written by hand.
+
+| Field | Notes |
+| --- | --- |
+| `landing_zone_arn`, `version`, `status`, `drift_status` | As returned by `GetLandingZone`. |
+| `home_region`, `governed_regions` | Where the landing zone lives and which regions its controls are deployed to. |
+| `audit_account_id`, `log_archive_account_id` | The shared accounts the landing zone created. Moving either is a NO-GO. |
+| `registered_ous` | Array of `{ou_id, baseline_version, status, drift_status}`: the OUs with the Control Tower baseline enabled. Accounts are governed by living in one of them. |
+| `enrolled_accounts` | Optional array of `{account_id, vended_by_account_factory, provisioned_product, status}`. When the array is empty or missing, every account whose parent OU is registered is assumed to be enrolled; list the accounts explicitly to be exact and to record which ones Account Factory created. The collector cannot fill this list with read-only `List`/`Describe`/`Get` calls, so it is left for you. |
+| `enabled_controls` | Array of `{control_identifier, name, behavior, target_ou_id, status, drift_status, implementation}`. `behavior` is `PREVENTIVE`, `DETECTIVE` or `PROACTIVE` (or empty when unknown). Controls enabled on an OU also apply to the OUs nested under it. |
+
+Preventive controls are enforced by service control policies that Control
+Tower attaches to each registered OU, named `aws-guardrails-<random>`. They
+are ordinary entries in `policies` and are evaluated like any other SCP; the
+name prefix is what marks them as Control Tower managed in the chain and diff
+views.
+
 ## Account usage
 
 Per-account data about how the account is used. Only needed for the accounts
@@ -153,9 +175,10 @@ Resource Groups Tagging API. Used to check tag policy compliance.
 
 `orgshift collect` fills the organization, root, OUs, accounts (including
 tags and enabled regions), policies with targets, resource shares, delegated
-administrators and trusted-access services. Organization trails, Config
-aggregators, StackSets and usage are left empty by the current collector and
-can be added by hand; see `ROADMAP.md`.
+administrators, trusted-access services and the Control Tower block (landing
+zone, registered OUs and enabled controls; not `enrolled_accounts`).
+Organization trails, Config aggregators, StackSets and usage are left empty
+by the current collector and can be added by hand; see `ROADMAP.md`.
 
 ## Example
 

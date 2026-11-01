@@ -85,6 +85,38 @@
   {{if .OUResult}}{{template "result_ou.html" .OUResult}}{{end}}
 </section>
 </main>
+<script>
+// The runbook checklist: ticked steps are remembered in this browser only.
+(function () {
+  function restore(root) {
+    root.querySelectorAll('.runbook input[data-done-key]').forEach(function (box) {
+      var done = false;
+      try { done = localStorage.getItem(box.dataset.doneKey) === '1'; } catch (e) {}
+      box.checked = done;
+      box.closest('.step').classList.toggle('done', done);
+    });
+    root.querySelectorAll('.runbook .phase').forEach(updateProgress);
+  }
+  function updateProgress(phase) {
+    var boxes = phase.querySelectorAll('input[data-done-key]');
+    var done = phase.querySelectorAll('input[data-done-key]:checked').length;
+    var label = phase.querySelector('[data-progress]');
+    if (label && boxes.length) { label.textContent = done + ' / ' + boxes.length + ' done'; }
+    phase.classList.toggle('complete', boxes.length > 0 && done === boxes.length);
+  }
+  document.addEventListener('change', function (ev) {
+    var box = ev.target;
+    if (!box.matches || !box.matches('.runbook input[data-done-key]')) { return; }
+    try {
+      if (box.checked) { localStorage.setItem(box.dataset.doneKey, '1'); } else { localStorage.removeItem(box.dataset.doneKey); }
+    } catch (e) {}
+    box.closest('.step').classList.toggle('done', box.checked);
+    updateProgress(box.closest('.phase'));
+  });
+  document.addEventListener('DOMContentLoaded', function () { restore(document); });
+  document.addEventListener('htmx:afterSwap', function (ev) { restore(ev.target); });
+})();
+</script>
 <footer class="muted small">orgshift reads snapshots only. Collect them with read-only credentials (<code>orgshift collect</code>) or generate fixtures (<code>orgshift fixtures</code>).</footer>
 </body>
 </html>

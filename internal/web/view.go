@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"strings"
 
 	"github.com/MrShaaba/orgshift/internal/evaluator"
+	"github.com/MrShaaba/orgshift/internal/runbook"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
 
@@ -156,23 +158,27 @@ func ghostSubtree(ix *snapshot.Index, ou snapshot.Node, withBadges bool) *treeNo
 
 // resultView is what the account result template renders.
 type resultView struct {
-	Result      *evaluator.Result
-	SourceName  string
-	TargetName  string
-	SourceTree  *treeNode
-	TargetTree  *treeNode
-	ExportQuery string
+	Result     *evaluator.Result
+	SourceName string
+	TargetName string
+	SourceTree *treeNode
+	TargetTree *treeNode
+	// ExportQuery is the encoded query that reproduces this result. It is
+	// a template.URL so html/template keeps its & and = intact in links.
+	ExportQuery template.URL
 	Account     *snapshot.Account
 	Usage       *snapshot.AccountUsage
 	// Assignments and ReservedRoles describe the account in the source
 	// Identity Center instance, when there is one.
 	Assignments   []string
 	ReservedRoles []string
+	// Runbook is the migration checklist built from the result.
+	Runbook *runbook.Runbook
 }
 
 func newResultView(res *evaluator.Result, fromName, toName string, from, to *snapshot.Snapshot, query string) *resultView {
 	subject := snapshot.Node{ID: res.Subject.AccountID, Name: res.Subject.AccountName, Kind: snapshot.KindAccount}
-	v := &resultView{Result: res, SourceName: fromName, TargetName: toName, ExportQuery: query}
+	v := &resultView{Result: res, SourceName: fromName, TargetName: toName, ExportQuery: template.URL(query)}
 	v.SourceTree = buildTree(from, res.Subject.SourcePath, subject, "", nil)
 	ghost := &treeNode{Node: subject, OnPath: true, IsSubject: true, Ghost: true}
 	v.TargetTree = buildTree(to, res.Subject.TargetPath, subject, res.Subject.TargetOUID, ghost)
@@ -183,6 +189,7 @@ func newResultView(res *evaluator.Result, fromName, toName string, from, to *sna
 		v.Assignments = assignmentLabels(ic, subject.ID)
 		v.ReservedRoles = reservedRoles(ic, subject.ID)
 	}
+	v.Runbook = runbook.Build(res, from, to)
 	return v
 }
 
@@ -193,15 +200,23 @@ type ouResultView struct {
 	TargetName  string
 	SourceTree  *treeNode
 	TargetTree  *treeNode
-	ExportQuery string
+	ExportQuery template.URL
+	Runbook     *runbook.OURunbook
+	// AccountRunbooks maps account IDs to their part of the OU runbook.
+	AccountRunbooks map[string]*runbook.Runbook
 }
 
 func newOUResultView(res *evaluator.OUResult, fromName, toName string, from, to *snapshot.Snapshot, query string) *ouResultView {
 	subject := snapshot.Node{ID: res.Subject.OUID, Name: res.Subject.OUName, Kind: snapshot.KindOU}
-	v := &ouResultView{Result: res, SourceName: fromName, TargetName: toName, ExportQuery: query}
+	v := &ouResultView{Result: res, SourceName: fromName, TargetName: toName, ExportQuery: template.URL(query)}
 	v.SourceTree = buildTree(from, res.Subject.SourcePath, subject, "", nil)
 	ghost := ghostSubtree(from.Index(), subject, !res.Subject.CrossOrg)
 	v.TargetTree = buildTree(to, res.Subject.TargetPath, subject, res.Subject.TargetParentID, ghost)
+	v.Runbook = runbook.BuildOU(res, from, to)
+	v.AccountRunbooks = map[string]*runbook.Runbook{}
+	for _, rb := range v.Runbook.Accounts {
+		v.AccountRunbooks[rb.Subject.AccountID] = rb
+	}
 	return v
 }
 
@@ -260,4 +275,29 @@ func leftOver(list []string, n int) int {
 		return 0
 	}
 	return len(list) - n
+}
+
+// stepNumber renders "phase.step" for a checklist item.
+func stepNumber(phase, step int) string { return fmt.Sprintf("%d.%d", phase+1, step+1) }
+
+// doneKey is the localStorage key under which the browser remembers a
+// ticked step: the export query identifies the move, the step ID the item.
+func doneKey(query template.URL, prefix, stepID string) string {
+	return "orgshift-runbook:" + string(query) + ":" + prefix + stepID
+}
+
+// dict builds a map for templates that take several named arguments.
+func dict(pairs ...any) (map[string]any, error) {
+	if len(pairs)%2 != 0 {
+		return nil, fmt.Errorf("dict needs key/value pairs")
+	}
+	m := map[string]any{}
+	for i := 0; i < len(pairs); i += 2 {
+		k, ok := pairs[i].(string)
+		if !ok {
+			return nil, fmt.Errorf("dict keys must be strings")
+		}
+		m[k] = pairs[i+1]
+	}
+	return m, nil
 }

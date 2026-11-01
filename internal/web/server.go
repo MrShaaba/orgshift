@@ -51,6 +51,11 @@ func New(store *Store, logger *log.Logger) (*Server, error) {
 		"sortedKeys":  sortedKeys,
 		"firstN":      firstN,
 		"leftOver":    leftOver,
+		"dict":        dict,
+		"stepNumber":  stepNumber,
+		"inc":         func(i int) int { return i + 1 },
+		"doneKey":     doneKey,
+		"lines":       func(list []string) string { return strings.Join(list, "\n") },
 	}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
@@ -74,6 +79,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /simulate", s.handleSimulate)
 	mux.HandleFunc("GET /export.json", s.handleExport)
 	mux.HandleFunc("GET /export.md", s.handleExport)
+	mux.HandleFunc("GET /runbook.md", s.handleExport)
+	mux.HandleFunc("GET /runbook.json", s.handleExport)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	return s.logging(mux)
 }
@@ -356,12 +363,24 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		data     []byte
 		markdown string
 	)
-	if sim.OU != nil {
+	isRunbook := strings.HasPrefix(r.URL.Path, "/runbook.")
+	switch {
+	case sim.OU != nil && isRunbook:
+		rb := sim.OU.Runbook
+		base = fmt.Sprintf("orgshift-runbook-ou-%s-to-%s", rb.Subject.OUID, rb.Subject.TargetParentID)
+		data, err = report.OURunbookJSON(rb)
+		markdown = report.OURunbookMarkdown(rb)
+	case sim.OU != nil:
 		res := sim.OU.Result
 		base = fmt.Sprintf("orgshift-ou-%s-to-%s", res.Subject.OUID, res.Subject.TargetParentID)
 		data, err = report.OUJSON(res)
 		markdown = report.OUMarkdown(res)
-	} else {
+	case isRunbook:
+		rb := sim.Account.Runbook
+		base = fmt.Sprintf("orgshift-runbook-%s-to-%s", rb.Subject.AccountID, rb.Subject.TargetOUID)
+		data, err = report.RunbookJSON(rb)
+		markdown = report.RunbookMarkdown(rb)
+	default:
 		res := sim.Account.Result
 		base = fmt.Sprintf("orgshift-%s-to-%s", res.Subject.AccountID, res.Subject.TargetOUID)
 		data, err = report.JSON(res)

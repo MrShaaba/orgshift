@@ -9,6 +9,7 @@ import (
 
 	"github.com/MrShaaba/orgshift/internal/evaluator"
 	"github.com/MrShaaba/orgshift/internal/report"
+	"github.com/MrShaaba/orgshift/internal/runbook"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 	"github.com/MrShaaba/orgshift/internal/usage"
 )
@@ -26,7 +27,7 @@ func runSimulate(args []string) error {
 	account := fs.String("account", "", "ID of the account to move (this or --ou is required)")
 	ou := fs.String("ou", "", "ID of the OU to move with everything under it (this or --account is required)")
 	targetOU := fs.String("target-ou", "", "ID of the destination OU or root; for --ou, the new parent (required)")
-	format := fs.String("format", "text", "output format: text, json or markdown")
+	format := fs.String("format", "text", "output format: text, json, markdown, runbook (the migration runbook as Markdown) or runbook-json")
 	out := fs.String("out", "", "write the report to this file instead of stdout")
 	actions := fs.String("actions", "", "JSON file with actions in use; merged into the snapshot's list for the account")
 	lastAccessed := fs.String("last-accessed", "", "IAM last-accessed export (get-service-last-accessed-details JSON) to import as actions in use")
@@ -82,6 +83,12 @@ func runSimulate(args []string) error {
 			}
 		case "markdown":
 			body = []byte(report.OUMarkdown(res))
+		case "runbook":
+			body = []byte(report.OURunbookMarkdown(runbook.BuildOU(res, src, dst)))
+		case "runbook-json":
+			if body, err = report.OURunbookJSON(runbook.BuildOU(res, src, dst)); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown format %q", *format)
 		}
@@ -100,6 +107,12 @@ func runSimulate(args []string) error {
 			}
 		case "markdown":
 			body = []byte(report.Markdown(res))
+		case "runbook":
+			body = []byte(report.RunbookMarkdown(runbook.Build(res, src, dst)))
+		case "runbook-json":
+			if body, err = report.RunbookJSON(runbook.Build(res, src, dst)); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown format %q", *format)
 		}

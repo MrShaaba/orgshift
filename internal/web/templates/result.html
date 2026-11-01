@@ -10,6 +10,7 @@
     <div class="export">
       <a class="button secondary" href="/export.json?{{.ExportQuery}}">Export JSON</a>
       <a class="button secondary" href="/export.md?{{.ExportQuery}}">Export Markdown</a>
+      <a class="button secondary" href="/runbook.md?{{.ExportQuery}}">Export runbook</a>
       <a class="button secondary" href="/simulate?{{.ExportQuery}}">Link to this result</a>
     </div>
   </div>
@@ -23,6 +24,12 @@
 <section class="panel">
   <h2>Verdict board</h2>
   {{template "verdict_board" $r}}
+</section>
+
+<section class="panel runbook-panel">
+  <h2>Migration runbook <span class="muted small">{{.Runbook.Summary}}</span></h2>
+  <p class="muted small">An ordered checklist generated from the findings: fix, re-create, move, check, roll back. Ticks are remembered by this browser only. Every command is for you to review and run by hand; orgshift never writes to AWS. <a href="/runbook.md?{{.ExportQuery}}">Export as Markdown</a> · <a href="/runbook.json?{{.ExportQuery}}">JSON</a></p>
+  {{template "runbook" (dict "Phases" .Runbook.Phases "Query" .ExportQuery "Prefix" "")}}
 </section>
 
 <section class="panel">

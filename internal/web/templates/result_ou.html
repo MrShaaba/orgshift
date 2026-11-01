@@ -10,6 +10,7 @@
     <div class="export">
       <a class="button secondary" href="/export.json?{{.ExportQuery}}">Export JSON</a>
       <a class="button secondary" href="/export.md?{{.ExportQuery}}">Export Markdown</a>
+      <a class="button secondary" href="/runbook.md?{{.ExportQuery}}">Export runbook</a>
       <a class="button secondary" href="/simulate?{{.ExportQuery}}">Link to this result</a>
     </div>
   </div>
@@ -57,6 +58,12 @@
   {{end}}
 </section>
 
+<section class="panel runbook-panel">
+  <h2>Migration runbook <span class="muted small">{{.Runbook.Summary}}</span></h2>
+  <p class="muted small">The OU-level steps: Organizations never moves an OU, so the tree is recreated and the accounts move one by one. Each account's own checklist is inside its details panel below. Ticks are remembered by this browser only; every command is for you to review and run by hand. <a href="/runbook.md?{{.ExportQuery}}">Export as Markdown</a> · <a href="/runbook.json?{{.ExportQuery}}">JSON</a></p>
+  {{template "runbook" (dict "Phases" .Runbook.Phases "Query" .ExportQuery "Prefix" "ou:")}}
+</section>
+
 <section class="panel">
   <h2>Side-by-side: where the OU sits and which policies reach it</h2>
   <div class="grid2 trees">
@@ -88,6 +95,10 @@
   {{range .Result.Notes}}<p class="muted small">Note: {{.}}</p>{{end}}
   <h3>Verdict board</h3>
   {{template "verdict_board" .Result}}
+  {{with index $.AccountRunbooks .AccountID}}
+  <h3>Runbook for this account <span class="muted small">{{.Summary}}</span></h3>
+  {{template "runbook" (dict "Phases" .Phases "Query" $.ExportQuery "Prefix" (printf "%s:" .Subject.AccountID))}}
+  {{end}}
   <h3>What changes for this account</h3>
   {{template "diff_view" .Result.Diff}}
 </details>

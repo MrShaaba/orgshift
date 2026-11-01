@@ -11,19 +11,62 @@
       {{if .Resource}}<dt>Resource</dt><dd><code>{{.Resource}}</code></dd>{{end}}
       {{if .Regions}}<dt>Regions</dt><dd>{{join .Regions ", "}}</dd>{{end}}
     </dl>
-    {{range .Evidence}}
-    <div class="evidence">
-      <div class="evhead"><span class="kind">{{.Kind}}</span>{{if .Side}} <span class="pill side">{{.Side}}</span>{{end}}
-        {{if .PolicyName}} {{.PolicyType}} <strong>{{.PolicyName}}</strong> <code>{{.PolicyID}}</code>{{end}}
-        {{if .Statement}} · statement <strong>{{.Statement}}</strong>{{end}}
-        {{if .Level}} · at {{.Level}}{{end}}
-        {{if .Reference}} <code>{{.Reference}}</code>{{end}}</div>
-      {{if .Note}}<pre class="note">{{.Note}}</pre>{{end}}
-      {{if .StatementJSON}}<pre class="json">{{pretty .StatementJSON}}</pre>{{end}}
-    </div>
-    {{end}}
+    {{range .Evidence}}{{template "evidence" .}}{{end}}
   </div>
 </details>
+{{end}}
+
+{{define "evidence"}}
+<div class="evidence">
+  <div class="evhead"><span class="kind">{{.Kind}}</span>{{if .Side}} <span class="pill side">{{.Side}}</span>{{end}}
+    {{if .PolicyName}} {{.PolicyType}} <strong>{{.PolicyName}}</strong> <code>{{.PolicyID}}</code>{{else if .PolicyType}} {{.PolicyType}}{{end}}
+    {{if .Statement}} · statement <strong>{{.Statement}}</strong>{{end}}
+    {{if .Level}} · at {{.Level}}{{end}}
+    {{if .Reference}} <code>{{.Reference}}</code>{{end}}</div>
+  {{if .Note}}<pre class="note">{{.Note}}</pre>{{end}}
+  {{if .StatementJSON}}<pre class="json">{{pretty .StatementJSON}}</pre>{{end}}
+</div>
+{{end}}
+
+{{/* runbook renders the phases of a runbook as a checklist. It takes a map
+     with Phases, Query (identifies the move for the browser's memory of
+     ticked steps) and Prefix (distinguishes several runbooks on one page). */}}
+{{define "runbook"}}
+<div class="runbook" data-query="{{.Query}}">
+{{$q := .Query}}{{$prefix := .Prefix}}
+{{range $pi, $p := .Phases}}
+  <details class="phase" {{if lt $pi 3}}open{{end}}>
+    <summary><span class="phase-no">{{inc $pi}}.</span> <strong>{{$p.Title}}</strong> <span class="progress muted small" data-progress>{{len $p.Steps}} step{{if ne (len $p.Steps) 1}}s{{end}}</span></summary>
+    {{if $p.Intro}}<p class="muted small intro">{{$p.Intro}}</p>{{end}}
+    {{if not $p.Steps}}<p class="muted small">Nothing to do in this phase.</p>{{end}}
+    <ol class="steps">
+    {{range $si, $s := $p.Steps}}
+      <li class="step {{if $s.Status}}{{statusClass $s.Status}}{{end}}" data-step="{{$s.ID}}">
+        <label class="step-head">
+          <input type="checkbox" data-done-key="{{doneKey $q $prefix $s.ID}}">
+          <span class="step-no">{{stepNumber $pi $si}}</span>
+          {{if $s.Status}}<span class="pill {{statusClass $s.Status}}">{{$s.Status}}</span>{{end}}
+          <span class="step-title">{{$s.Title}}</span>
+        </label>
+        <div class="step-body">
+          {{if $s.Where}}<div class="where muted small">Where: {{$s.Where}}</div>{{end}}
+          <p>{{$s.Detail}}</p>
+          <dl class="meta">
+            {{if $s.Actions}}<dt>Actions</dt><dd>{{range $s.Actions}}<code>{{.}}</code> {{end}}</dd>{{end}}
+            {{if $s.Principal}}<dt>Principal</dt><dd><code>{{$s.Principal}}</code></dd>{{end}}
+            {{if $s.Resource}}<dt>Resource</dt><dd><code>{{$s.Resource}}</code></dd>{{end}}
+            {{if $s.Regions}}<dt>Regions</dt><dd>{{join $s.Regions ", "}}</dd>{{end}}
+            {{if $s.Check}}<dt>From</dt><dd>the {{$s.Check}} check{{if $s.Finding}}: {{$s.Finding}}{{end}}</dd>{{end}}
+          </dl>
+          {{if $s.Commands}}<pre class="cmd">{{lines $s.Commands}}</pre>{{end}}
+          {{if $s.Evidence}}<details class="step-evidence"><summary class="muted small">Evidence ({{len $s.Evidence}})</summary>{{range $s.Evidence}}{{template "evidence" .}}{{end}}</details>{{end}}
+        </div>
+      </li>
+    {{end}}
+    </ol>
+  </details>
+{{end}}
+</div>
 {{end}}
 
 {{define "verdict_board"}}

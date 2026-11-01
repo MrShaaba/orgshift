@@ -112,3 +112,26 @@ details.account-result.nogo { border-left: 5px solid var(--nogo); } details.acco
 
 /* IAM Identity Center */
 .badge.idc { background: #fdf2f8; color: #9d174d; border: 1px solid #fbcfe8; }
+
+/* Migration runbook */
+.runbook-panel h2 .small { font-weight: 400; margin-left: 8px; }
+.runbook .phase { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.runbook .phase > summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.runbook .phase > summary .progress { margin-left: auto; }
+.runbook .phase.complete > summary .progress { color: var(--go); font-weight: 700; }
+.runbook .phase-no { color: var(--muted); }
+.runbook .intro { margin: 4px 0 6px; }
+ol.steps { list-style: none; margin: 0; padding: 0; }
+.step { border-top: 1px solid var(--line); padding: 8px 0 8px 10px; border-left: 4px solid transparent; }
+.step.nogo { border-left-color: var(--nogo); } .step.review { border-left-color: var(--review); } .step.info { border-left-color: #cbd5e0; }
+.step-head { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.step-head input { margin: 0; position: relative; top: 2px; flex: none; }
+.step-no { color: var(--muted); font-size: 0.85rem; min-width: 2.4em; }
+.step-title { font-weight: 600; }
+.step.done .step-title { text-decoration: line-through; color: var(--muted); font-weight: 500; }
+.step.done .step-body { opacity: 0.6; }
+.step-body { padding: 4px 0 0 28px; font-size: 0.92rem; }
+.step-body p { margin: 4px 0; }
+.where { margin-bottom: 2px; }
+pre.cmd { background: #0f172a; color: #e2e8f0; max-height: none; }
+details.step-evidence > summary { cursor: pointer; }

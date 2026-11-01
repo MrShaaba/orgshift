@@ -271,3 +271,78 @@ func TestIdentityCenterInTheUI(t *testing.T) {
 		t.Error("the target tree should show Fernhill's assignments on fernhill-payments-core")
 	}
 }
+
+func TestRunbookInTheUI(t *testing.T) {
+	ts := newTestServer(t, true)
+	q := "from=" + escape(fixtures.LarkspurName) + "&to=" + escape(fixtures.FernhillName) + "&account=" + fixtures.LarkspurPaymentsProd + "&target_ou=" + fixtures.FernhillPaymentsOU
+	resp, body := get(t, ts, "/simulate?"+q, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("simulate: %d", resp.StatusCode)
+	}
+	for _, want := range []string{
+		"<h2>Migration runbook <span class=\"muted small\">53 steps:",
+		`<details class="phase" open>`,
+		"<strong>Before the move: fix the blockers and make the decisions</strong>",
+		`<li class="step nogo" data-step="before-1">`,
+		`<input type="checkbox" data-done-key="orgshift-runbook:` + "account=111111111115&amp;from=Larkspur&#43;Holdings&amp;target_ou=ou-fern-pay1&amp;to=Fernhill&#43;Group:before-1\">",
+		`<span class="step-no">1.1</span>`,
+		`<span class="phase-no">1.</span> <strong>Before the move`, `<span class="phase-no">5.</span> <strong>Rollback`,
+		`<span class="pill nogo">NO-GO</span>`,
+		"SCP Fernhill-EU-Only-Regions / DenyOutsideEU denies 15 actions after the move",
+		"Where: management account 222222222221 of Fernhill Group",
+		"<pre class=\"cmd\">aws organizations describe-policy --policy-id p-fern0002 --query Content --output text\n# after editing the document by hand:\naws organizations update-policy --policy-id p-fern0002 --content file://Fernhill-EU-Only-Regions.json</pre>",
+		"<summary class=\"muted small\">Evidence (1)</summary>",
+		"Re-share larkspur-core-network with the account directly",
+		"Invite the account into Fernhill Group (o-fernhill0001)",
+		"move-account --account-id 111111111115 --source-parent-id r-fern --destination-parent-id ou-fern-pay1",
+		"<strong>Rollback</strong>",
+		`<span class="kind">source-chain</span>`,
+		`href="/runbook.md?account=111111111115&amp;from=Larkspur&#43;Holdings&amp;target_ou=ou-fern-pay1&amp;to=Fernhill&#43;Group">Export runbook</a>`,
+		"data-done-key", "htmx:afterSwap", "localStorage.setItem(box.dataset.doneKey",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("result page missing %q", want)
+		}
+	}
+	// Export links keep the query intact (html/template would otherwise percent-encode & and =).
+	if strings.Contains(body, "runbook.md?account%3d") || !strings.Contains(body, `href="/export.json?account=111111111115&amp;from=Larkspur&#43;Holdings&amp;target_ou=ou-fern-pay1&amp;to=Fernhill&#43;Group"`) {
+		t.Error("export links must carry a usable query string")
+	}
+	// The evidence block is shared with the verdict board.
+	if strings.Count(body, `<span class="kind">policy-statement</span>`) < 2 {
+		t.Error("evidence should render in both the board and the runbook")
+	}
+	// Exports.
+	resp, body = get(t, ts, "/runbook.md?"+q, nil)
+	if resp.StatusCode != 200 || !strings.HasPrefix(body, "# orgshift runbook: larkspur-payments-prod (111111111115)") || !strings.Contains(resp.Header.Get("Content-Disposition"), "orgshift-runbook-111111111115-to-ou-fern-pay1.md") || !strings.Contains(body, "- [ ] **3.1** Invite the account") {
+		t.Fatalf("runbook markdown export: %d %s", resp.StatusCode, resp.Header.Get("Content-Disposition"))
+	}
+	resp, body = get(t, ts, "/runbook.json?"+q, nil)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/json" || !strings.Contains(body, `"runbook_schema_version": 1`) || !strings.Contains(body, `"id": "move-1"`) {
+		t.Fatalf("runbook json export: %d", resp.StatusCode)
+	}
+
+	// OU result: OU-level checklist plus one per account, with distinct keys.
+	q = "kind=ou&from=" + escape(fixtures.LarkspurName) + "&to=" + escape(fixtures.FernhillName) + "&ou=ou-lark-work&target_ou=ou-fern-bu"
+	resp, body = get(t, ts, "/simulate?"+q, map[string]string{"HX-Request": "true"})
+	if resp.StatusCode != 200 {
+		t.Fatalf("ou simulate: %d", resp.StatusCode)
+	}
+	for _, want := range []string{
+		"<h2>Migration runbook <span class=\"muted small\">24 OU-level steps and 3 account runbook(s)",
+		"Create OU Workloads under OU Business Units (ou-fern-bu)",
+		"create-organizational-unit --parent-id ou-fern-bu --name &#34;Workloads&#34;",
+		`<span class="kind">policy-document</span>`,
+		"<h3>Runbook for this account <span class=\"muted small\">",
+		":ou:ou-before-1\"", ":111111111115:before-1\"",
+		"Moved together with OU Workloads",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("OU result missing %q", want)
+		}
+	}
+	resp, body = get(t, ts, "/runbook.md?"+q, nil)
+	if resp.StatusCode != 200 || !strings.HasPrefix(body, "# orgshift runbook: OU Workloads (ou-lark-work)") || !strings.Contains(resp.Header.Get("Content-Disposition"), "orgshift-runbook-ou-ou-lark-work-to-ou-fern-bu.md") {
+		t.Fatalf("ou runbook export: %d %s", resp.StatusCode, resp.Header.Get("Content-Disposition"))
+	}
+}

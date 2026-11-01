@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,10 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/controltower"
 	"github.com/aws/aws-sdk-go-v2/service/controltower/document"
 	cttypes "github.com/aws/aws-sdk-go-v2/service/controltower/types"
+	"github.com/aws/aws-sdk-go-v2/service/identitystore"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
 	ramtypes "github.com/aws/aws-sdk-go-v2/service/ram/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssoadmin"
+	ssotypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
@@ -143,6 +147,86 @@ func (fakeCatalog) GetControl(context.Context, *controlcatalog.GetControlInput, 
 		Implementation: &cctypes.ImplementationDetails{Type: aws.String("AWS::Config::ConfigRule")}}, nil
 }
 
+const (
+	fakeInstance = "arn:aws:sso:::instance/ssoins-fake000000000001"
+	fakePSAdmin  = "arn:aws:sso:::permissionSet/ssoins-fake000000000001/ps-admin"
+	fakePSEmpty  = "arn:aws:sso:::permissionSet/ssoins-fake000000000001/ps-empty"
+)
+
+type fakeSSOAdmin struct{ fail bool }
+
+func (f fakeSSOAdmin) ListInstances(context.Context, *ssoadmin.ListInstancesInput, ...func(*ssoadmin.Options)) (*ssoadmin.ListInstancesOutput, error) {
+	if f.fail {
+		return nil, context.DeadlineExceeded
+	}
+	return &ssoadmin.ListInstancesOutput{Instances: []ssotypes.InstanceMetadata{{InstanceArn: aws.String(fakeInstance), IdentityStoreId: aws.String("d-fake000001"), Name: aws.String("Fake SSO"), OwnerAccountId: aws.String("111111111111")}}}, nil
+}
+func (fakeSSOAdmin) ListPermissionSets(context.Context, *ssoadmin.ListPermissionSetsInput, ...func(*ssoadmin.Options)) (*ssoadmin.ListPermissionSetsOutput, error) {
+	return &ssoadmin.ListPermissionSetsOutput{PermissionSets: []string{fakePSAdmin, fakePSEmpty}}, nil
+}
+func (fakeSSOAdmin) DescribePermissionSet(_ context.Context, in *ssoadmin.DescribePermissionSetInput, _ ...func(*ssoadmin.Options)) (*ssoadmin.DescribePermissionSetOutput, error) {
+	name := "Empty"
+	if aws.ToString(in.PermissionSetArn) == fakePSAdmin {
+		name = "AdministratorAccess"
+	}
+	return &ssoadmin.DescribePermissionSetOutput{PermissionSet: &ssotypes.PermissionSet{Name: aws.String(name), Description: aws.String("desc"), SessionDuration: aws.String("PT1H"), PermissionSetArn: in.PermissionSetArn}}, nil
+}
+func (fakeSSOAdmin) ListManagedPoliciesInPermissionSet(_ context.Context, in *ssoadmin.ListManagedPoliciesInPermissionSetInput, _ ...func(*ssoadmin.Options)) (*ssoadmin.ListManagedPoliciesInPermissionSetOutput, error) {
+	if aws.ToString(in.PermissionSetArn) != fakePSAdmin {
+		return &ssoadmin.ListManagedPoliciesInPermissionSetOutput{}, nil
+	}
+	return &ssoadmin.ListManagedPoliciesInPermissionSetOutput{AttachedManagedPolicies: []ssotypes.AttachedManagedPolicy{{Arn: aws.String("arn:aws:iam::aws:policy/AdministratorAccess"), Name: aws.String("AdministratorAccess")}}}, nil
+}
+func (fakeSSOAdmin) ListCustomerManagedPolicyReferencesInPermissionSet(_ context.Context, in *ssoadmin.ListCustomerManagedPolicyReferencesInPermissionSetInput, _ ...func(*ssoadmin.Options)) (*ssoadmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput, error) {
+	if aws.ToString(in.PermissionSetArn) != fakePSAdmin {
+		return &ssoadmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput{}, nil
+	}
+	return &ssoadmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput{CustomerManagedPolicyReferences: []ssotypes.CustomerManagedPolicyReference{{Name: aws.String("Guardrail")}, {Name: aws.String("Ops"), Path: aws.String("/team/")}}}, nil
+}
+func (fakeSSOAdmin) GetInlinePolicyForPermissionSet(_ context.Context, in *ssoadmin.GetInlinePolicyForPermissionSetInput, _ ...func(*ssoadmin.Options)) (*ssoadmin.GetInlinePolicyForPermissionSetOutput, error) {
+	if aws.ToString(in.PermissionSetArn) != fakePSAdmin {
+		return &ssoadmin.GetInlinePolicyForPermissionSetOutput{InlinePolicy: aws.String("")}, nil
+	}
+	return &ssoadmin.GetInlinePolicyForPermissionSetOutput{InlinePolicy: aws.String(`{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"iam:*","Resource":"*"}]}`)}, nil
+}
+func (fakeSSOAdmin) GetPermissionsBoundaryForPermissionSet(_ context.Context, in *ssoadmin.GetPermissionsBoundaryForPermissionSetInput, _ ...func(*ssoadmin.Options)) (*ssoadmin.GetPermissionsBoundaryForPermissionSetOutput, error) {
+	if aws.ToString(in.PermissionSetArn) != fakePSAdmin {
+		return nil, &ssotypes.ResourceNotFoundException{Message: aws.String("no boundary")}
+	}
+	return &ssoadmin.GetPermissionsBoundaryForPermissionSetOutput{PermissionsBoundary: &ssotypes.PermissionsBoundary{CustomerManagedPolicyReference: &ssotypes.CustomerManagedPolicyReference{Name: aws.String("Boundary"), Path: aws.String("/")}}}, nil
+}
+func (fakeSSOAdmin) ListAccountsForProvisionedPermissionSet(_ context.Context, in *ssoadmin.ListAccountsForProvisionedPermissionSetInput, _ ...func(*ssoadmin.Options)) (*ssoadmin.ListAccountsForProvisionedPermissionSetOutput, error) {
+	if aws.ToString(in.PermissionSetArn) != fakePSAdmin {
+		return &ssoadmin.ListAccountsForProvisionedPermissionSetOutput{}, nil
+	}
+	// 999999999999 is not in the tree and must be skipped.
+	return &ssoadmin.ListAccountsForProvisionedPermissionSetOutput{AccountIds: []string{"111111111112", "999999999999", "111111111111"}}, nil
+}
+func (fakeSSOAdmin) ListAccountAssignments(_ context.Context, in *ssoadmin.ListAccountAssignmentsInput, _ ...func(*ssoadmin.Options)) (*ssoadmin.ListAccountAssignmentsOutput, error) {
+	if aws.ToString(in.PermissionSetArn) != fakePSAdmin || aws.ToString(in.AccountId) == "999999999999" {
+		return nil, context.DeadlineExceeded
+	}
+	if aws.ToString(in.AccountId) == "111111111111" {
+		return &ssoadmin.ListAccountAssignmentsOutput{}, nil
+	}
+	return &ssoadmin.ListAccountAssignmentsOutput{AccountAssignments: []ssotypes.AccountAssignment{
+		{AccountId: in.AccountId, PermissionSetArn: in.PermissionSetArn, PrincipalType: ssotypes.PrincipalTypeGroup, PrincipalId: aws.String("g-1")},
+		{AccountId: in.AccountId, PermissionSetArn: in.PermissionSetArn, PrincipalType: ssotypes.PrincipalTypeUser, PrincipalId: aws.String("u-1")},
+	}}, nil
+}
+
+type fakeIdentityStore struct{}
+
+func (fakeIdentityStore) DescribeUser(_ context.Context, in *identitystore.DescribeUserInput, _ ...func(*identitystore.Options)) (*identitystore.DescribeUserOutput, error) {
+	if aws.ToString(in.IdentityStoreId) != "d-fake000001" {
+		return nil, context.DeadlineExceeded
+	}
+	return &identitystore.DescribeUserOutput{UserName: aws.String("alice"), DisplayName: aws.String("Alice")}, nil
+}
+func (fakeIdentityStore) DescribeGroup(context.Context, *identitystore.DescribeGroupInput, ...func(*identitystore.Options)) (*identitystore.DescribeGroupOutput, error) {
+	return &identitystore.DescribeGroupOutput{DisplayName: aws.String("Admins")}, nil
+}
+
 type fakeAccount struct{}
 
 func (fakeAccount) ListRegions(context.Context, *account.ListRegionsInput, ...func(*account.Options)) (*account.ListRegionsOutput, error) {
@@ -152,11 +236,30 @@ func (fakeAccount) ListRegions(context.Context, *account.ListRegionsInput, ...fu
 func TestCollectBuildsAValidSnapshot(t *testing.T) {
 	snap, err := Collect(context.Background(), Options{
 		Name: "Fake Org", Organizations: fakeOrgs{}, RAM: []RAMAPI{fakeRAM{}}, Account: fakeAccount{},
-		ControlTower: fakeControlTower{}, ControlCatalog: fakeCatalog{},
+		ControlTower: fakeControlTower{}, ControlCatalog: fakeCatalog{}, SSOAdmin: fakeSSOAdmin{}, IdentityStore: fakeIdentityStore{}, Region: "us-east-1",
 		Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	ic := snap.IdentityCenter
+	if ic == nil || ic.InstanceARN != fakeInstance || ic.IdentityStoreID != "d-fake000001" || ic.Region != "us-east-1" || ic.OwnerAccountID != "111111111111" || ic.Name != "Fake SSO" {
+		t.Fatalf("identity center instance wrong: %+v", ic)
+	}
+	if len(ic.PermissionSets) != 2 {
+		t.Fatalf("expected two permission sets: %+v", ic.PermissionSets)
+	}
+	admin, empty := ic.PermissionSets[0], ic.PermissionSets[1]
+	if admin.Name != "AdministratorAccess" || admin.SessionDuration != "PT1H" || len(admin.ManagedPolicies) != 1 || strings.Join(admin.CustomerManagedPolicies, ",") != "/Guardrail,/team/Ops" ||
+		len(admin.InlinePolicy) == 0 || admin.PermissionsBoundary != "/Boundary" || strings.Join(admin.ProvisionedAccounts, ",") != "111111111111,111111111112" {
+		t.Errorf("admin permission set wrong (unknown provisioned account skipped, lists sorted): %+v", admin)
+	}
+	if empty.Name != "Empty" || len(empty.InlinePolicy) != 0 || empty.PermissionsBoundary != "" || len(empty.ProvisionedAccounts) != 0 || len(empty.ManagedPolicies) != 0 {
+		t.Errorf("a permission set without policies, boundary or provisioning must stay empty: %+v", empty)
+	}
+	if len(ic.Assignments) != 2 || ic.Assignments[0].PrincipalName != "Admins" || ic.Assignments[0].PrincipalType != snapshot.PrincipalGroup ||
+		ic.Assignments[1].PrincipalName != "alice" || ic.Assignments[1].AccountID != "111111111112" || ic.Assignments[1].PermissionSetARN != fakePSAdmin {
+		t.Errorf("assignments wrong (names resolved through the identity store): %+v", ic.Assignments)
 	}
 	ct := snap.ControlTower
 	if ct == nil || ct.Version != "3.3" || ct.Status != "ACTIVE" || ct.DriftStatus != "IN_SYNC" || ct.HomeRegion != "us-east-1" {
@@ -221,6 +324,26 @@ func TestControlTowerIsOptional(t *testing.T) {
 	}
 	if c := snap.ControlTower.EnabledControls[0]; c.Behavior != "" || c.Name != "" || c.ControlIdentifier == "" {
 		t.Errorf("without a catalog client controls are recorded by identifier only: %+v", c)
+	}
+}
+
+func TestIdentityCenterIsOptional(t *testing.T) {
+	snap, err := Collect(context.Background(), Options{Organizations: fakeOrgs{}, SSOAdmin: fakeSSOAdmin{fail: true}})
+	if err != nil {
+		t.Fatalf("a failing Identity Center call must not fail the collection: %v", err)
+	}
+	if snap.IdentityCenter != nil {
+		t.Error("no instance should be recorded when the API cannot be read")
+	}
+	snap, err = Collect(context.Background(), Options{Organizations: fakeOrgs{}, SSOAdmin: fakeSSOAdmin{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := snap.IdentityCenter.Assignments; len(a) != 2 || a[0].PrincipalName != "" || a[0].PrincipalID != "g-1" {
+		t.Errorf("without an identity store client principals are recorded by id only: %+v", a)
+	}
+	if !strings.Contains(Summary(snap), "Identity Center with 2 permission sets and 2 account assignments") {
+		t.Errorf("summary should mention Identity Center: %s", Summary(snap))
 	}
 }
 

@@ -15,8 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/account"
 	"github.com/aws/aws-sdk-go-v2/service/controlcatalog"
 	"github.com/aws/aws-sdk-go-v2/service/controltower"
+	"github.com/aws/aws-sdk-go-v2/service/identitystore"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
+	"github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 
 	"github.com/MrShaaba/orgshift/internal/collector"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
@@ -32,6 +34,7 @@ func runCollect(args []string) error {
 	skipRAM := fs.Bool("skip-ram", false, "do not list resource shares owned by the main profile")
 	skipRegions := fs.Bool("skip-regions", false, "do not call account:ListRegions for every account")
 	skipControlTower := fs.Bool("skip-control-tower", false, "do not read the Control Tower landing zone (its APIs answer only in the home region, so set --region to it)")
+	skipIdentityCenter := fs.Bool("skip-identity-center", false, "do not read the IAM Identity Center instance, permission sets and account assignments (its APIs answer only in the instance's region)")
 	timeout := fs.Duration("timeout", 10*time.Minute, "overall timeout")
 	// Optional data sources that can cost money. Off by default, and in this
 	// version they only print the cost warning; see ROADMAP.md.
@@ -71,7 +74,7 @@ func runCollect(args []string) error {
 	if err != nil {
 		return fmt.Errorf("load AWS configuration: %w", err)
 	}
-	opts := collector.Options{Name: *name, Organizations: organizations.NewFromConfig(cfg), Logger: logger}
+	opts := collector.Options{Name: *name, Region: *region, Organizations: organizations.NewFromConfig(cfg), Logger: logger}
 	if !*skipRAM {
 		opts.RAM = append(opts.RAM, ram.NewFromConfig(cfg))
 	}
@@ -93,6 +96,10 @@ func runCollect(args []string) error {
 		opts.ControlTower = controltower.NewFromConfig(cfg)
 		opts.ControlCatalog = controlcatalog.NewFromConfig(cfg)
 	}
+	if !*skipIdentityCenter {
+		opts.SSOAdmin = ssoadmin.NewFromConfig(cfg)
+		opts.IdentityStore = identitystore.NewFromConfig(cfg)
+	}
 	snap, err := collector.Collect(ctx, opts)
 	if err != nil {
 		return err
@@ -104,6 +111,9 @@ func runCollect(args []string) error {
 	fmt.Println("Next: add usage.actions (or use --last-accessed at simulate time) for the account you plan to move.")
 	if snap.ControlTower != nil {
 		fmt.Println("Control Tower: list control_tower.enrolled_accounts by hand if you want Account Factory provenance; otherwise accounts in registered OUs are assumed enrolled.")
+	}
+	if snap.IdentityCenter != nil {
+		fmt.Println("Identity Center: assignments were listed for the accounts each permission set is provisioned in; principal names come from the identity store when identitystore:DescribeUser/DescribeGroup are allowed.")
 	}
 	return nil
 }

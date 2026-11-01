@@ -8,8 +8,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/account v1.30.2
 	github.com/aws/aws-sdk-go-v2/service/controlcatalog v1.14.6
 	github.com/aws/aws-sdk-go-v2/service/controltower v1.28.6
+	github.com/aws/aws-sdk-go-v2/service/identitystore v1.36.2
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.50.3
 	github.com/aws/aws-sdk-go-v2/service/ram v1.36.0
+	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.37.2
 )
 
 require (

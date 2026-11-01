@@ -42,6 +42,21 @@ var Allowlist = map[string][]string{
 	"controlcatalog": {
 		"GetControl",
 	},
+	"sso": {
+		"ListInstances",
+		"ListPermissionSets",
+		"DescribePermissionSet",
+		"ListManagedPoliciesInPermissionSet",
+		"ListCustomerManagedPolicyReferencesInPermissionSet",
+		"GetInlinePolicyForPermissionSet",
+		"GetPermissionsBoundaryForPermissionSet",
+		"ListAccountsForProvisionedPermissionSet",
+		"ListAccountAssignments",
+	},
+	"identitystore": {
+		"DescribeUser",
+		"DescribeGroup",
+	},
 }
 
 // readOnlyPrefixes are the only verbs an allowlisted operation may start with.

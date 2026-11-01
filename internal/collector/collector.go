@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -14,10 +15,13 @@ import (
 	accounttypes "github.com/aws/aws-sdk-go-v2/service/account/types"
 	"github.com/aws/aws-sdk-go-v2/service/controlcatalog"
 	"github.com/aws/aws-sdk-go-v2/service/controltower"
+	"github.com/aws/aws-sdk-go-v2/service/identitystore"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
 	ramtypes "github.com/aws/aws-sdk-go-v2/service/ram/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssoadmin"
+	ssotypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
@@ -64,10 +68,33 @@ type ControlCatalogAPI interface {
 	GetControl(context.Context, *controlcatalog.GetControlInput, ...func(*controlcatalog.Options)) (*controlcatalog.GetControlOutput, error)
 }
 
+// SSOAdminAPI is the subset of the IAM Identity Center admin client the
+// collector uses. The instance APIs answer only in the instance's region.
+type SSOAdminAPI interface {
+	ListInstances(context.Context, *ssoadmin.ListInstancesInput, ...func(*ssoadmin.Options)) (*ssoadmin.ListInstancesOutput, error)
+	ListPermissionSets(context.Context, *ssoadmin.ListPermissionSetsInput, ...func(*ssoadmin.Options)) (*ssoadmin.ListPermissionSetsOutput, error)
+	DescribePermissionSet(context.Context, *ssoadmin.DescribePermissionSetInput, ...func(*ssoadmin.Options)) (*ssoadmin.DescribePermissionSetOutput, error)
+	ListManagedPoliciesInPermissionSet(context.Context, *ssoadmin.ListManagedPoliciesInPermissionSetInput, ...func(*ssoadmin.Options)) (*ssoadmin.ListManagedPoliciesInPermissionSetOutput, error)
+	ListCustomerManagedPolicyReferencesInPermissionSet(context.Context, *ssoadmin.ListCustomerManagedPolicyReferencesInPermissionSetInput, ...func(*ssoadmin.Options)) (*ssoadmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput, error)
+	GetInlinePolicyForPermissionSet(context.Context, *ssoadmin.GetInlinePolicyForPermissionSetInput, ...func(*ssoadmin.Options)) (*ssoadmin.GetInlinePolicyForPermissionSetOutput, error)
+	GetPermissionsBoundaryForPermissionSet(context.Context, *ssoadmin.GetPermissionsBoundaryForPermissionSetInput, ...func(*ssoadmin.Options)) (*ssoadmin.GetPermissionsBoundaryForPermissionSetOutput, error)
+	ListAccountsForProvisionedPermissionSet(context.Context, *ssoadmin.ListAccountsForProvisionedPermissionSetInput, ...func(*ssoadmin.Options)) (*ssoadmin.ListAccountsForProvisionedPermissionSetOutput, error)
+	ListAccountAssignments(context.Context, *ssoadmin.ListAccountAssignmentsInput, ...func(*ssoadmin.Options)) (*ssoadmin.ListAccountAssignmentsOutput, error)
+}
+
+// IdentityStoreAPI resolves user and group IDs to names.
+type IdentityStoreAPI interface {
+	DescribeUser(context.Context, *identitystore.DescribeUserInput, ...func(*identitystore.Options)) (*identitystore.DescribeUserOutput, error)
+	DescribeGroup(context.Context, *identitystore.DescribeGroupInput, ...func(*identitystore.Options)) (*identitystore.DescribeGroupOutput, error)
+}
+
 // Options configure a collection run.
 type Options struct {
 	// Name is the friendly organization name stored in the snapshot.
 	Name string
+	// Region is the region the clients call. It is recorded as the Identity
+	// Center region, which the AWSReservedSSO_* role path carries.
+	Region string
 	// Organizations is the client for the management or delegated-admin
 	// account. Required.
 	Organizations OrganizationsAPI
@@ -83,6 +110,13 @@ type Options struct {
 	// ControlCatalog names each enabled control and tells its behavior.
 	// Optional; without it controls are recorded by identifier only.
 	ControlCatalog ControlCatalogAPI
+	// SSOAdmin reads the IAM Identity Center instance, its permission sets
+	// and account assignments. Optional; a failing ListInstances call is
+	// logged and the snapshot is written without an identity_center block.
+	SSOAdmin SSOAdminAPI
+	// IdentityStore resolves assignment principals to user and group names.
+	// Optional; without it principals are recorded by ID only.
+	IdentityStore IdentityStoreAPI
 	// Logger receives progress and warnings. Optional.
 	Logger *log.Logger
 	// Now overrides the timestamp, for tests.
@@ -115,6 +149,7 @@ func Collect(ctx context.Context, opts Options) (*snapshot.Snapshot, error) {
 		{"resource shares", c.shares},
 		{"enabled regions", c.regions},
 		{"control tower", c.controlTower},
+		{"identity center", c.identityCenter},
 	}
 	for _, s := range steps {
 		opts.Logger.Printf("collecting %s", s.name)
@@ -138,6 +173,8 @@ type run struct {
 	ctx      context.Context
 	snap     *snapshot.Snapshot
 	controls map[string]*controlcatalog.GetControlOutput
+	// principals caches identity store lookups by "TYPE:id".
+	principals map[string]string
 }
 
 func (r *run) organization() error {
@@ -539,6 +576,186 @@ func (r *run) describeControl(ec *snapshot.EnabledControl) {
 	}
 }
 
+// identityCenter reads the Identity Center instance, every permission set
+// with its policies, the accounts each one is provisioned in and the
+// assignments on those accounts.
+func (r *run) identityCenter() error {
+	client := r.opts.SSOAdmin
+	if client == nil {
+		return nil
+	}
+	instances, err := client.ListInstances(r.ctx, &ssoadmin.ListInstancesInput{})
+	if err != nil {
+		r.opts.Logger.Printf("warning: Identity Center: %v (the instance APIs answer only in the instance's region; pass --region accordingly or --skip-identity-center)", err)
+		return nil
+	}
+	if len(instances.Instances) == 0 {
+		r.opts.Logger.Printf("no Identity Center instance in this region")
+		return nil
+	}
+	inst := instances.Instances[0]
+	ic := &snapshot.IdentityCenter{
+		InstanceARN: aws.ToString(inst.InstanceArn), IdentityStoreID: aws.ToString(inst.IdentityStoreId), Region: r.opts.Region,
+		OwnerAccountID: aws.ToString(inst.OwnerAccountId), Name: aws.ToString(inst.Name),
+		PermissionSets: []snapshot.PermissionSet{}, Assignments: []snapshot.AccountAssignment{},
+	}
+	known := map[string]bool{}
+	for _, a := range r.snap.Accounts {
+		known[a.ID] = true
+	}
+	instanceARN := aws.String(ic.InstanceARN)
+	sets := ssoadmin.NewListPermissionSetsPaginator(client, &ssoadmin.ListPermissionSetsInput{InstanceArn: instanceARN})
+	for sets.HasMorePages() {
+		page, err := sets.NextPage(r.ctx)
+		if err != nil {
+			return fmt.Errorf("permission sets: %w", err)
+		}
+		for _, arn := range page.PermissionSets {
+			ps, err := r.permissionSet(instanceARN, arn)
+			if err != nil {
+				return err
+			}
+			accounts := ssoadmin.NewListAccountsForProvisionedPermissionSetPaginator(client, &ssoadmin.ListAccountsForProvisionedPermissionSetInput{InstanceArn: instanceARN, PermissionSetArn: aws.String(arn)})
+			for accounts.HasMorePages() {
+				ap, err := accounts.NextPage(r.ctx)
+				if err != nil {
+					return fmt.Errorf("accounts provisioned with %s: %w", ps.Name, err)
+				}
+				for _, acct := range ap.AccountIds {
+					if !known[acct] {
+						r.opts.Logger.Printf("warning: permission set %s is provisioned in %s, which is not in the organization tree; skipped", ps.Name, acct)
+						continue
+					}
+					ps.ProvisionedAccounts = append(ps.ProvisionedAccounts, acct)
+					assignments := ssoadmin.NewListAccountAssignmentsPaginator(client, &ssoadmin.ListAccountAssignmentsInput{InstanceArn: instanceARN, AccountId: aws.String(acct), PermissionSetArn: aws.String(arn)})
+					for assignments.HasMorePages() {
+						asp, err := assignments.NextPage(r.ctx)
+						if err != nil {
+							return fmt.Errorf("assignments of %s in %s: %w", ps.Name, acct, err)
+						}
+						for _, a := range asp.AccountAssignments {
+							kind := string(a.PrincipalType)
+							id := aws.ToString(a.PrincipalId)
+							ic.Assignments = append(ic.Assignments, snapshot.AccountAssignment{
+								AccountID: acct, PermissionSetARN: arn, PrincipalType: kind, PrincipalID: id,
+								PrincipalName: r.principalName(ic.IdentityStoreID, kind, id),
+							})
+						}
+					}
+				}
+			}
+			sort.Strings(ps.ProvisionedAccounts)
+			ic.PermissionSets = append(ic.PermissionSets, ps)
+		}
+	}
+	r.snap.IdentityCenter = ic
+	return nil
+}
+
+// permissionSet describes one permission set: name, session, policies and
+// boundary.
+func (r *run) permissionSet(instanceARN *string, arn string) (snapshot.PermissionSet, error) {
+	client := r.opts.SSOAdmin
+	i, p := instanceARN, aws.String(arn)
+	desc, err := client.DescribePermissionSet(r.ctx, &ssoadmin.DescribePermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+	if err != nil {
+		return snapshot.PermissionSet{}, fmt.Errorf("describe permission set %s: %w", arn, err)
+	}
+	ps := snapshot.PermissionSet{ARN: arn}
+	if d := desc.PermissionSet; d != nil {
+		ps.Name, ps.Description, ps.SessionDuration = aws.ToString(d.Name), aws.ToString(d.Description), aws.ToString(d.SessionDuration)
+	}
+	managed := ssoadmin.NewListManagedPoliciesInPermissionSetPaginator(client, &ssoadmin.ListManagedPoliciesInPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+	for managed.HasMorePages() {
+		page, err := managed.NextPage(r.ctx)
+		if err != nil {
+			return ps, fmt.Errorf("managed policies of %s: %w", ps.Name, err)
+		}
+		for _, m := range page.AttachedManagedPolicies {
+			ps.ManagedPolicies = append(ps.ManagedPolicies, aws.ToString(m.Arn))
+		}
+	}
+	customer := ssoadmin.NewListCustomerManagedPolicyReferencesInPermissionSetPaginator(client, &ssoadmin.ListCustomerManagedPolicyReferencesInPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+	for customer.HasMorePages() {
+		page, err := customer.NextPage(r.ctx)
+		if err != nil {
+			return ps, fmt.Errorf("customer managed policies of %s: %w", ps.Name, err)
+		}
+		for _, c := range page.CustomerManagedPolicyReferences {
+			ps.CustomerManagedPolicies = append(ps.CustomerManagedPolicies, policyPath(c))
+		}
+	}
+	inline, err := client.GetInlinePolicyForPermissionSet(r.ctx, &ssoadmin.GetInlinePolicyForPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+	if err != nil {
+		return ps, fmt.Errorf("inline policy of %s: %w", ps.Name, err)
+	}
+	if doc := aws.ToString(inline.InlinePolicy); doc != "" {
+		ps.InlinePolicy = json.RawMessage(doc)
+	}
+	boundary, err := client.GetPermissionsBoundaryForPermissionSet(r.ctx, &ssoadmin.GetPermissionsBoundaryForPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+	var notFound *ssotypes.ResourceNotFoundException
+	switch {
+	case errors.As(err, &notFound):
+		// No boundary set.
+	case err != nil:
+		return ps, fmt.Errorf("permissions boundary of %s: %w", ps.Name, err)
+	case boundary.PermissionsBoundary != nil && boundary.PermissionsBoundary.ManagedPolicyArn != nil:
+		ps.PermissionsBoundary = aws.ToString(boundary.PermissionsBoundary.ManagedPolicyArn)
+	case boundary.PermissionsBoundary != nil && boundary.PermissionsBoundary.CustomerManagedPolicyReference != nil:
+		ps.PermissionsBoundary = policyPath(*boundary.PermissionsBoundary.CustomerManagedPolicyReference)
+	}
+	return ps, nil
+}
+
+// policyPath renders a customer managed policy reference as path + name.
+func policyPath(ref ssotypes.CustomerManagedPolicyReference) string {
+	path := aws.ToString(ref.Path)
+	if path == "" {
+		path = "/"
+	}
+	return path + aws.ToString(ref.Name)
+}
+
+// principalName resolves a user or group ID to its name through the
+// identity store, caching per principal. It returns "" when there is no
+// identity store client or the lookup fails.
+func (r *run) principalName(storeID, kind, id string) string {
+	if r.opts.IdentityStore == nil || storeID == "" || id == "" {
+		return ""
+	}
+	if r.principals == nil {
+		r.principals = map[string]string{}
+	}
+	key := kind + ":" + id
+	if name, cached := r.principals[key]; cached {
+		return name
+	}
+	name := ""
+	var err error
+	switch kind {
+	case snapshot.PrincipalUser:
+		var out *identitystore.DescribeUserOutput
+		out, err = r.opts.IdentityStore.DescribeUser(r.ctx, &identitystore.DescribeUserInput{IdentityStoreId: aws.String(storeID), UserId: aws.String(id)})
+		if err == nil {
+			name = aws.ToString(out.UserName)
+			if name == "" {
+				name = aws.ToString(out.DisplayName)
+			}
+		}
+	case snapshot.PrincipalGroup:
+		var out *identitystore.DescribeGroupOutput
+		out, err = r.opts.IdentityStore.DescribeGroup(r.ctx, &identitystore.DescribeGroupInput{IdentityStoreId: aws.String(storeID), GroupId: aws.String(id)})
+		if err == nil {
+			name = aws.ToString(out.DisplayName)
+		}
+	}
+	if err != nil {
+		r.opts.Logger.Printf("warning: %s %s could not be resolved: %v (needs identitystore:DescribeUser and DescribeGroup)", strings.ToLower(kind), id, err)
+	}
+	r.principals[key] = name
+	return name
+}
+
 func arnRegion(arn string) string {
 	parts := strings.SplitN(arn, ":", 6)
 	if len(parts) == 6 {
@@ -553,6 +770,9 @@ func Summary(s *snapshot.Snapshot) string {
 		s.Organization.ID, len(s.OUs), len(s.Accounts), len(s.Policies), len(s.ResourceShares), len(s.DelegatedAdministrators), len(s.TrustedAccessServices))
 	if ct := s.ControlTower; ct != nil {
 		out += fmt.Sprintf("; Control Tower %s with %d registered OUs and %d enabled controls", ct.Version, len(ct.RegisteredOUs), len(ct.EnabledControls))
+	}
+	if ic := s.IdentityCenter; ic != nil {
+		out += fmt.Sprintf("; Identity Center with %d permission sets and %d account assignments", len(ic.PermissionSets), len(ic.Assignments))
 	}
 	return out
 }

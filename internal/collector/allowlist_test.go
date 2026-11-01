@@ -10,7 +10,7 @@ import (
 
 // awsCall matches method calls that look like AWS API operations. It is
 // deliberately broad: any verb-prefixed CamelCase method call on a value.
-var awsCall = regexp.MustCompile(`\.((?:Describe|List|Get|Create|Delete|Update|Put|Attach|Detach|Move|Tag|Untag|Enable|Disable|Invite|Remove|Accept|Reject|Register|Deregister|Close|Leave|Associate|Disassociate|Promote|Cancel|Decline|Start|Stop|Modify|Set|Add|Replace|Reset)[A-Z][A-Za-z]*)\(`)
+var awsCall = regexp.MustCompile(`\.((?:Describe|List|Get|Create|Delete|Update|Put|Attach|Detach|Move|Tag|Untag|Enable|Disable|Invite|Remove|Accept|Reject|Register|Deregister|Close|Leave|Associate|Disassociate|Promote|Cancel|Decline|Start|Stop|Modify|Set|Add|Replace|Reset|Provision)[A-Z][A-Za-z]*)\(`)
 
 // TestOnlyAllowlistedOperationsAreReferenced fails if any source file in the
 // collector package calls an operation that is not in the allowlist. The
@@ -51,12 +51,13 @@ func TestOnlyAllowlistedOperationsAreReferenced(t *testing.T) {
 
 func TestAllowlistRejectsWriteVerbs(t *testing.T) {
 	for _, op := range []string{"MoveAccount", "AttachPolicy", "CreateOrganizationalUnit", "DeletePolicy", "UpdatePolicy", "LeaveOrganization", "InviteAccountToOrganization",
-		"EnableControl", "DisableControl", "EnableBaseline", "ResetEnabledBaseline", "UpdateLandingZone", "ResetLandingZone", "DeleteLandingZone"} {
+		"EnableControl", "DisableControl", "EnableBaseline", "ResetEnabledBaseline", "UpdateLandingZone", "ResetLandingZone", "DeleteLandingZone",
+		"CreateAccountAssignment", "DeleteAccountAssignment", "ProvisionPermissionSet", "PutInlinePolicyToPermissionSet", "AttachManagedPolicyToPermissionSet", "DeletePermissionSet", "CreateUser", "DeleteGroup"} {
 		if Allowed(op) || IsReadOnly(op) {
 			t.Errorf("%s must never be allowed", op)
 		}
 	}
-	if len(IAMActions()) != 20 || IAMActions()[0] != "account:ListRegions" || IAMActions()[1] != "controlcatalog:GetControl" {
+	if len(IAMActions()) != 31 || IAMActions()[0] != "account:ListRegions" || IAMActions()[1] != "controlcatalog:GetControl" {
 		t.Errorf("unexpected IAM action list: %v", IAMActions())
 	}
 }

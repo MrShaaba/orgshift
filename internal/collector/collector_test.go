@@ -274,8 +274,16 @@ func TestCollectBuildsAValidSnapshot(t *testing.T) {
 	if len(ct.EnabledControls) != 1 || ct.EnabledControls[0].Behavior != snapshot.ControlDetective || ct.EnabledControls[0].Implementation != "AWS::Config::ConfigRule" || ct.EnabledControls[0].TargetOUID != "ou-fake-work" {
 		t.Errorf("enabled controls wrong (inherited child skipped, catalog applied): %+v", ct.EnabledControls)
 	}
-	if len(ct.EnrolledAccounts) != 0 {
-		t.Error("the collector must not invent enrolled accounts")
+	// Baseline C targets account 111111111112: that is an enrolment record,
+	// read from the API rather than assumed from the OU.
+	if len(ct.EnrolledAccounts) != 1 || ct.EnrolledAccounts[0].AccountID != "111111111112" || ct.EnrolledAccounts[0].Source != snapshot.EnrolledFromBaseline || ct.EnrolledAccounts[0].VendedByAccountFactory {
+		t.Errorf("enrolled accounts should come from the child enabled baselines: %+v", ct.EnrolledAccounts)
+	}
+	if ct.AutoEnrollment != snapshot.AutoEnrollmentDisabled {
+		t.Errorf("a landing zone without remediation types has auto-enrollment off, got %q", ct.AutoEnrollment)
+	}
+	if snap.Coverage == nil || len(snap.Coverage.Domains) == 0 || len(snap.CoverageGaps()) != 3 {
+		t.Errorf("coverage should be recorded, with only the three unsupported domains as gaps: %+v", snap.CoverageGaps())
 	}
 	if snap.Organization.ID != "o-fake00000001" || snap.Organization.Name != "Fake Org" || snap.GeneratedAt != "2026-01-01T00:00:00Z" {
 		t.Errorf("organization block wrong: %+v", snap.Organization)

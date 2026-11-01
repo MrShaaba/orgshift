@@ -31,7 +31,8 @@ func Read(r io.Reader) (*Snapshot, error) {
 	return Parse(data)
 }
 
-// Parse parses and validates a snapshot from JSON bytes.
+// Parse parses and validates a snapshot from JSON bytes. Documents written
+// with an older schema version are upgraded in memory; see Upgrade.
 func Parse(data []byte) (*Snapshot, error) {
 	var head struct {
 		SchemaVersion int `json:"schema_version"`
@@ -45,16 +46,32 @@ func Parse(data []byte) (*Snapshot, error) {
 	if head.SchemaVersion > SchemaVersion {
 		return nil, fmt.Errorf("snapshot schema version %d is newer than this build supports (%d)", head.SchemaVersion, SchemaVersion)
 	}
+	if head.SchemaVersion < 1 {
+		return nil, fmt.Errorf("snapshot schema version %d is not supported", head.SchemaVersion)
+	}
 	var s Snapshot
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&s); err != nil {
 		return nil, fmt.Errorf("invalid snapshot: %w", err)
 	}
+	s.Upgrade()
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// Upgrade brings a snapshot written with an older schema version to the
+// current one. Version 1 had no coverage block; the upgraded snapshot keeps
+// Coverage nil, which the evaluator reports as unknown coverage, and
+// records the original version in UpgradedFrom.
+func (s *Snapshot) Upgrade() {
+	if s.SchemaVersion >= SchemaVersion {
+		return
+	}
+	s.UpgradedFrom = s.SchemaVersion
+	s.SchemaVersion = SchemaVersion
 }
 
 // Save writes the snapshot as indented JSON.

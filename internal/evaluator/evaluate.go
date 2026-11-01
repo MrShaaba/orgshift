@@ -36,6 +36,11 @@ type move struct {
 	fresh      map[string]bool
 }
 
+// Models lists the versioned AWS behaviour models every evaluation uses.
+func Models() []ModelRef {
+	return []ModelRef{RCPModel(), RAMModel()}
+}
+
 // Evaluate runs every check for one account and returns the verdict.
 func Evaluate(in Input) (*Result, error) {
 	if in.From == nil {
@@ -90,6 +95,7 @@ func evaluateMove(m move) (*Result, error) {
 			ActionsInUse: len(usage.Actions), InboundAccess: len(usage.InboundAccess), TaggedResources: len(usage.TaggedResources),
 			RegionsAssumed: append([]string(nil), acct.EnabledRegions...),
 		},
+		Models: Models(),
 	}
 	sort.Strings(res.Subject.RegionsAssumed)
 	if !e.crossOrg && samePath(e.src.path, e.dst.path) {
@@ -118,6 +124,7 @@ func evaluateMove(m move) (*Result, error) {
 	identity := newCheck("identity-center", "IAM Identity Center")
 	e.evaluateIdentityCenter(&identity)
 	res.Checks = []Check{scp, rcp, tags, shares, services, controlTower, identity}
+	e.applyCoverage(res)
 
 	for _, t := range snapshot.AllPolicyTypes {
 		res.Diff = append(res.Diff, e.diff(t))
@@ -165,11 +172,16 @@ func summarize(r *Result) string {
 	if r.Subject.CrossOrg {
 		move += fmt.Sprintf(" (organization %s to %s)", r.Subject.SourceOrg.ID, r.Subject.TargetOrg.ID)
 	}
+	coverage := ""
+	if !r.Coverage.Complete {
+		coverage = " Collection coverage is incomplete (" + r.Coverage.Line() + ")."
+	}
 	switch r.Verdict {
 	case StatusNoGo:
-		return fmt.Sprintf("%s: NO-GO. %d blocking finding(s) and %d to review.", move, noGo, review)
+		return fmt.Sprintf("%s: NO-GO. %d blocking finding(s) and %d to review.%s", move, noGo, review, coverage)
 	case StatusReview:
-		return fmt.Sprintf("%s: REVIEW. Nothing blocks the move outright, but %d finding(s) could not be decided offline or need a decision.", move, review)
+		return fmt.Sprintf("%s: REVIEW. Nothing blocks the move outright, but %d finding(s) could not be decided offline or need a decision.%s", move, review, coverage)
 	}
-	return move + ": GO. Every evaluated action stays allowed, no networking share is lost and nothing needs review."
+	return fmt.Sprintf("%s: GO within the assessed scope. No blocker was found among the %d actions, %d inbound requests, the shares, services and controls evaluated, and every required collection domain was inspected. This is not a guarantee of zero downtime or of compatibility with everything the account does; only what the snapshots and the usage list describe was checked.",
+		move, r.Subject.ActionsInUse, r.Subject.InboundAccess)
 }

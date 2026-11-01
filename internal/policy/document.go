@@ -188,6 +188,11 @@ func parsePrincipal(data json.RawMessage) (*Principal, error) {
 type stringList []string
 
 func (l *stringList) UnmarshalJSON(data []byte) error {
+	if strings.TrimSpace(string(data)) == "null" {
+		// A JSON null is "absent", not the empty string.
+		*l = nil
+		return nil
+	}
 	var one string
 	if err := json.Unmarshal(data, &one); err == nil {
 		*l = []string{one}
@@ -203,6 +208,8 @@ func (l *stringList) UnmarshalJSON(data []byte) error {
 
 func anyToStrings(v any) ([]string, error) {
 	switch t := v.(type) {
+	case nil:
+		return nil, fmt.Errorf("condition value is null")
 	case string:
 		return []string{t}, nil
 	case bool:

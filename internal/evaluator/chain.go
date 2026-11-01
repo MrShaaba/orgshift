@@ -9,10 +9,13 @@ import (
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
 
-// link is one level of a policy chain: a node and the policies attached to it.
+// link is one level of a policy chain: a node, the policies attached to it
+// and the snapshot they come from (so parsed documents are cached per
+// organization, never by policy ID alone).
 type link struct {
 	node     snapshot.Node
 	policies []*snapshot.Policy
+	snap     *snapshot.Snapshot
 }
 
 // chain builds the policy chain of one type along a side's path.
@@ -32,7 +35,7 @@ func (e *evaluation) chain(s *side, t snapshot.PolicyType) []link {
 		} else {
 			pols = s.ix.Attached(n.ID, t)
 		}
-		out = append(out, link{node: n, policies: pols})
+		out = append(out, link{node: n, policies: pols, snap: s.snap})
 	}
 	return out
 }
@@ -47,13 +50,18 @@ func levelLabel(n snapshot.Node) string {
 	return fmt.Sprintf("account %s (%s)", n.Name, n.ID)
 }
 
-// parsed returns the parsed document for a policy, caching the result.
-func (e *evaluation) parsed(p *snapshot.Policy) (*policy.Document, error) {
-	if d, ok := e.docs[p.ID+"|"+p.Name]; ok {
+// parsed returns the parsed document for a policy, caching the result. The
+// cache key is the snapshot's organization, the policy ID and a fingerprint
+// of the document: two organizations can use the same policy ID (the AWS
+// managed defaults always do, hand-written snapshots may), and the
+// documents behind them must never stand in for each other.
+func (e *evaluation) parsed(snap *snapshot.Snapshot, p *snapshot.Policy) (*policy.Document, error) {
+	key := snap.PolicyKey(p)
+	if d, ok := e.docs[key]; ok {
 		return d.doc, d.err
 	}
 	d, err := policy.Parse(p.Document)
-	e.docs[p.ID+"|"+p.Name] = parsedDoc{doc: d, err: err}
+	e.docs[key] = parsedDoc{doc: d, err: err}
 	return d, err
 }
 
@@ -82,19 +90,41 @@ type decision struct {
 	attached []*snapshot.Policy
 }
 
+// cause renders what decided a request, tolerating a decision without a
+// statement (a policy that could not be parsed) or without a policy.
+func (d decision) cause() string {
+	switch {
+	case d.policy == nil:
+		return d.reason
+	case d.statement == nil:
+		return fmt.Sprintf("%s (%s, attached at %s)", d.reason, d.policy.Name, levelLabel(d.node))
+	case d.reason != "":
+		return fmt.Sprintf("%s (%s, %s, attached at %s)", d.reason, d.policy.Name, d.statement.Label(), levelLabel(d.node))
+	}
+	return fmt.Sprintf("%s, %s, attached at %s", d.policy.Name, d.statement.Label(), levelLabel(d.node))
+}
+
 // evalChain decides a request against every level of a chain. A level allows
 // the request when one of its Allow statements matches and no Deny statement
-// matches; the request is allowed only if every level allows it.
+// matches; the request is allowed only if every level allows it. A policy
+// that cannot be parsed is treated as unknown in both directions: it might
+// hold the Allow the level needs or a Deny that applies, so the request is
+// neither allowed nor implicitly denied but reported for review.
 func (e *evaluation) evalChain(ch []link, req policy.Request) decision {
 	var pending []decision
 	for _, lvl := range ch {
 		allowMatched := false
 		var allowUnknown, denyUnknown *decision
 		for _, p := range lvl.policies {
-			doc, err := e.parsed(p)
+			doc, err := e.parsed(lvl.snap, p)
 			if err != nil {
 				d := decision{kind: unknown, node: lvl.node, policy: p, reason: "policy could not be parsed: " + err.Error()}
-				denyUnknown = &d
+				if denyUnknown == nil {
+					denyUnknown = &d
+				}
+				if allowUnknown == nil {
+					allowUnknown = &d
+				}
 				continue
 			}
 			for i := range doc.Statements {
@@ -128,7 +158,9 @@ func (e *evaluation) evalChain(ch []link, req policy.Request) decision {
 		}
 		if !allowMatched {
 			if allowUnknown != nil {
-				pending = append(pending, *allowUnknown)
+				if denyUnknown == nil || denyUnknown != allowUnknown {
+					pending = append(pending, *allowUnknown)
+				}
 				continue
 			}
 			return decision{kind: implicitDenied, node: lvl.node, attached: lvl.policies,
@@ -156,6 +188,9 @@ func (d decision) evidence(side string, t snapshot.PolicyType) []Evidence {
 		if d.statement != nil {
 			ev.Statement = d.statement.Label()
 			ev.StatementJSON = d.statement.Raw
+		} else {
+			ev.Kind = "policy-unparseable"
+			ev.StatementJSON = d.policy.Document
 		}
 		return []Evidence{ev}
 	case implicitDenied:
@@ -195,33 +230,82 @@ func compare(p outcomePair, what string) (Status, string, string) {
 	case denied, implicitDenied:
 		cause := p.dst.reason
 		if p.dst.kind == denied {
-			cause = fmt.Sprintf("denied by %s, %s, attached at %s", p.dst.policy.Name, p.dst.statement.Label(), levelLabel(p.dst.node))
+			cause = "denied by " + p.dst.cause()
 		}
 		switch p.src.kind {
 		case allowed:
 			return StatusNoGo, what + " becomes denied after the move", "Allowed today; after the move it is " + cause + "."
 		case unknown:
-			return StatusNoGo, what + " is denied after the move", "Cannot be fully evaluated today (" + p.src.reason + "); after the move it is " + cause + "."
+			return StatusNoGo, what + " is denied after the move", "Cannot be fully evaluated today (" + p.src.cause() + "); after the move it is " + cause + "."
 		default:
-			return StatusInfo, what + " is already denied today", "Denied today (" + p.src.reason + ") and still denied after the move (" + cause + "). The actions-in-use list may be stale."
+			return StatusInfo, what + " is already denied today", "Denied today (" + p.src.cause() + ") and still denied after the move (" + cause + "). The actions-in-use list may be stale."
 		}
 	case unknown:
-		return StatusReview, what + " needs review after the move",
-			fmt.Sprintf("Cannot decide offline: %s (%s, %s, attached at %s).", p.dst.reason, p.dst.policy.Name, p.dst.statement.Label(), levelLabel(p.dst.node))
+		return StatusReview, what + " needs review after the move", "Cannot decide offline: " + p.dst.cause() + "."
 	default:
 		if p.src.kind == denied || p.src.kind == implicitDenied {
-			return StatusInfo, what + " becomes allowed after the move", "Denied today (" + p.src.reason + ") and allowed after the move."
+			return StatusInfo, what + " becomes allowed after the move", "Denied today (" + p.src.cause() + ") and allowed after the move."
 		}
 		return StatusGo, "", ""
 	}
 }
 
-// evaluateActions runs the account's actions in use through the SCP chains
+// chainsFor picks the chains and the context sides for one of the account's
+// own actions. For SCPs they are the account's own chains. For RCPs the
+// policies that apply are those of the organization that owns the resource:
+// when the resource names another account, that account's chain is used on
+// both sides and only the caller's organization changes; when the owner is
+// unknown to both snapshots, or is a management account (whose resources
+// RCPs do not restrict), ok is false and note says why.
+type routedRequest struct {
+	srcChain, dstChain     []link
+	srcEnabled, dstEnabled bool
+	// evidenceSide names the snapshot the policies come from, for evidence.
+	evidenceSide string
+	// owner is the account that owns the resource when it is not the moving
+	// account.
+	owner string
+}
+
+func (e *evaluation) chainsFor(t snapshot.PolicyType, a snapshot.ActionInUse, src, dst []link) (routedRequest, string, bool) {
+	r := routedRequest{srcChain: src, dstChain: dst, srcEnabled: e.from.PolicyTypeEnabled(t), dstEnabled: e.to.PolicyTypeEnabled(t), evidenceSide: "target"}
+	if t != snapshot.PolicyTypeRCP {
+		return r, "", true
+	}
+	owner := policy.AccountFromPrincipal(a.Resource)
+	if owner == "" || owner == e.accountID {
+		return r, "", true
+	}
+	ownerSide := e.sideOfAccount(owner)
+	if ownerSide == nil {
+		return r, fmt.Sprintf("resource %s belongs to account %s, which is in neither snapshot; the RCPs of its organization cannot be evaluated offline", a.Resource, owner), false
+	}
+	if ownerSide.snap.Organization.ManagementAccountID == owner {
+		return r, fmt.Sprintf("resource %s belongs to %s, the management account of %s; RCPs do not restrict resources in a management account", a.Resource, owner, ownerSide.orgID), false
+	}
+	ch := e.chain(ownerSide, t)
+	enabled := ownerSide.snap.PolicyTypeEnabled(t)
+	return routedRequest{srcChain: ch, dstChain: ch, srcEnabled: enabled, dstEnabled: enabled, evidenceSide: ownerSide.name, owner: owner}, "", true
+}
+
+// sideOfAccount locates an account in either snapshot and returns a side
+// positioned at its real place, or nil.
+func (e *evaluation) sideOfAccount(accountID string) *side {
+	for _, s := range []*side{&e.src, &e.dst} {
+		if _, ok := s.ix.AccountByID[accountID]; ok {
+			if path := s.ix.PathTo(accountID); path != nil {
+				return &side{name: s.name, snap: s.snap, ix: s.ix, orgID: s.orgID, path: path, fresh: map[string]bool{}}
+			}
+		}
+	}
+	return nil
+}
+
+// evaluateOwnActions runs the account's actions in use through the SCP chains
 // (or the RCP chains when t is RCP) and fills the check.
 func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 	src, dst := e.chain(&e.src, t), e.chain(&e.dst, t)
-	enabledSrc, enabledDst := e.from.PolicyTypeEnabled(t), e.to.PolicyTypeEnabled(t)
-	if !enabledDst {
+	if !e.to.PolicyTypeEnabled(t) {
 		c.add(Finding{Status: StatusInfo, Title: t.Short() + "s are not enabled in the target organization",
 			Detail: "The policy type is not enabled at the target root, so nothing of this type restricts the account after the move."})
 	}
@@ -233,9 +317,35 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 		return
 	}
 	total, flagged := 0, 0
+	var notGoverned, exempt, elsewhere []string
+	skipped := map[string]bool{}
 	for _, a := range usage.Actions {
-		if t == snapshot.PolicyTypeRCP && !rcpServices[serviceOf(a.Action)] {
+		if t == snapshot.PolicyTypeRCP {
+			switch applies, why := rcpApplies(a.Action); applies {
+			case false:
+				if why == rcpExemptReason {
+					exempt = append(exempt, a.Action)
+				} else {
+					notGoverned = append(notGoverned, a.Action)
+				}
+				continue
+			}
+		}
+		routed, note, ok := e.chainsFor(t, a, src, dst)
+		if !ok {
+			if !skipped[note] {
+				skipped[note] = true
+				status := StatusReview
+				if strings.Contains(note, "management account") {
+					status = StatusInfo
+				}
+				c.add(Finding{Status: status, Title: "RCP evaluation skipped for " + a.Action + " on a resource owned by another account", Detail: note + ".",
+					Action: a.Action, Resource: a.Resource, References: []string{RCPModelReference}})
+			}
 			continue
+		}
+		if routed.owner != "" {
+			elsewhere = append(elsewhere, a.Action+" on a resource of account "+routed.owner)
 		}
 		total++
 		regions := regionsFor(a.Action, a.Regions, e.account.EnabledRegions)
@@ -243,11 +353,11 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 		var order []string
 		for _, r := range regions {
 			var sd, dd decision
-			if enabledSrc {
-				sd = e.evalChain(src, e.ownRequest(&e.src, a, r))
+			if routed.srcEnabled {
+				sd = e.evalChain(routed.srcChain, e.ownRequest(&e.src, a, r))
 			}
-			if enabledDst {
-				dd = e.evalChain(dst, e.ownRequest(&e.dst, a, r))
+			if routed.dstEnabled {
+				dd = e.evalChain(routed.dstChain, e.ownRequest(&e.dst, a, r))
 			}
 			key := sd.groupKey() + "||" + dd.groupKey()
 			g, ok := groups[key]
@@ -266,21 +376,37 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 			}
 			flagged++
 			f := Finding{Status: status, Title: title, Detail: detail, Action: a.Action, Resource: a.Resource}
+			if routed.owner != "" {
+				f.Detail += fmt.Sprintf(" The resource belongs to account %s, so the RCPs of that account's organization apply; what changes is that the caller's organization becomes %s.", routed.owner, e.dst.orgID)
+			}
 			if !(len(g.regions) == 1 && g.regions[0] == "") && !globalServices[serviceOf(a.Action)] {
 				f.Regions = g.regions
 			}
 			if a.Note != "" {
 				f.Detail += " Note from the usage list: " + a.Note + "."
 			}
-			f.Evidence = append(f.Evidence, g.pair.dst.evidence("target", t)...)
+			f.Evidence = append(f.Evidence, g.pair.dst.evidence(routed.evidenceSide, t)...)
 			if status == StatusInfo || g.pair.src.kind == unknown {
-				f.Evidence = append(f.Evidence, g.pair.src.evidence("source", t)...)
+				srcSide := "source"
+				if routed.owner != "" {
+					srcSide = routed.evidenceSide
+				}
+				f.Evidence = append(f.Evidence, g.pair.src.evidence(srcSide, t)...)
 			}
 			c.add(f)
 		}
 	}
+	if t == snapshot.PolicyTypeRCP {
+		e.rcpModelFindings(c, notGoverned, exempt)
+	}
 	sortFindings(c.Findings)
 	c.Summary = fmt.Sprintf("%d actions evaluated against the %s chain; %d flagged.", total, t.Short(), flagged)
+	if t == snapshot.PolicyTypeRCP {
+		c.Summary += fmt.Sprintf(" RCP applicability model %s: %d action(s) on services RCPs do not govern were not evaluated, %d exempt.", RCPModelVersion, len(notGoverned), len(exempt))
+		if len(elsewhere) > 0 {
+			c.Summary += fmt.Sprintf(" %d action(s) target resources in other accounts and were evaluated against the owner's RCPs.", len(elsewhere))
+		}
+	}
 }
 
 type regionGroup struct {
@@ -288,16 +414,19 @@ type regionGroup struct {
 	regions []string
 }
 
-// evaluateInbound runs inbound access entries through the RCP chains.
+// evaluateInbound runs inbound access entries through the RCP chains of the
+// account (the resource owner).
 func (e *evaluation) evaluateInbound(c *Check) {
 	t := snapshot.PolicyTypeRCP
 	src, dst := e.chain(&e.src, t), e.chain(&e.dst, t)
 	enabledSrc, enabledDst := e.from.PolicyTypeEnabled(t), e.to.PolicyTypeEnabled(t)
 	usage := e.from.UsageFor(e.accountID)
 	total, flagged := 0, 0
+	var notGoverned []string
 	for _, in := range usage.InboundAccess {
 		for _, action := range in.Actions {
-			if !rcpServices[serviceOf(action)] {
+			if applies, _ := rcpApplies(action); !applies {
+				notGoverned = append(notGoverned, action+" by "+in.Principal)
 				continue
 			}
 			total++
@@ -355,7 +484,13 @@ func (e *evaluation) evaluateInbound(c *Check) {
 			}
 		}
 	}
-	if total > 0 {
+	if len(notGoverned) > 0 {
+		sort.Strings(notGoverned)
+		c.add(Finding{Status: StatusInfo, Title: fmt.Sprintf("%d inbound request(s) use services RCPs do not govern and were not evaluated", len(notGoverned)),
+			Detail:     "RCPs apply to a fixed list of services (applicability model " + RCPModelVersion + "). Requests for other services are not restricted by RCPs at either position, so nothing changes for them: " + strings.Join(notGoverned, "; ") + ". Services added to RCPs after the model date are not covered.",
+			References: []string{RCPModelReference}})
+	}
+	if total > 0 || len(notGoverned) > 0 {
 		c.Summary += fmt.Sprintf(" %d inbound requests evaluated; %d flagged.", total, flagged)
 	}
 	sortFindings(c.Findings)

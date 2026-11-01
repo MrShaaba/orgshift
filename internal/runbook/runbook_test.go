@@ -222,8 +222,10 @@ func TestDelegatedAdminAndAggregatorOwner(t *testing.T) {
 	if rb.Verdict != evaluator.StatusNoGo {
 		t.Fatalf("expected NO-GO, got %s", rb.Verdict)
 	}
+	// Organizations refuses to remove a delegated administrator, so the
+	// hand-over is a blocker, not a decision.
 	s := stepWith(t, rb, PhaseBefore, "Hand over delegated administration for guardduty.amazonaws.com")
-	if s.Status != evaluator.StatusReview || !strings.Contains(strings.Join(s.Commands, "\n"), "deregister-delegated-administrator --account-id 111111111113 --service-principal guardduty.amazonaws.com") || !strings.Contains(s.Where, "111111111111") {
+	if s.Status != evaluator.StatusNoGo || !strings.Contains(strings.Join(s.Commands, "\n"), "deregister-delegated-administrator --account-id 111111111113 --service-principal guardduty.amazonaws.com") || !strings.Contains(s.Where, "111111111111") {
 		t.Errorf("delegated admin hand-over: %+v", s)
 	}
 	s = stepWith(t, rb, PhaseBefore, "Move the organization Config aggregator larkspur-org-aggregator out of the account first")

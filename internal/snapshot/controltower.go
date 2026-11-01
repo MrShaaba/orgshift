@@ -13,14 +13,40 @@ const (
 	ControlProactive  = "PROACTIVE"
 )
 
+// Auto-enrollment settings of a landing zone. Control Tower exposes the
+// setting as the INHERITANCE_DRIFT remediation type on the landing zone
+// (landing zone 3.1 and later). An empty value means the snapshot does not
+// say.
+const (
+	AutoEnrollmentEnabled  = "enabled"
+	AutoEnrollmentDisabled = "disabled"
+)
+
+// Sources of an enrolled-account record.
+const (
+	// EnrolledFromBaseline: read from ListEnabledBaselines as a child
+	// enabled baseline whose target is the account. Whether Account Factory
+	// vended the account is not visible this way.
+	EnrolledFromBaseline = "baseline"
+	// EnrolledManual: written by hand.
+	EnrolledManual = "manual"
+)
+
 // ControlTower describes the AWS Control Tower landing zone that governs an
 // organization. It is absent when Control Tower is not set up.
 type ControlTower struct {
 	LandingZoneARN string `json:"landing_zone_arn,omitempty"`
 	Version        string `json:"version,omitempty"`
+	// LatestAvailableVersion is the newest landing zone version offered.
+	LatestAvailableVersion string `json:"latest_available_version,omitempty"`
 	// Status is ACTIVE, PROCESSING or FAILED; DriftStatus is IN_SYNC or DRIFTED.
 	Status      string `json:"status,omitempty"`
 	DriftStatus string `json:"drift_status,omitempty"`
+	// AutoEnrollment is "enabled" when the landing zone remediates
+	// inheritance drift (accounts moved into a registered OU are enrolled
+	// and accounts moved out are unenrolled automatically), "disabled" when
+	// the landing zone was read and the setting is off, empty when unknown.
+	AutoEnrollment string `json:"auto_enrollment,omitempty"`
 	// HomeRegion is where the landing zone was set up and where its APIs
 	// answer; GovernedRegions are the regions the controls are deployed to.
 	HomeRegion      string   `json:"home_region,omitempty"`
@@ -29,11 +55,17 @@ type ControlTower struct {
 	// landing zone created. They cannot be moved or unenrolled.
 	AuditAccountID      string `json:"audit_account_id,omitempty"`
 	LogArchiveAccountID string `json:"log_archive_account_id,omitempty"`
-	// RegisteredOUs are the OUs Control Tower governs. Accounts become
-	// enrolled by living in one of them.
+	// RegisteredOUs are the OUs Control Tower governs. Accounts are
+	// enrolled when the OU baseline has been applied to them, which the
+	// collector reads as child enabled baselines.
 	RegisteredOUs []RegisteredOU `json:"registered_ous"`
-	// EnrolledAccounts is optional. When it is empty, every account whose
-	// parent OU is registered is assumed to be enrolled.
+	// EnrolledAccounts lists the accounts that are enrolled. The collector
+	// fills it from ListEnabledBaselines (child enabled baselines whose
+	// target is an account) and records the control_tower.enrolled_accounts
+	// coverage domain. When that domain is complete, an account that is not
+	// listed is not enrolled, whatever its OU. When the list is empty and the
+	// domain was not collected, the evaluator falls back to assuming that
+	// accounts in registered OUs are enrolled and says so.
 	EnrolledAccounts []EnrolledAccount `json:"enrolled_accounts,omitempty"`
 	// EnabledControls lists the controls enabled on each registered OU.
 	// Controls on an OU also apply to the OUs nested under it.
@@ -53,10 +85,29 @@ type RegisteredOU struct {
 type EnrolledAccount struct {
 	AccountID string `json:"account_id"`
 	// VendedByAccountFactory is true when Account Factory created the
-	// account; a Service Catalog provisioned product then tracks it.
+	// account; a Service Catalog provisioned product then tracks it. The
+	// collector cannot see this (Service Catalog is not read), so records
+	// with source "baseline" leave it false and the evaluator treats the
+	// provenance as unknown.
 	VendedByAccountFactory bool   `json:"vended_by_account_factory"`
 	ProvisionedProduct     string `json:"provisioned_product,omitempty"`
-	Status                 string `json:"status,omitempty"`
+	// Status is the enablement status of the child baseline (SUCCEEDED,
+	// UNDER_CHANGE, FAILED) or a hand-written label such as ENROLLED.
+	Status string `json:"status,omitempty"`
+	// DriftStatus is the inheritance drift of the child baseline, when known.
+	DriftStatus string `json:"drift_status,omitempty"`
+	// ParentOUID is the registered OU whose baseline governs the account,
+	// when the collector could resolve it.
+	ParentOUID string `json:"parent_ou_id,omitempty"`
+	// Source is "baseline" or "manual"; empty means manual.
+	Source string `json:"source,omitempty"`
+}
+
+// ProvenanceKnown reports whether the record says anything about Account
+// Factory: hand-written records do, collected ones only when they name a
+// provisioned product.
+func (e *EnrolledAccount) ProvenanceKnown() bool {
+	return e != nil && (e.Source != EnrolledFromBaseline || e.ProvisionedProduct != "" || e.VendedByAccountFactory)
 }
 
 // EnabledControl is one control enabled on one OU.

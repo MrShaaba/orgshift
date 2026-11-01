@@ -162,6 +162,7 @@ func build(res *evaluator.Result, from, to *snapshot.Snapshot, partOfOU string) 
 	}
 	b.directPolicies = b.directAttachments()
 	b.positionCheck()
+	b.coverageSteps()
 	for _, c := range res.Checks {
 		switch c.ID {
 		case "scp", "rcp":
@@ -289,6 +290,56 @@ func (b *builder) directAttachments() []evaluator.PolicyRef {
 		}
 	}
 	return out
+}
+
+// coverageSteps turns every collection gap on the board into one step: the
+// verdict rests on evidence that is missing, so collecting it comes before
+// anything else.
+func (b *builder) coverageSteps() {
+	seen := map[string]bool{}
+	for _, c := range b.res.Checks {
+		for _, f := range c.Findings {
+			ev := firstEvidence(f, "coverage")
+			if ev == nil {
+				continue
+			}
+			key := ev.Side + "|" + ev.Reference
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			which := "source"
+			profile := "<source management profile>"
+			if ev.Side == "target" {
+				which, profile = "target", "<target management profile>"
+			}
+			cmds := []string{fmt.Sprintf("orgshift collect --profile %s --name \"%s\" --out <%s snapshot>   # records coverage for every domain", profile, orgNameFor(b, which), which)}
+			switch ev.Reference {
+			case "resource_shares":
+				cmds = append(cmds, "# shares are listed per owning account: add --ram-profiles <network account profile> for the accounts that own the shares")
+			case "control_tower", "control_tower.enrolled_accounts":
+				cmds = append(cmds, "# the landing zone APIs answer only in the home region: pass --region <home region>")
+			case "identity_center":
+				cmds = append(cmds, "# the Identity Center APIs answer only in the instance's region: pass --region <instance region>")
+			case "organization_trails", "config_aggregators", "stack_sets":
+				cmds = append(cmds, "# not read by this collector version: add the entries by hand (docs/snapshot.md) and record them under coverage.domains")
+			}
+			b.add(PhaseBefore, Step{Kind: KindInput, Status: f.Status, Title: fmt.Sprintf("Collect the missing evidence: %s (%s snapshot)", ev.Reference, which), Check: c.ID, Finding: f.Title,
+				Detail:   f.Detail + " Until it is collected the verdict rests on incomplete evidence and a GO is not issued.",
+				Commands: cmds, Evidence: f.Evidence})
+		}
+	}
+}
+
+func orgNameFor(b *builder, which string) string {
+	org := b.res.Subject.SourceOrg
+	if which == "target" {
+		org = b.res.Subject.TargetOrg
+	}
+	if org.Name != "" {
+		return org.Name
+	}
+	return org.ID
 }
 
 // positionCheck is the first check after the move.

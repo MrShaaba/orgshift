@@ -12,8 +12,27 @@
       {{if .Regions}}<dt>Regions</dt><dd>{{join .Regions ", "}}</dd>{{end}}
     </dl>
     {{range .Evidence}}{{template "evidence" .}}{{end}}
+    {{if .References}}<p class="muted small refs">Documentation: {{range .References}}<a href="{{.}}">{{.}}</a> {{end}}</p>{{end}}
   </div>
 </details>
+{{end}}
+
+{{/* coverage_matrix renders the collection coverage matrix of a result. */}}
+{{define "coverage_matrix"}}
+<table class="rollup coverage">
+  <thead><tr><th>Domain</th><th>Decides</th><th>Check</th><th>Source</th><th>Target</th></tr></thead>
+  <tbody>
+  {{range .Rows}}
+    <tr>
+      <td><code>{{.Domain}}</code></td>
+      <td class="muted small">{{.Why}}</td>
+      <td class="muted small">{{.Check}}</td>
+      <td><span class="pill {{coverClass .Source}}" title="{{.Source.Detail}}">{{.Source.Status}}{{if .Source.Asserted}} (asserted){{end}}</span>{{if not .Source.Required}} <span class="muted small">not required</span>{{end}}</td>
+      <td><span class="pill {{coverClass .Target}}" title="{{.Target.Detail}}">{{.Target.Status}}{{if .Target.Asserted}} (asserted){{end}}</span>{{if not .Target.Required}} <span class="muted small">not required</span>{{end}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
 {{end}}
 
 {{define "evidence"}}
@@ -76,6 +95,7 @@
     <header>
       <span class="pill {{statusClass .Status}}">{{.Status}}</span>
       <h3>{{.Title}}</h3>
+      {{if .CoverageGaps}}<span class="pill review" title="Not completely collected: {{join .CoverageGaps "; "}}">evidence incomplete</span>{{end}}
       <span class="counts muted small">{{with count . "NO-GO"}}{{.}} blocking · {{end}}{{with count . "REVIEW"}}{{.}} to review · {{end}}{{with count . "INFO"}}{{.}} info{{end}}</span>
     </header>
     <p class="muted">{{.Summary}}</p>

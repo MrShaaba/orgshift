@@ -73,7 +73,7 @@
         {
           "id": "before-1",
           "title": "Moving out of the registered OU Retail unenrolls the account from Control Tower",
-          "detail": "Control Tower governs accounts through their OU, and Sandbox (ou-fern-sand) is not registered with Control Tower. After the move the account is no longer enrolled: the 3 preventive guardrail SCP(s) of the old OU chain stop applying (see the SCP diff), 4 detective control(s) stop reporting, baseline updates stop and the landing zone shows the account as drifted until it is unenrolled properly. Unenroll it from Account Factory first if leaving governance is the intent; otherwise register Sandbox and move the account with Control Tower's update-account flow. Decide which of the two it is and record it here; the rest of this runbook assumes the account is moved with Organizations and ends up unenrolled.",
+          "detail": "Control Tower governs accounts through their OU, and Sandbox (ou-fern-sand) is not registered with Control Tower. After the move the account is no longer enrolled: the 3 preventive guardrail SCP(s) of the old OU chain stop applying (see the SCP diff) and 4 detective control(s) stop reporting. The landing zone has auto-enrollment off: moved with Organizations, the account keeps the baseline resources, shows inheritance drift and stays that way until it is unenrolled properly. Unenroll it from Account Factory first if leaving governance is the intent; otherwise register the target OU and move the account with Control Tower's update-account flow. Decide which of the two it is and record it here; the rest of this runbook assumes the account is moved with Organizations and ends up unenrolled.",
           "status": "REVIEW",
           "kind": "decision",
           "where": "management account 222222222221 of Fernhill Group (Account Factory)",
@@ -88,13 +88,19 @@
               "kind": "landing-zone",
               "side": "source",
               "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
-              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1; auto-enrollment disabled"
             },
             {
               "kind": "registered-ou",
               "side": "source",
               "reference": "ou-fern-ret",
               "note": "OU Retail registered: baseline 4.0, status SUCCEEDED, drift IN_SYNC"
+            },
+            {
+              "kind": "enrolled-account",
+              "side": "source",
+              "reference": "222222222225",
+              "note": "enrolled (source manual): status ENROLLED, drift unknown, parent OU unknown"
             }
           ]
         }
@@ -137,7 +143,7 @@
         {
           "id": "move-1",
           "title": "Move the account through Account Factory to OU Sandbox (ou-fern-sand)",
-          "detail": "Control Tower expects the move to go through Account Factory so the baseline follows the account; moving it with Organizations directly leaves the landing zone in drift. Account Factory records the OU as a parameter of the provisioned product. Changing the OU through the product (Service Catalog, update provisioned product, or the Control Tower console) performs the move and re-applies the baseline; moving it in Organizations directly leaves the product and the landing zone in drift.",
+          "detail": "Control Tower expects the move to go through Account Factory so the baseline follows the account; moving it with Organizations directly leaves the landing zone in drift. Account Factory records the OU as a parameter of the provisioned product. Changing the OU through the product (Service Catalog, update provisioned product, or the Control Tower console) performs the move and re-applies the baseline; moving it in Organizations directly leaves the product behind, and the landing zone in drift unless auto-enrollment is on.",
           "kind": "move",
           "where": "management account 222222222221 of Fernhill Group (Account Factory)",
           "check": "control-tower",
@@ -179,7 +185,7 @@
         {
           "id": "after-2",
           "title": "Check for Config rules left behind by the detective controls that stopped applying",
-          "detail": "Enabled on the source OU chain and not on the target's. Detective controls stop applying to the account after the move. The Config rules they deployed are removed when the account is unenrolled or moved through Control Tower; moved by hand, they linger unmanaged.",
+          "detail": "Enabled on the source OU chain and not on the target's. Detective controls stop applying to the account after the move. The Config rules they deployed are removed when the account is unenrolled or moved through Control Tower (or by auto-enrollment); moved by hand without it, they linger unmanaged.",
           "status": "INFO",
           "kind": "control-tower",
           "where": "account fernhill-retail-prod (222222222225)",

@@ -176,10 +176,17 @@ func TestOUSameOrgCarriesAttachments(t *testing.T) {
 	if !carried {
 		t.Error("the backup policy attached to Production should be listed")
 	}
-	// Leaving Workloads loses the OU-scoped prefix list share (networking: NO-GO) and lifts the region SCP (INFO).
+	// Leaving Workloads loses the OU-scoped prefix list share and lifts the
+	// region SCP (INFO). What a consumer loses with a prefix list share is
+	// not verified against the service documentation, so the loss is a
+	// REVIEW that says so, not a claimed outage.
 	pay := accountRollup(t, res, fixtures.LarkspurPaymentsProd)
-	if pay.Verdict != StatusNoGo || !strings.Contains(strings.Join(pay.BlockingTitles, "\n"), "larkspur-workload-prefix-lists") {
-		t.Errorf("payments-prod should be NO-GO because of the prefix list share, got %+v", pay.BlockingTitles)
+	if pay.Verdict != StatusReview || len(pay.BlockingTitles) != 0 {
+		t.Errorf("payments-prod should be REVIEW (prefix list behaviour unverified), got %s %+v", pay.Verdict, pay.BlockingTitles)
+	}
+	pl := find(t, pay.Result, "ram", func(f Finding) bool { return strings.Contains(f.Title, "larkspur-workload-prefix-lists") })
+	if pl.Status != StatusReview || !strings.Contains(pl.Detail, "not verified against the service documentation") {
+		t.Errorf("prefix list loss: %+v", pl)
 	}
 	if pay.Result.Subject.TargetOUID != "ou-lark-prod" || snapshot.PathString(pay.Result.Subject.TargetPath) != "Root / Production / larkspur-payments-prod" {
 		t.Errorf("the account must stay inside Production, got %s", snapshot.PathString(pay.Result.Subject.TargetPath))
@@ -187,7 +194,7 @@ func TestOUSameOrgCarriesAttachments(t *testing.T) {
 	find(t, pay.Result, "org-services", func(f Finding) bool {
 		return strings.Contains(f.Title, "larkspur-baseline-roles") && f.Status == StatusReview
 	})
-	if res.Verdict != StatusNoGo {
+	if res.Verdict != StatusReview {
 		t.Fatalf("OU verdict should be the worst account verdict, got %s", res.Verdict)
 	}
 }

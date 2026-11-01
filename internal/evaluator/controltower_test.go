@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/MrShaaba/orgshift/internal/fixtures"
+	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
 
 func TestControlTowerLeavingRegisteredOU(t *testing.T) {
@@ -128,8 +129,11 @@ func TestControlTowerSharedAccountAndRegisteredToRegistered(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := find(t, res, "control-tower", func(f Finding) bool { return strings.Contains(f.Title, "between registered OUs Payments and Retail") })
-	if r.Status != StatusReview || len(r.Evidence) != 2 || r.Evidence[1].Side != "target" {
+	if r.Status != StatusReview || len(r.Evidence) < 2 || r.Evidence[1].Side != "target" || !strings.Contains(r.Detail, "auto-enrollment off") {
 		t.Errorf("registered-to-registered finding wrong: %+v", r)
+	}
+	if r.Evidence[len(r.Evidence)-1].Kind != "enrolled-account" {
+		t.Errorf("the enrolment record should be evidence: %+v", r.Evidence)
 	}
 	find(t, res, "control-tower", func(f Finding) bool {
 		return strings.HasPrefix(f.Title, "1 proactive control(s) stop applying: CT.S3.PR.1")
@@ -146,8 +150,17 @@ func TestControlTowerSharedAccountAndRegisteredToRegistered(t *testing.T) {
 }
 
 func TestControlTowerAssumedEnrolmentAndAbsence(t *testing.T) {
+	// A hand-written snapshot: no enrolled list and no record that the
+	// list was ever collected, so the OU is the only clue.
 	f := fixtures.Fernhill()
 	f.ControlTower.EnrolledAccounts = nil
+	var kept []snapshot.DomainCoverage
+	for _, d := range f.Coverage.Domains {
+		if d.Domain != snapshot.DomainEnrolledAccounts {
+			kept = append(kept, d)
+		}
+	}
+	f.Coverage.Domains = kept
 	res, err := Evaluate(Input{From: f, AccountID: fixtures.FernhillRetailProd, TargetOUID: fixtures.FernhillSandboxOU})
 	if err != nil {
 		t.Fatal(err)

@@ -9,6 +9,12 @@ import (
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
 
+// refIdentityCenterOrgs documents what Identity Center does when an account
+// is removed from the organization: it cleans up its metadata and resources
+// in the account, and a standalone account no longer works with Identity
+// Center.
+const refIdentityCenterOrgs = "https://docs.aws.amazon.com/organizations/latest/userguide/services-that-can-integrate-sso.html"
+
 // evaluateIdentityCenter covers what IAM Identity Center loses when an
 // account leaves its organization: the account assignments (users and
 // groups per permission set) and the AWSReservedSSO_* roles provisioned in
@@ -58,7 +64,7 @@ func (e *evaluation) evaluateIdentityCenter(c *Check) {
 				Note: fmt.Sprintf("%s %s has permission set %s in account %s", strings.ToLower(a.PrincipalType), orUnknown(a.PrincipalName), ps.Name, e.accountID)})
 		}
 		evidence = append(evidence, permissionSetEvidence("source", ps))
-		detail := fmt.Sprintf("Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves %s, Identity Center deletes these %d assignment(s) and the principals lose this access at once. ", e.from.Organization.ID, len(list))
+		detail := fmt.Sprintf("Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves %s, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these %d assignment(s) stop granting access at once. ", e.from.Organization.ID, len(list))
 		switch {
 		case dst == nil:
 			detail += "The target organization has no Identity Center instance in its snapshot, so the access has to be rebuilt with IAM roles or federation, or with an instance collected into the target snapshot."
@@ -79,9 +85,10 @@ func (e *evaluation) evaluateIdentityCenter(c *Check) {
 			}
 		}
 		c.add(Finding{Status: StatusReview,
-			Title:    fmt.Sprintf("Permission set %s: %d assignment(s) removed when the account leaves (%s)", ps.Name, len(list), strings.Join(labels, ", ")),
-			Detail:   detail,
-			Evidence: evidence})
+			Title:      fmt.Sprintf("Permission set %s: %d assignment(s) removed when the account leaves (%s)", ps.Name, len(list), strings.Join(labels, ", ")),
+			Detail:     detail,
+			Evidence:   evidence,
+			References: []string{refIdentityCenterOrgs}})
 	}
 
 	// The provisioned roles.
@@ -104,14 +111,15 @@ func (e *evaluation) evaluateIdentityCenter(c *Check) {
 			}
 			evidence = append(evidence, Evidence{Kind: "reserved-role", Side: "source", Reference: ps.ReservedRolePattern(), Note: note})
 		}
-		detail := fmt.Sprintf("Identity Center deletes the IAM roles it provisioned in the account (path %s) when the account leaves the organization. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern.", src.ReservedRolePath())
+		detail := fmt.Sprintf("When the account leaves the organization, Identity Center cleans up the resources it created in the account; the documentation names the service-linked role, and the IAM roles provisioned for permission sets (path %s) go with the instance's control over the account, so plan for them to disappear and confirm in IAM after the move. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern.", src.ReservedRolePath())
 		if len(stale) > 0 {
 			detail += fmt.Sprintf(" %d of them (%s) are provisioned without any assignment and are already unused; deprovisioning the permission set from the account before the move removes them cleanly.", len(stale), strings.Join(stale, ", "))
 		}
 		c.add(Finding{Status: StatusReview,
-			Title:    fmt.Sprintf("%d AWSReservedSSO_* role(s) are deleted from the account: %s", len(provisioned), strings.Join(patterns, ", ")),
-			Detail:   detail,
-			Evidence: evidence})
+			Title:      fmt.Sprintf("%d AWSReservedSSO_* role(s) are deleted from the account: %s", len(provisioned), strings.Join(patterns, ", ")),
+			Detail:     detail,
+			Evidence:   evidence,
+			References: []string{refIdentityCenterOrgs}})
 	}
 
 	switch {

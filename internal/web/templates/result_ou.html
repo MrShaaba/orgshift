@@ -93,6 +93,7 @@
   <summary><span class="pill {{statusClass .Verdict}}">{{.Verdict}}</span> <strong>{{.AccountName}}</strong> <code>{{.AccountID}}</code> <span class="muted">· {{.RelativePath}} · {{.Blocking}} blocking, {{.Review}} to review</span></summary>
   <p class="summary">{{.Result.Summary}}</p>
   {{range .Result.Notes}}<p class="muted small">Note: {{.}}</p>{{end}}
+  <p class="muted small">Collection coverage: {{.Result.Coverage.Line}}.</p>
   <h3>Verdict board</h3>
   {{template "verdict_board" .Result}}
   {{with index $.AccountRunbooks .AccountID}}

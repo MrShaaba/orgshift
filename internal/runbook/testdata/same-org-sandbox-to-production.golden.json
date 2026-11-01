@@ -129,7 +129,7 @@
               "kind": "resource-share",
               "side": "target",
               "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
-              "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+              "note": "owner 111111111112; principals: OU ou-lark-work; allow external principals false\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
             }
           ]
         },

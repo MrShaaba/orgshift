@@ -47,22 +47,14 @@
     "nested_ous": 0,
     "accounts": 2
   },
-  "verdict": "NO-GO",
-  "summary": "12 OU-level steps and 2 account runbook(s): 2 NO-GO, 0 REVIEW, 0 GO. Clear every account's blockers before the OU tree is recreated.",
+  "verdict": "REVIEW",
+  "summary": "11 OU-level steps and 2 account runbook(s): 0 NO-GO, 2 REVIEW, 0 GO. Clear every account's blockers before the OU tree is recreated.",
   "phases": [
     {
       "id": "before",
       "title": "Before the move: the OU tree",
       "intro": "What has to be settled for the OUs themselves. Every account's own blockers are in its runbook below and have to be cleared first.",
-      "steps": [
-        {
-          "id": "ou-before-1",
-          "title": "Clear the blockers of 2 account(s) first",
-          "detail": "The OU verdict is the worst account verdict. Work through the first phase of each account runbook below: larkspur-data-prod (111111111118): Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList | larkspur-payments-prod (111111111115): Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList.",
-          "status": "NO-GO",
-          "kind": "blocker"
-        }
-      ]
+      "steps": []
     },
     {
       "id": "recreate",
@@ -272,7 +264,7 @@
           "us-east-1"
         ]
       },
-      "verdict": "NO-GO",
+      "verdict": "REVIEW",
       "summary": "5 steps: 0 before the move (0 blocking), 2 to re-create, 1 for the move itself, 1 checks afterwards and 1 to roll back.",
       "phases": [
         {
@@ -289,8 +281,8 @@
             {
               "id": "recreate-1",
               "title": "Re-share larkspur-workload-prefix-lists with the account directly: ec2:PrefixList",
-              "detail": "Owner 111111111112 shares larkspur-workload-prefix-lists (ec2:PrefixList) with arn:aws:organizations::111111111111:ou/o-larkspur0001/ou-lark-work today. After the move those principals no longer cover the account. Ask the owner to add account 111111111118 as a principal before the move so nothing attached to these resources is interrupted. This is a networking share: the move stays NO-GO until it is done.",
-              "status": "NO-GO",
+              "detail": "Owner 111111111112 shares larkspur-workload-prefix-lists (ec2:PrefixList) with arn:aws:organizations::111111111111:ou/o-larkspur0001/ou-lark-work today. After the move those principals no longer cover the account. Ask the owner to add account 111111111118 as a principal before the move so nothing attached to these resources is interrupted.",
+              "status": "REVIEW",
               "kind": "resource-share",
               "where": "owner account 111111111112",
               "check": "ram",
@@ -304,7 +296,7 @@
                   "kind": "resource-share",
                   "side": "source",
                   "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
-                  "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+                  "note": "owner 111111111112; principals: OU ou-lark-work; allow external principals false\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
                 }
               ]
             },
@@ -473,7 +465,7 @@
           "us-east-1"
         ]
       },
-      "verdict": "NO-GO",
+      "verdict": "REVIEW",
       "summary": "5 steps: 0 before the move (0 blocking), 2 to re-create, 1 for the move itself, 1 checks afterwards and 1 to roll back.",
       "phases": [
         {
@@ -490,8 +482,8 @@
             {
               "id": "recreate-1",
               "title": "Re-share larkspur-workload-prefix-lists with the account directly: ec2:PrefixList",
-              "detail": "Owner 111111111112 shares larkspur-workload-prefix-lists (ec2:PrefixList) with arn:aws:organizations::111111111111:ou/o-larkspur0001/ou-lark-work today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted. This is a networking share: the move stays NO-GO until it is done.",
-              "status": "NO-GO",
+              "detail": "Owner 111111111112 shares larkspur-workload-prefix-lists (ec2:PrefixList) with arn:aws:organizations::111111111111:ou/o-larkspur0001/ou-lark-work today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted.",
+              "status": "REVIEW",
               "kind": "resource-share",
               "where": "owner account 111111111112",
               "check": "ram",
@@ -505,7 +497,7 @@
                   "kind": "resource-share",
                   "side": "source",
                   "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
-                  "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+                  "note": "owner 111111111112; principals: OU ou-lark-work; allow external principals false\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
                 }
               ]
             },

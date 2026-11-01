@@ -12,8 +12,9 @@ import (
 
 // FixtureFiles maps the fixture organization names to their file names.
 var fixtureFiles = map[string]string{
-	fixtures.LarkspurName: "larkspur-holdings.json",
-	fixtures.FernhillName: "fernhill-group.json",
+	fixtures.LarkspurName:        "larkspur-holdings.json",
+	fixtures.FernhillName:        "fernhill-group.json",
+	fixtures.LarkspurPartialName: "larkspur-holdings-partial.json",
 }
 
 func runFixtures(args []string) error {

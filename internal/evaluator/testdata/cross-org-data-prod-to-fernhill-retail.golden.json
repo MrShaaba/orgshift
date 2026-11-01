@@ -1,6 +1,6 @@
 {
   "tool": "orgshift",
-  "result_schema_version": 1,
+  "result_schema_version": 2,
   "subject": {
     "account_id": "111111111118",
     "account_name": "larkspur-data-prod",
@@ -68,8 +68,241 @@
     ]
   },
   "verdict": "NO-GO",
-  "summary": "Moving larkspur-data-prod (111111111118) from Root / Workloads / Production to Root / Business Units / Retail (organization o-larkspur0001 to o-fernhill0001): NO-GO. 11 blocking finding(s) and 13 to review.",
+  "summary": "Moving larkspur-data-prod (111111111118) from Root / Workloads / Production to Root / Business Units / Retail (organization o-larkspur0001 to o-fernhill0001): NO-GO. 9 blocking finding(s) and 15 to review.",
+  "coverage": {
+    "same_snapshot": false,
+    "complete": true,
+    "required": 26,
+    "rows": [
+      {
+        "domain": "organization",
+        "why": "the organization identity that decides whether this is a cross-organization move",
+        "check": "coverage",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "tree",
+        "why": "the OU hierarchy, the account's position and the policy attachment targets",
+        "check": "coverage",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.scp",
+        "why": "the SCP chains evaluated against the actions in use",
+        "check": "scp",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.rcp",
+        "why": "the RCP chains evaluated against inbound access and the account's own actions",
+        "check": "rcp",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.tag",
+        "why": "the effective tag policy at the target and the one it replaces",
+        "check": "tags",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.backup",
+        "why": "backup policies are shown in the diff only",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "enabled_regions",
+        "why": "the regions an action is evaluated in when it names none",
+        "check": "scp",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "account_tags",
+        "why": "account tags are shown for context only",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "resource_shares",
+        "why": "RAM shares that stop or start reaching the account",
+        "check": "ram",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "stack_sets",
+        "why": "service-managed StackSets that target the account's OUs",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "delegated_administrators",
+        "why": "delegated administration, which blocks leaving the organization",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "trusted_access",
+        "why": "trusted access the target needs for the integrations in use",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "organization_trails",
+        "why": "organization trails that stop or start covering the account",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "config_aggregators",
+        "why": "organization Config aggregators that stop or start receiving the account",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "control_tower",
+        "why": "the landing zone, its registered OUs and the controls that apply",
+        "check": "control-tower",
+        "source": {
+          "status": "empty",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "control_tower.enrolled_accounts",
+        "why": "which accounts are enrolled rather than merely placed in a registered OU",
+        "check": "control-tower",
+        "source": {
+          "status": "empty",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "identity_center",
+        "why": "the assignments and roles that are removed when the account leaves",
+        "check": "identity-center",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      }
+    ]
+  },
   "checks": [
+    {
+      "id": "coverage",
+      "title": "Collection coverage",
+      "status": "GO",
+      "summary": "Complete: all 26 required collection domains were inspected.",
+      "findings": []
+    },
     {
       "id": "scp",
       "title": "Service control policies",
@@ -413,7 +646,7 @@
       "id": "rcp",
       "title": "Resource control policies",
       "status": "NO-GO",
-      "summary": "4 actions evaluated against the RCP chain; 0 flagged. 1 inbound requests evaluated; 1 flagged.",
+      "summary": "4 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 4 action(s) on services RCPs do not govern were not evaluated, 0 exempt. 1 inbound requests evaluated; 1 flagged.",
       "findings": [
         {
           "status": "NO-GO",
@@ -458,6 +691,14 @@
                 }
               }
             }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "4 action(s) use services RCPs do not govern and were not evaluated against RCPs",
+          "detail": "RCPs apply to a fixed list of services (applicability model 2026-11-01, 62 services). These actions are not restricted by RCPs at either position, so nothing changes for them: athena:StartQueryExecution, ec2:CreateTransitGatewayVpcAttachment, ec2:RunInstances, glue:StartJobRun. Services added to RCPs after the model date are not covered; the model is updated with the tool.",
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services"
           ]
         }
       ]
@@ -525,58 +766,76 @@
       "id": "ram",
       "title": "Resource shares (RAM)",
       "status": "NO-GO",
-      "summary": "0 share(s) kept, 4 lost or uncertain, 1 newly available.",
+      "summary": "0 share(s) kept, 4 lost, 1 newly available (RAM behaviour model 2026-11-01).",
       "findings": [
         {
           "status": "NO-GO",
           "title": "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
-          "detail": "Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. Anything attached to or routed through these resources from this account breaks unless the owner re-shares them with the account directly (and, for a different organization, enables external principals).",
+          "detail": "Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. What the documentation says happens: ec2:Subnet: existing participant resources continue to run in the subnet; no new resources can be created in it, while existing ones can still be modified, described and deleted (subnets can only be shared inside one organization). Potentially affected: ec2:RunInstances in use may target the shared resources; confirm. ec2:Subnet can only be shared inside one organization, so it cannot be re-shared with the account once it has left. ec2:TransitGateway: existing transit gateway attachments remain functional; the account can no longer describe the transit gateway or create new attachments, and either side can delete the attachments. The account uses ec2:CreateTransitGatewayVpcAttachment, which needs the share: that stops working. route53resolver:ResolverRule: traffic is affected at once, the rule's associations with the account's VPCs are removed and Resolver answers those queries from the remaining rules at once (an OU-scoped rule keeps its associations only when it is also shared with the destination OU). Ask the owner to re-share the resources with the account directly before the move, with external principals allowed, and accept the invitation after the move.",
           "evidence": [
             {
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
-              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
+              "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+            "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-sharing-share-subnet-working-with.html#vpc-sharing-stop-share-subnet",
+            "https://docs.aws.amazon.com/vpc/latest/tgw/transit-gateway-share.html#transit-gateway-unshare",
+            "https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver-rules-managing.html#resolver-rules-managing-sharing"
           ]
         },
         {
-          "status": "NO-GO",
+          "status": "REVIEW",
           "title": "Networking share larkspur-ipam is lost: ec2:IpamPool",
-          "detail": "Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. Anything attached to or routed through these resources from this account breaks unless the owner re-shares them with the account directly (and, for a different organization, enables external principals).",
+          "detail": "Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. What the documentation says happens: ec2:IpamPool: what happens to resources already using it is not verified against the service documentation; treat it as potentially affected. Ask the owner to re-share the resources with the account directly before the move, with external principals allowed, and accept the invitation after the move.",
           "evidence": [
             {
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/01364b18a31c4fdca",
-              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:IpamPool  arn:aws:ec2::111111111112:ipam-pool/ipam-pool-8afc13dafc2e5d265"
+              "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:IpamPool  arn:aws:ec2::111111111112:ipam-pool/ipam-pool-8afc13dafc2e5d265"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+            "https://docs.aws.amazon.com/ram/latest/userguide/shareable.html"
           ]
         },
         {
-          "status": "NO-GO",
+          "status": "REVIEW",
           "title": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
-          "detail": "Shared by account 111111111112 with OU ou-lark-work. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. Anything attached to or routed through these resources from this account breaks unless the owner re-shares them with the account directly (and, for a different organization, enables external principals).",
+          "detail": "Shared by account 111111111112 with OU ou-lark-work. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. What the documentation says happens: ec2:PrefixList: what happens to resources already using it is not verified against the service documentation; treat it as potentially affected. Ask the owner to re-share the resources with the account directly before the move, with external principals allowed, and accept the invitation after the move.",
           "evidence": [
             {
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
-              "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+              "note": "owner 111111111112; principals: OU ou-lark-work; allow external principals false\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+            "https://docs.aws.amazon.com/ram/latest/userguide/shareable.html"
           ]
         },
         {
           "status": "REVIEW",
-          "title": "Share larkspur-license-config is shared with this account directly; confirm it survives leaving the organization",
-          "detail": "Shared by account 111111111113 with the account ID as principal. Outside the organization the share must allow external principals (currently false) and the association may need to be re-accepted. Resource types: license-manager:LicenseConfiguration.",
+          "title": "Share larkspur-license-config is lost: license-manager:LicenseConfiguration",
+          "detail": "Shared by account 111111111113 with account 111111111115, account 111111111118. It is addressed to the account ID, but RAM ends access to shares inside the organization when the account leaves (the share was not created with RetainSharingOnAccountLeaveOrganization). What the documentation says happens: license-manager:LicenseConfiguration: what happens to resources already using it is not verified against the service documentation; treat it as potentially affected. Ask the owner to re-share the resources with the account directly before the move, with external principals allowed, and accept the invitation after the move.",
           "evidence": [
             {
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111113:resource-share/016cff3e3072e28ed",
-              "note": "owner 111111111113; principals: account 111111111115, account 111111111118\nlicense-manager:LicenseConfiguration  arn:aws:license-manager:us-east-1:111111111113:license-configuration:lic-4fba2a7c40f73ab7"
+              "note": "owner 111111111113; principals: account 111111111115, account 111111111118; allow external principals false\nlicense-manager:LicenseConfiguration  arn:aws:license-manager:us-east-1:111111111113:license-configuration:lic-4fba2a7c40f73ab7"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+            "https://docs.aws.amazon.com/ram/latest/userguide/shareable.html"
           ]
         },
         {
@@ -588,7 +847,7 @@
               "kind": "resource-share",
               "side": "target",
               "reference": "arn:aws:ram:eu-west-1:222222222222:resource-share/09521366b77824316",
-              "note": "owner 222222222222; principals: organization o-fernhill0001\nec2:TransitGateway  arn:aws:ec2:eu-west-1:222222222222:transit-gateway/tgw-6a7aefe6fddce8281\nroute53resolver:ResolverRule  arn:aws:route53resolver:eu-west-1:222222222222:resolver-rule/rslvr-rr-364b18a31c4fdca47"
+              "note": "owner 222222222222; principals: organization o-fernhill0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:eu-west-1:222222222222:transit-gateway/tgw-6a7aefe6fddce8281\nroute53resolver:ResolverRule  arn:aws:route53resolver:eu-west-1:222222222222:resolver-rule/rslvr-rr-364b18a31c4fdca47"
             }
           ]
         }
@@ -654,7 +913,10 @@
         {
           "status": "REVIEW",
           "title": "Standalone account prerequisites and invitation",
-          "detail": "Before it can leave, the account needs its own contact information, a payment method, a support plan choice and completed identity verification. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move."
+          "detail": "Before it can leave, the account needs its own contact information (verified), a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements.",
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
+          ]
         },
         {
           "status": "REVIEW",
@@ -712,6 +974,22 @@
               "note": "admin 222222222221; targets OUs ou-fern-bu; regions eu-west-1"
             }
           ]
+        },
+        {
+          "status": "INFO",
+          "title": "The 2 tag(s) on the account are deleted when it leaves: managed-by, team",
+          "detail": "Organizations deletes every tag attached to the account itself when it leaves. Anything that selects accounts by these tags (cost allocation, automation, SCP conditions on aws:PrincipalTag do not use them, but Organizations tag policies and reporting do) no longer sees the account. Re-tag it in the target organization.",
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "The IAM role Organizations created for the source management account is not deleted on leaving",
+          "detail": "Because the account was created in the organization, Organizations created an IAM role (usually OrganizationAccountAccessRole) that the source management account can assume. Leaving does not delete it; delete it by hand if that access should end, and expect the target management account to need a role of its own.",
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
+          ]
         }
       ]
     },
@@ -724,13 +1002,13 @@
         {
           "status": "REVIEW",
           "title": "Target OU Retail is registered with Control Tower; the account has to be enrolled",
-          "detail": "Moving into a registered OU does not enroll the account by itself. The 3 preventive guardrail SCP(s) on the OU chain apply immediately because they are attached to the OUs, but the 4 detective control(s) do not report and the baseline is not deployed until the account is enrolled from Account Factory. Enrolment needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no conflicting Config recorder or delivery channel in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
+          "detail": "Moving into a registered OU applies the OU's SCPs at once (the 3 preventive guardrail SCP(s) on the chain are attached to the OUs), but the 4 detective control(s) do not report and the baseline is not deployed until the account is enrolled. Enrolment is done from Account Factory (enroll account) and needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no Config recorder or delivery channel of the account's own in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
           "evidence": [
             {
               "kind": "landing-zone",
               "side": "target",
               "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
-              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1; auto-enrollment disabled"
             },
             {
               "kind": "registered-ou",
@@ -738,6 +1016,10 @@
               "reference": "ou-fern-ret",
               "note": "OU Retail registered: baseline 4.0, status SUCCEEDED, drift IN_SYNC"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html",
+            "https://docs.aws.amazon.com/controltower/latest/userguide/account-auto-enrollment.html"
           ]
         },
         {
@@ -807,7 +1089,7 @@
         {
           "status": "REVIEW",
           "title": "3 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*, AWSReservedSSO_ReadOnlyAccess_*, AWSReservedSSO_DataPlatformOperator_*",
-          "detail": "Identity Center deletes the IAM roles it provisioned in the account (path /aws-reserved/sso.amazonaws.com/us-east-1/) when the account leaves the organization. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern.",
+          "detail": "When the account leaves the organization, Identity Center cleans up the resources it created in the account; the documentation names the service-linked role, and the IAM roles provisioned for permission sets (path /aws-reserved/sso.amazonaws.com/us-east-1/) go with the instance's control over the account, so plan for them to disappear and confirm in IAM after the move. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern.",
           "evidence": [
             {
               "kind": "reserved-role",
@@ -827,12 +1109,15 @@
               "reference": "AWSReservedSSO_DataPlatformOperator_*",
               "note": "role for permission set DataPlatformOperator (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000004) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/services-that-can-integrate-sso.html"
           ]
         },
         {
           "status": "REVIEW",
           "title": "Permission set AdministratorAccess: 1 assignment(s) removed when the account leaves (group Platform-Admins)",
-          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 1 assignment(s) stop granting access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
           "evidence": [
             {
               "kind": "account-assignment",
@@ -852,12 +1137,15 @@
               "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001",
               "note": "AdministratorAccess\nPlatform team break-glass\nsession duration PT2H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 7 account(s)"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/services-that-can-integrate-sso.html"
           ]
         },
         {
           "status": "REVIEW",
           "title": "Permission set DataPlatformOperator: 1 assignment(s) removed when the account leaves (group Data-Platform)",
-          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has no permission set named DataPlatformOperator. Create one there (or choose an equivalent) before re-assigning the 1 principal(s), who have to exist in identity store d-fern0000001 under the target instance.",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 1 assignment(s) stop granting access at once. The target instance has no permission set named DataPlatformOperator. Create one there (or choose an equivalent) before re-assigning the 1 principal(s), who have to exist in identity store d-fern0000001 under the target instance.",
           "evidence": [
             {
               "kind": "account-assignment",
@@ -871,12 +1159,15 @@
               "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000004",
               "note": "DataPlatformOperator\nGlue and Athena operations\nsession duration PT4H\nmanaged policies: arn:aws:iam::aws:policy/AmazonAthenaFullAccess, arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess\npermissions boundary arn:aws:iam::aws:policy/PowerUserAccess\nprovisioned in 2 account(s)"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/services-that-can-integrate-sso.html"
           ]
         },
         {
           "status": "REVIEW",
           "title": "Permission set ReadOnlyAccess: 1 assignment(s) removed when the account leaves (group Security-Auditors)",
-          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 1 assignment(s) stop granting access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
           "evidence": [
             {
               "kind": "account-assignment",
@@ -896,6 +1187,9 @@
               "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002",
               "note": "ReadOnlyAccess\nAudit and security review\nsession duration PT12H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess, arn:aws:iam::aws:policy/job-function/ViewOnlyAccess\nprovisioned in 6 account(s)"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/services-that-can-integrate-sso.html"
           ]
         },
         {
@@ -2948,6 +3242,20 @@
       ],
       "changed": null,
       "unchanged": null
+    }
+  ],
+  "models": [
+    {
+      "id": "rcp-applicability",
+      "version": "2026-11-01",
+      "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services",
+      "note": "62 services; RCPs never restrict resources in the management account, calls by service-linked roles, AWS managed KMS keys or kms:RetireGrant"
+    },
+    {
+      "id": "ram-behaviour",
+      "version": "2026-11-01",
+      "reference": "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+      "note": "access through a share ends when the account leaves the organization or the OU the share is addressed to, unless the share was created with RetainSharingOnAccountLeaveOrganization for the account itself; what happens to traffic already flowing is modelled per resource type (transit gateways and subnets keep existing attachments and resources working, Resolver rules stop answering, others unverified)"
     }
   ]
 }

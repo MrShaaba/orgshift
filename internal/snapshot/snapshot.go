@@ -6,11 +6,21 @@
 // The schema is documented in docs/snapshot.md.
 package snapshot
 
-import "encoding/json"
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
 
 // SchemaVersion is the current snapshot schema version. Loaders reject
-// documents written with a newer version.
-const SchemaVersion = 1
+// documents written with a newer version and upgrade older ones in memory.
+//
+// Version 2 (2026-11) added the coverage block, which records what the
+// collector could and could not inspect. A version 1 document is accepted
+// and treated as having unknown coverage for every domain, so an empty list
+// in it no longer reads as "nothing exists".
+const SchemaVersion = 2
 
 // PolicyType mirrors the policy type names used by AWS Organizations.
 type PolicyType string
@@ -43,8 +53,11 @@ func (t PolicyType) Short() string {
 
 // Snapshot is the top-level document.
 type Snapshot struct {
-	SchemaVersion int    `json:"schema_version"`
-	GeneratedAt   string `json:"generated_at,omitempty"`
+	SchemaVersion int `json:"schema_version"`
+	// UpgradedFrom is set in memory (never written) when Parse upgraded the
+	// document from an older schema version.
+	UpgradedFrom int    `json:"-"`
+	GeneratedAt  string `json:"generated_at,omitempty"`
 	// Source records how the snapshot was produced: "fixture", "collector" or "manual".
 	Source string `json:"source,omitempty"`
 
@@ -60,6 +73,10 @@ type Snapshot struct {
 	OrganizationTrails      []OrganizationTrail      `json:"organization_trails"`
 	ConfigAggregators       []ConfigAggregator       `json:"config_aggregators"`
 	StackSets               []StackSet               `json:"stack_sets"`
+
+	// Coverage records which domains the collector inspected and how each
+	// call ended. Without it every domain is of unknown completeness.
+	Coverage *Coverage `json:"coverage,omitempty"`
 
 	// ControlTower describes the Control Tower landing zone, when there is one.
 	ControlTower *ControlTower `json:"control_tower,omitempty"`
@@ -103,12 +120,16 @@ type OU struct {
 
 // Account is a member account.
 type Account struct {
-	ID             string            `json:"id"`
-	ARN            string            `json:"arn,omitempty"`
-	Name           string            `json:"name"`
-	Email          string            `json:"email,omitempty"`
-	Status         string            `json:"status,omitempty"`
-	JoinedMethod   string            `json:"joined_method,omitempty"`
+	ID           string `json:"id"`
+	ARN          string `json:"arn,omitempty"`
+	Name         string `json:"name"`
+	Email        string `json:"email,omitempty"`
+	Status       string `json:"status,omitempty"`
+	JoinedMethod string `json:"joined_method,omitempty"`
+	// JoinedAt is when the account was created in or invited into the
+	// organization (RFC 3339). Organizations refuses to remove an account it
+	// created until four days have passed.
+	JoinedAt       string            `json:"joined_at,omitempty"`
 	ParentID       string            `json:"parent_id"`
 	Tags           map[string]string `json:"tags,omitempty"`
 	EnabledRegions []string          `json:"enabled_regions,omitempty"`
@@ -136,6 +157,11 @@ type ResourceShare struct {
 	OwnerAccountID          string `json:"owner_account_id"`
 	Status                  string `json:"status,omitempty"`
 	AllowExternalPrincipals bool   `json:"allow_external_principals"`
+	// RetainSharingOnAccountLeave mirrors RAM's
+	// RetainSharingOnAccountLeaveOrganization: a share with account
+	// principals keeps reaching them after they leave the organization (as
+	// an invitation). Shares with organization or OU principals never retain.
+	RetainSharingOnAccountLeave bool `json:"retain_sharing_on_account_leave_organization,omitempty"`
 	// Principals are account IDs, organization ARNs, OU ARNs, IAM role or
 	// user ARNs, or service principals.
 	Principals []string         `json:"principals"`
@@ -244,6 +270,26 @@ type TaggedResource struct {
 	Type   string            `json:"type"`
 	Region string            `json:"region,omitempty"`
 	Tags   map[string]string `json:"tags"`
+}
+
+// Fingerprint identifies a policy by its content: the first 16 hex digits
+// of the SHA-256 of the compacted document. Two policies with the same ID in
+// different organizations (or the same policy before and after an edit)
+// have different fingerprints, so caches keyed by it never collide.
+func (p *Policy) Fingerprint() string {
+	var buf bytes.Buffer
+	data := p.Document
+	if err := json.Compact(&buf, p.Document); err == nil {
+		data = buf.Bytes()
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8])
+}
+
+// Key is the namespaced identity of a policy inside one snapshot: the
+// organization, the policy ID and the content fingerprint.
+func (s *Snapshot) PolicyKey(p *Policy) string {
+	return s.Organization.ID + "|" + p.ID + "|" + p.Fingerprint()
 }
 
 // UsageFor returns the usage block for an account, or an empty one.

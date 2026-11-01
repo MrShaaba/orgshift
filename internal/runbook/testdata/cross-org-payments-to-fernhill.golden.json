@@ -427,7 +427,7 @@
         {
           "id": "before-9",
           "title": "Make the account able to stand alone",
-          "detail": "Before it can leave, the account needs its own contact information, a payment method, a support plan choice and completed identity verification. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
+          "detail": "Before it can leave, the account needs its own contact information (verified), a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
           "status": "REVIEW",
           "kind": "prerequisite",
           "where": "account larkspur-payments-prod (111111111115), signed in as root or an administrator",
@@ -471,7 +471,7 @@
         {
           "id": "before-11",
           "title": "Find what references the 4 AWSReservedSSO_* role(s) of the account",
-          "detail": "Identity Center deletes the IAM roles it provisioned in the account (path /aws-reserved/sso.amazonaws.com/us-east-1/) when the account leaves the organization. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. 1 of them (AWSReservedSSO_DataPlatformOperator_*) are provisioned without any assignment and are already unused; deprovisioning the permission set from the account before the move removes them cleanly. List the exact role ARNs now, while they exist, and search for them so the references can be updated after the move.",
+          "detail": "When the account leaves the organization, Identity Center cleans up the resources it created in the account; the documentation names the service-linked role, and the IAM roles provisioned for permission sets (path /aws-reserved/sso.amazonaws.com/us-east-1/) go with the instance's control over the account, so plan for them to disappear and confirm in IAM after the move. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. 1 of them (AWSReservedSSO_DataPlatformOperator_*) are provisioned without any assignment and are already unused; deprovisioning the permission set from the account before the move removes them cleanly. List the exact role ARNs now, while they exist, and search for them so the references can be updated after the move.",
           "status": "REVIEW",
           "kind": "identity-center",
           "where": "account larkspur-payments-prod (111111111115)",
@@ -532,7 +532,7 @@
         {
           "id": "recreate-1",
           "title": "Re-share larkspur-core-network with the account directly: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
-          "detail": "Owner 111111111112 shares larkspur-core-network (ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation. This is a networking share: the move stays NO-GO until it is done.",
+          "detail": "Owner 111111111112 shares larkspur-core-network (ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation. The documentation says traffic or a declared operation stops with this share, so the move stays NO-GO until it is done: Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. What the documentation says happens: ec2:Subnet: existing participant resources continue to run in the subnet; no new resources can be created in it, while existing ones can still be modified, described and deleted (subnets can only be shared inside one organization). Potentially affected: ec2:RunInstances, rds:CreateDBInstance in use may target the shared resources; confirm. ec2:Subnet can only be shared inside one organization, so it cannot be re-shared with the account once it has left. ec2:TransitGateway: existing transit gateway attachments remain functional; the account can no longer describe the transit gateway or create new attachments, and either side can delete the attachments. The account uses ec2:CreateTransitGatewayVpcAttachment, which needs the share: that stops working. route53resolver:ResolverRule: traffic is affected at once, the rule's associations with the account's VPCs are removed and Resolver answers those queries from the remaining rules at once (an OU-scoped rule keeps its associations only when it is also shared with the destination OU). Ask the owner to re-share the resources with the account directly before the move, with external principals allowed, and accept the invitation after the move.",
           "status": "NO-GO",
           "kind": "resource-share",
           "where": "owner account 111111111112",
@@ -548,15 +548,15 @@
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
-              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
+              "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
             }
           ]
         },
         {
           "id": "recreate-2",
           "title": "Re-share larkspur-ipam with the account directly: ec2:IpamPool",
-          "detail": "Owner 111111111112 shares larkspur-ipam (ec2:IpamPool) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation. This is a networking share: the move stays NO-GO until it is done.",
-          "status": "NO-GO",
+          "detail": "Owner 111111111112 shares larkspur-ipam (ec2:IpamPool) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation.",
+          "status": "REVIEW",
           "kind": "resource-share",
           "where": "owner account 111111111112",
           "check": "ram",
@@ -571,15 +571,15 @@
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/01364b18a31c4fdca",
-              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:IpamPool  arn:aws:ec2::111111111112:ipam-pool/ipam-pool-8afc13dafc2e5d265"
+              "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:IpamPool  arn:aws:ec2::111111111112:ipam-pool/ipam-pool-8afc13dafc2e5d265"
             }
           ]
         },
         {
           "id": "recreate-3",
           "title": "Re-share larkspur-workload-prefix-lists with the account directly: ec2:PrefixList",
-          "detail": "Owner 111111111112 shares larkspur-workload-prefix-lists (ec2:PrefixList) with arn:aws:organizations::111111111111:ou/o-larkspur0001/ou-lark-work today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation. This is a networking share: the move stays NO-GO until it is done.",
-          "status": "NO-GO",
+          "detail": "Owner 111111111112 shares larkspur-workload-prefix-lists (ec2:PrefixList) with arn:aws:organizations::111111111111:ou/o-larkspur0001/ou-lark-work today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation.",
+          "status": "REVIEW",
           "kind": "resource-share",
           "where": "owner account 111111111112",
           "check": "ram",
@@ -594,29 +594,30 @@
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
-              "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+              "note": "owner 111111111112; principals: OU ou-lark-work; allow external principals false\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
             }
           ]
         },
         {
           "id": "recreate-4",
-          "title": "Confirm share larkspur-license-config allows external principals",
-          "detail": "Shared by account 111111111113 with the account ID as principal. Outside the organization the share must allow external principals (currently false) and the association may need to be re-accepted. Resource types: license-manager:LicenseConfiguration. Ask the owner to check the flag and turn it on before the move.",
+          "title": "Re-share larkspur-license-config with the account directly: license-manager:LicenseConfiguration",
+          "detail": "Owner 111111111113 shares larkspur-license-config (license-manager:LicenseConfiguration) with 111111111115, 111111111118 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation.",
           "status": "REVIEW",
           "kind": "resource-share",
           "where": "owner account 111111111113",
           "check": "ram",
-          "finding": "Share larkspur-license-config is shared with this account directly; confirm it survives leaving the organization",
+          "finding": "Share larkspur-license-config is lost: license-manager:LicenseConfiguration",
+          "resource": "arn:aws:ram:us-east-1:111111111113:resource-share/016cff3e3072e28ed",
           "commands": [
-            "aws ram get-resource-shares --resource-owner SELF --resource-share-arns arn:aws:ram:us-east-1:111111111113:resource-share/016cff3e3072e28ed --query \"resourceShares[].allowExternalPrincipals\"",
-            "aws ram update-resource-share --resource-share-arn arn:aws:ram:us-east-1:111111111113:resource-share/016cff3e3072e28ed --allow-external-principals"
+            "aws ram update-resource-share --resource-share-arn arn:aws:ram:us-east-1:111111111113:resource-share/016cff3e3072e28ed --allow-external-principals",
+            "aws ram associate-resource-share --resource-share-arn arn:aws:ram:us-east-1:111111111113:resource-share/016cff3e3072e28ed --principals 111111111115"
           ],
           "evidence": [
             {
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111113:resource-share/016cff3e3072e28ed",
-              "note": "owner 111111111113; principals: account 111111111115, account 111111111118\nlicense-manager:LicenseConfiguration  arn:aws:license-manager:us-east-1:111111111113:license-configuration:lic-4fba2a7c40f73ab7"
+              "note": "owner 111111111113; principals: account 111111111115, account 111111111118; allow external principals false\nlicense-manager:LicenseConfiguration  arn:aws:license-manager:us-east-1:111111111113:license-configuration:lic-4fba2a7c40f73ab7"
             }
           ]
         },
@@ -695,7 +696,7 @@
         {
           "id": "recreate-9",
           "title": "Review permission set AdministratorAccess in the target instance before re-assigning it",
-          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 1 assignment(s) stop granting access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
           "status": "REVIEW",
           "kind": "identity-center",
           "where": "Identity Center of Fernhill Group (o-fernhill0001) (account 222222222221, eu-west-1)",
@@ -730,7 +731,7 @@
         {
           "id": "recreate-10",
           "title": "Create permission set PaymentsEngineer in the target instance",
-          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 2 assignment(s) and the principals lose this access at once. The target instance has no permission set named PaymentsEngineer. Create one there (or choose an equivalent) before re-assigning the 2 principal(s), who have to exist in identity store d-fern0000001 under the target instance.",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 2 assignment(s) stop granting access at once. The target instance has no permission set named PaymentsEngineer. Create one there (or choose an equivalent) before re-assigning the 2 principal(s), who have to exist in identity store d-fern0000001 under the target instance.",
           "status": "REVIEW",
           "kind": "identity-center",
           "where": "Identity Center of Fernhill Group (o-fernhill0001) (account 222222222221, eu-west-1)",
@@ -782,7 +783,7 @@
         {
           "id": "recreate-11",
           "title": "Review permission set ReadOnlyAccess in the target instance before re-assigning it",
-          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 1 assignment(s) stop granting access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
           "status": "REVIEW",
           "kind": "identity-center",
           "where": "Identity Center of Fernhill Group (o-fernhill0001) (account 222222222221, eu-west-1)",
@@ -969,7 +970,7 @@
           "kind": "check",
           "where": "account larkspur-payments-prod (111111111115)",
           "check": "ram",
-          "finding": "Share larkspur-license-config is shared with this account directly; confirm it survives leaving the organization",
+          "finding": "Share larkspur-license-config is lost: license-manager:LicenseConfiguration",
           "commands": [
             "aws ram get-resource-share-invitations --query \"resourceShareInvitations[?resourceShareName=='larkspur-license-config']\"",
             "aws ram accept-resource-share-invitation --resource-share-invitation-arn \u003cinvitation ARN from the previous command\u003e",
@@ -993,7 +994,7 @@
               "kind": "resource-share",
               "side": "target",
               "reference": "arn:aws:ram:eu-west-1:222222222222:resource-share/09521366b77824316",
-              "note": "owner 222222222222; principals: organization o-fernhill0001\nec2:TransitGateway  arn:aws:ec2:eu-west-1:222222222222:transit-gateway/tgw-6a7aefe6fddce8281\nroute53resolver:ResolverRule  arn:aws:route53resolver:eu-west-1:222222222222:resolver-rule/rslvr-rr-364b18a31c4fdca47"
+              "note": "owner 222222222222; principals: organization o-fernhill0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:eu-west-1:222222222222:transit-gateway/tgw-6a7aefe6fddce8281\nroute53resolver:ResolverRule  arn:aws:route53resolver:eu-west-1:222222222222:resolver-rule/rslvr-rr-364b18a31c4fdca47"
             }
           ]
         },
@@ -1144,7 +1145,7 @@
         {
           "id": "after-14",
           "title": "Enroll the account in Control Tower from Account Factory (OU Payments)",
-          "detail": "Moving into a registered OU does not enroll the account by itself. The 3 preventive guardrail SCP(s) on the OU chain apply immediately because they are attached to the OUs, but the 4 detective control(s) do not report and the baseline is not deployed until the account is enrolled from Account Factory. Enrolment needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no conflicting Config recorder or delivery channel in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
+          "detail": "Moving into a registered OU applies the OU's SCPs at once (the 3 preventive guardrail SCP(s) on the chain are attached to the OUs), but the 4 detective control(s) do not report and the baseline is not deployed until the account is enrolled. Enrolment is done from Account Factory (enroll account) and needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no Config recorder or delivery channel of the account's own in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
           "status": "REVIEW",
           "kind": "control-tower",
           "where": "management account 222222222221 of Fernhill Group (Account Factory)",
@@ -1158,7 +1159,7 @@
               "kind": "landing-zone",
               "side": "target",
               "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
-              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1; auto-enrollment disabled"
             },
             {
               "kind": "registered-ou",

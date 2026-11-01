@@ -20,10 +20,21 @@ import (
 const Seed = 20260101
 
 // Names of the fixture organizations as used by the CLI and the UI.
+// LarkspurPartialName is the same organization as Larkspur, collected with
+// credentials that could not read everything: it shows how incomplete
+// coverage turns into REVIEW findings instead of a quiet GO.
 const (
-	LarkspurName = "Larkspur Holdings"
-	FernhillName = "Fernhill Group"
+	LarkspurName        = "Larkspur Holdings"
+	FernhillName        = "Fernhill Group"
+	LarkspurPartialName = "Larkspur Holdings (partial collection)"
 )
+
+// fixtureCollectedAt is the timestamp written into every fixture record.
+const fixtureCollectedAt = "2026-01-01T00:00:00Z"
+
+// fixtureJoinedAt is when the fixture accounts joined their organizations:
+// long enough ago that the four-day rule for created accounts is satisfied.
+const fixtureJoinedAt = "2023-03-15T09:00:00Z"
 
 // Identifiers of the account most of the planted problems are about, of the
 // OUs used by the whole-OU move scenario, and of the Control Tower scenario
@@ -89,9 +100,123 @@ func ouArn(mgmt, org, ou string) string {
 const fullAccess = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}`
 const rcpFullAccess = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"*","Resource":"*"}]}`
 
-// All returns both fixture organizations keyed by their friendly name.
+// All returns the fixture organizations keyed by their friendly name.
 func All() map[string]*snapshot.Snapshot {
-	return map[string]*snapshot.Snapshot{LarkspurName: Larkspur(), FernhillName: Fernhill()}
+	return map[string]*snapshot.Snapshot{LarkspurName: Larkspur(), FernhillName: Fernhill(), LarkspurPartialName: LarkspurPartial()}
+}
+
+// LarkspurPartial is Larkspur Holdings as a collector with narrower
+// permissions would have recorded it: the RAM calls were denied, the
+// Control Tower lookup ran in the wrong region, the Identity Center step was
+// skipped, and the organization trail, Config aggregator and StackSet
+// domains were not collected. The lists are empty where the collector
+// could not look, and the coverage block says so.
+func LarkspurPartial() *snapshot.Snapshot {
+	s := Larkspur()
+	s.Organization.Name = LarkspurPartialName
+	s.ResourceShares = []snapshot.ResourceShare{}
+	s.OrganizationTrails = []snapshot.OrganizationTrail{}
+	s.ConfigAggregators = []snapshot.ConfigAggregator{}
+	s.StackSets = []snapshot.StackSet{}
+	s.IdentityCenter = nil
+	s.Coverage = completeCoverage(s, "us-east-1")
+	replace := func(domain string, rec snapshot.DomainCoverage) {
+		var kept []snapshot.DomainCoverage
+		for _, d := range s.Coverage.Domains {
+			if d.Domain != domain {
+				kept = append(kept, d)
+			}
+		}
+		rec.Domain, rec.CollectedAt = domain, fixtureCollectedAt
+		s.Coverage.Domains = append(kept, rec)
+	}
+	replace(snapshot.DomainResourceShares, snapshot.DomainCoverage{Status: snapshot.CoverageAccessDenied, AccountID: "111111111111", Region: "us-east-1",
+		Operations: []string{"ram:GetResourceShares"}, Error: "AccessDeniedException: User: arn:aws:sts::111111111111:assumed-role/OrgshiftReadOnly/collect is not authorized to perform: ram:GetResourceShares"})
+	replace(snapshot.DomainControlTower, snapshot.DomainCoverage{Status: snapshot.CoverageError, Region: "us-east-1",
+		Operations: []string{"controltower:ListLandingZones"}, Error: "no landing zone answered in us-east-1 although trusted access for controltower.amazonaws.com is enabled; the landing zone APIs answer only in the home region, re-run with --region <home region>"})
+	replace(snapshot.DomainEnrolledAccounts, snapshot.DomainCoverage{Status: snapshot.CoverageError, Region: "us-east-1",
+		Operations: []string{"controltower:ListEnabledBaselines"}, Error: "not read: the landing zone was not found in us-east-1"})
+	replace(snapshot.DomainIdentityCenter, snapshot.DomainCoverage{Status: snapshot.CoverageSkipped, Region: "us-east-1", Reason: "--skip-identity-center"})
+	for _, d := range []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets} {
+		replace(d, snapshot.DomainCoverage{Status: snapshot.CoverageUnsupported, Reason: "not collected by this collector version; add by hand (docs/snapshot.md)"})
+	}
+	// Trusted access shows Control Tower is in use, which is what makes the
+	// empty landing zone lookup suspicious.
+	s.TrustedAccessServices = append(s.TrustedAccessServices, "controltower.amazonaws.com")
+	return s
+}
+
+// completeCoverage records every domain as observed or empty, as a
+// collector with full permissions in the right region would.
+func completeCoverage(s *snapshot.Snapshot, region string) *snapshot.Coverage {
+	at := fixtureCollectedAt
+	rec := func(domain string, items int, ops ...string) snapshot.DomainCoverage {
+		d := snapshot.DomainCoverage{Domain: domain, Status: snapshot.CoverageObserved, Items: items, Pages: 1, CollectedAt: at, Operations: ops}
+		if items == 0 {
+			d.Status = snapshot.CoverageEmpty
+		}
+		return d
+	}
+	cov := &snapshot.Coverage{CollectorVersion: "fixture"}
+	cov.Domains = append(cov.Domains,
+		rec(snapshot.DomainOrganization, 1, "organizations:DescribeOrganization"),
+		rec(snapshot.DomainTree, len(s.OUs)+len(s.Accounts)+1, "organizations:ListRoots", "organizations:ListOrganizationalUnitsForParent", "organizations:ListAccountsForParent"),
+		rec(snapshot.DomainAccountTags, len(s.Accounts), "organizations:ListTagsForResource"),
+		rec(snapshot.DomainEnabledRegions, len(s.Accounts), "account:ListRegions"),
+	)
+	for _, t := range snapshot.AllPolicyTypes {
+		if !s.PolicyTypeEnabled(t) {
+			cov.Domains = append(cov.Domains, snapshot.DomainCoverage{Domain: snapshot.PolicyDomain(t), Status: snapshot.CoverageEmpty, CollectedAt: at, Reason: "policy type not enabled at the root"})
+			continue
+		}
+		n := 0
+		for _, p := range s.Policies {
+			if p.Type == t {
+				n++
+			}
+		}
+		cov.Domains = append(cov.Domains, rec(snapshot.PolicyDomain(t), n, "organizations:ListPolicies", "organizations:DescribePolicy", "organizations:ListTargetsForPolicy"))
+	}
+	cov.Domains = append(cov.Domains,
+		rec(snapshot.DomainDelegatedAdmins, len(s.DelegatedAdministrators), "organizations:ListDelegatedAdministrators", "organizations:ListDelegatedServicesForAccount"),
+		rec(snapshot.DomainTrustedAccess, len(s.TrustedAccessServices), "organizations:ListAWSServiceAccessForOrganization"),
+	)
+	owners := map[string]int{}
+	var ownerOrder []string
+	for _, sh := range s.ResourceShares {
+		if _, ok := owners[sh.OwnerAccountID]; !ok {
+			ownerOrder = append(ownerOrder, sh.OwnerAccountID)
+		}
+		owners[sh.OwnerAccountID]++
+	}
+	if len(ownerOrder) == 0 {
+		ownerOrder = append(ownerOrder, s.Organization.ManagementAccountID)
+	}
+	for _, o := range ownerOrder {
+		d := rec(snapshot.DomainResourceShares, owners[o], "ram:GetResourceShares", "ram:ListPrincipals", "ram:ListResources")
+		d.AccountID, d.Region = o, region
+		cov.Domains = append(cov.Domains, d)
+	}
+	cov.Domains = append(cov.Domains,
+		rec(snapshot.DomainOrgTrails, len(s.OrganizationTrails), "cloudtrail:DescribeTrails"),
+		rec(snapshot.DomainConfigAggregator, len(s.ConfigAggregators), "config:DescribeConfigurationAggregators"),
+		rec(snapshot.DomainStackSets, len(s.StackSets), "cloudformation:ListStackSets", "cloudformation:DescribeStackSet"),
+	)
+	ct := snapshot.DomainCoverage{Domain: snapshot.DomainControlTower, Status: snapshot.CoverageEmpty, Region: region, CollectedAt: at, Operations: []string{"controltower:ListLandingZones"}, Reason: "no landing zone in " + region}
+	enrolled := snapshot.DomainCoverage{Domain: snapshot.DomainEnrolledAccounts, Status: snapshot.CoverageEmpty, Region: region, CollectedAt: at, Reason: "no landing zone"}
+	if s.ControlTower != nil {
+		ct = rec(snapshot.DomainControlTower, 1+len(s.ControlTower.RegisteredOUs)+len(s.ControlTower.EnabledControls), "controltower:ListLandingZones", "controltower:GetLandingZone", "controltower:ListEnabledBaselines", "controltower:ListEnabledControls", "controlcatalog:GetControl")
+		ct.Region = region
+		enrolled = rec(snapshot.DomainEnrolledAccounts, len(s.ControlTower.EnrolledAccounts), "controltower:ListEnabledBaselines")
+		enrolled.Region = region
+	}
+	ic := snapshot.DomainCoverage{Domain: snapshot.DomainIdentityCenter, Status: snapshot.CoverageEmpty, Region: region, CollectedAt: at, Operations: []string{"sso:ListInstances"}, Reason: "no instance in " + region}
+	if s.IdentityCenter != nil {
+		ic = rec(snapshot.DomainIdentityCenter, 1+len(s.IdentityCenter.PermissionSets)+len(s.IdentityCenter.Assignments), "sso:ListInstances", "sso:ListPermissionSets", "sso:DescribePermissionSet", "sso:ListAccountAssignments")
+		ic.Region = region
+	}
+	cov.Domains = append(cov.Domains, ct, enrolled, ic)
+	return cov
 }
 
 // Larkspur builds the legacy organization that the payments account is
@@ -269,6 +394,7 @@ func Larkspur() *snapshot.Snapshot {
 	}
 	// Drawn after the usage block so the identifiers above keep their values.
 	s.IdentityCenter = larkspurIdentityCenter(g)
+	s.Coverage = completeCoverage(s, "us-east-1")
 	return s
 }
 
@@ -501,6 +627,7 @@ func Fernhill() *snapshot.Snapshot {
 			},
 		},
 	}
+	s.Coverage = completeCoverage(s, "eu-west-1")
 	return s
 }
 
@@ -526,8 +653,11 @@ func fernhillControlTower() *snapshot.ControlTower {
 	}
 	return &snapshot.ControlTower{
 		LandingZoneARN: "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
-		Version:        "3.3", Status: "ACTIVE", DriftStatus: "IN_SYNC",
-		HomeRegion: "eu-west-1", GovernedRegions: []string{"eu-west-1", "eu-central-1"},
+		Version:        "3.3", LatestAvailableVersion: "3.3", Status: "ACTIVE", DriftStatus: "IN_SYNC",
+		// Fernhill has not opted into auto-enrollment, so moves made with
+		// Organizations leave inheritance drift.
+		AutoEnrollment: snapshot.AutoEnrollmentDisabled,
+		HomeRegion:     "eu-west-1", GovernedRegions: []string{"eu-west-1", "eu-central-1"},
 		AuditAccountID: FernhillAuditAccount, LogArchiveAccountID: "222222222224",
 		RegisteredOUs: []snapshot.RegisteredOU{registered("ou-fern-core"), registered("ou-fern-bu"), registered(FernhillPaymentsOU), registered(FernhillRetailOU)},
 		EnrolledAccounts: []snapshot.EnrolledAccount{
@@ -655,7 +785,7 @@ func fernhillIdentityCenter(g *gen) *snapshot.IdentityCenter {
 func acct(id, name, parent, team string, regions []string) snapshot.Account {
 	return snapshot.Account{
 		ID: id, ARN: "arn:aws:organizations::" + id + ":account/" + id,
-		Name: name, Email: "aws+" + name + "@example.com", Status: "ACTIVE", JoinedMethod: "CREATED",
+		Name: name, Email: "aws+" + name + "@example.com", Status: "ACTIVE", JoinedMethod: "CREATED", JoinedAt: fixtureJoinedAt,
 		ParentID: parent, Tags: map[string]string{"team": team, "managed-by": "orgshift-fixture"}, EnabledRegions: regions,
 	}
 }

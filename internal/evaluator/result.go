@@ -41,18 +41,37 @@ func Worst(a, b Status) Status {
 }
 
 // ResultSchemaVersion is bumped when the exported result shape changes.
-const ResultSchemaVersion = 1
+//
+// Version 2 added the coverage matrix, the list of versioned models the
+// evaluation used, documentation references on findings and the
+// coverage_gaps list on checks.
+const ResultSchemaVersion = 2
 
 // Result is the complete outcome of one simulated move.
 type Result struct {
-	Tool                string   `json:"tool"`
-	ResultSchemaVersion int      `json:"result_schema_version"`
-	Subject             Subject  `json:"subject"`
-	Verdict             Status   `json:"verdict"`
-	Summary             string   `json:"summary"`
-	Checks              []Check  `json:"checks"`
-	Diff                []Diff   `json:"diff"`
-	Notes               []string `json:"notes,omitempty"`
+	Tool                string  `json:"tool"`
+	ResultSchemaVersion int     `json:"result_schema_version"`
+	Subject             Subject `json:"subject"`
+	Verdict             Status  `json:"verdict"`
+	Summary             string  `json:"summary"`
+	// Coverage says which collection domains the verdict rests on and
+	// whether each was completely collected on each side.
+	Coverage CoverageMatrix `json:"coverage"`
+	Checks   []Check        `json:"checks"`
+	Diff     []Diff         `json:"diff"`
+	// Models lists the versioned AWS behaviour models the evaluation used,
+	// with the documentation they were verified against.
+	Models []ModelRef `json:"models"`
+	Notes  []string   `json:"notes,omitempty"`
+}
+
+// ModelRef names one versioned model of AWS behaviour the evaluator relies
+// on, so a reader can tell how current the assumptions are.
+type ModelRef struct {
+	ID        string `json:"id"`
+	Version   string `json:"version"`
+	Reference string `json:"reference"`
+	Note      string `json:"note,omitempty"`
 }
 
 // OrgRef identifies an organization.
@@ -81,11 +100,15 @@ type Subject struct {
 
 // Check is one area of the verdict board.
 type Check struct {
-	ID       string    `json:"id"`
-	Title    string    `json:"title"`
-	Status   Status    `json:"status"`
-	Summary  string    `json:"summary"`
-	Findings []Finding `json:"findings"`
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Status  Status `json:"status"`
+	Summary string `json:"summary"`
+	// CoverageGaps lists the collection domains this check depends on that
+	// were not completely collected ("resource_shares on source"), so an
+	// empty finding list is read with that caveat.
+	CoverageGaps []string  `json:"coverage_gaps,omitempty"`
+	Findings     []Finding `json:"findings"`
 }
 
 // Finding is one explained observation with evidence.
@@ -98,6 +121,9 @@ type Finding struct {
 	Principal string     `json:"principal,omitempty"`
 	Regions   []string   `json:"regions,omitempty"`
 	Evidence  []Evidence `json:"evidence,omitempty"`
+	// References are the official documentation pages the finding's claim
+	// about AWS behaviour was verified against.
+	References []string `json:"references,omitempty"`
 }
 
 // Evidence points at the exact policy statement, share or setting that

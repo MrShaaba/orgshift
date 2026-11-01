@@ -220,6 +220,19 @@ func newOUResultView(res *evaluator.OUResult, fromName, toName string, from, to 
 	return v
 }
 
+// coverageClass maps a coverage cell to a status class: complete cells read
+// as GO, required incomplete ones as REVIEW, cells the move does not need
+// as neutral.
+func coverageClass(c evaluator.CoverageCell) string {
+	switch {
+	case !c.Required && !c.Status.Complete():
+		return "info"
+	case c.Status.Complete():
+		return "go"
+	}
+	return "review"
+}
+
 func statusClass(s evaluator.Status) string {
 	switch s {
 	case evaluator.StatusGo:

@@ -1,6 +1,6 @@
 {
   "tool": "orgshift",
-  "result_schema_version": 1,
+  "result_schema_version": 2,
   "subject": {
     "account_id": "111111111116",
     "account_name": "larkspur-payments-dev",
@@ -68,8 +68,241 @@
     ]
   },
   "verdict": "GO",
-  "summary": "Moving larkspur-payments-dev (111111111116) from Root / Workloads / Development to Root / Workloads / Production: GO. Every evaluated action stays allowed, no networking share is lost and nothing needs review.",
+  "summary": "Moving larkspur-payments-dev (111111111116) from Root / Workloads / Development to Root / Workloads / Production: GO within the assessed scope. No blocker was found among the 3 actions, 0 inbound requests, the shares, services and controls evaluated, and every required collection domain was inspected. This is not a guarantee of zero downtime or of compatibility with everything the account does; only what the snapshots and the usage list describe was checked.",
+  "coverage": {
+    "same_snapshot": true,
+    "complete": true,
+    "required": 9,
+    "rows": [
+      {
+        "domain": "organization",
+        "why": "the organization identity that decides whether this is a cross-organization move",
+        "check": "coverage",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "tree",
+        "why": "the OU hierarchy, the account's position and the policy attachment targets",
+        "check": "coverage",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.scp",
+        "why": "the SCP chains evaluated against the actions in use",
+        "check": "scp",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.rcp",
+        "why": "the RCP chains evaluated against inbound access and the account's own actions",
+        "check": "rcp",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.tag",
+        "why": "the effective tag policy at the target and the one it replaces",
+        "check": "tags",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.backup",
+        "why": "backup policies are shown in the diff only",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "enabled_regions",
+        "why": "the regions an action is evaluated in when it names none",
+        "check": "scp",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "account_tags",
+        "why": "account tags are shown for context only",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "resource_shares",
+        "why": "RAM shares that stop or start reaching the account",
+        "check": "ram",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "stack_sets",
+        "why": "service-managed StackSets that target the account's OUs",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "delegated_administrators",
+        "why": "delegated administration, which blocks leaving the organization",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "trusted_access",
+        "why": "trusted access the target needs for the integrations in use",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "organization_trails",
+        "why": "organization trails that stop or start covering the account",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "config_aggregators",
+        "why": "organization Config aggregators that stop or start receiving the account",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "control_tower",
+        "why": "the landing zone, its registered OUs and the controls that apply",
+        "check": "control-tower",
+        "source": {
+          "status": "empty",
+          "required": true
+        },
+        "target": {
+          "status": "empty",
+          "required": true
+        }
+      },
+      {
+        "domain": "control_tower.enrolled_accounts",
+        "why": "which accounts are enrolled rather than merely placed in a registered OU",
+        "check": "control-tower",
+        "source": {
+          "status": "empty",
+          "required": false
+        },
+        "target": {
+          "status": "empty",
+          "required": false
+        }
+      },
+      {
+        "domain": "identity_center",
+        "why": "the assignments and roles that are removed when the account leaves",
+        "check": "identity-center",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      }
+    ]
+  },
   "checks": [
+    {
+      "id": "coverage",
+      "title": "Collection coverage",
+      "status": "GO",
+      "summary": "Complete: all 9 required collection domains were inspected.",
+      "findings": []
+    },
     {
       "id": "scp",
       "title": "Service control policies",
@@ -81,8 +314,17 @@
       "id": "rcp",
       "title": "Resource control policies",
       "status": "GO",
-      "summary": "0 actions evaluated against the RCP chain; 0 flagged.",
-      "findings": []
+      "summary": "0 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 3 action(s) on services RCPs do not govern were not evaluated, 0 exempt.",
+      "findings": [
+        {
+          "status": "INFO",
+          "title": "3 action(s) use services RCPs do not govern and were not evaluated against RCPs",
+          "detail": "RCPs apply to a fixed list of services (applicability model 2026-11-01, 62 services). These actions are not restricted by RCPs at either position, so nothing changes for them: ec2:CreateVpc, ec2:RunInstances, lambda:*. Services added to RCPs after the model date are not covered; the model is updated with the tool.",
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services"
+          ]
+        }
+      ]
     },
     {
       "id": "tags",
@@ -117,7 +359,7 @@
       "id": "ram",
       "title": "Resource shares (RAM)",
       "status": "GO",
-      "summary": "3 share(s) kept, 0 lost or uncertain, 0 newly available.",
+      "summary": "3 share(s) kept, 0 lost, 0 newly available (RAM behaviour model 2026-11-01).",
       "findings": []
     },
     {
@@ -1573,6 +1815,20 @@
       "removed": null,
       "changed": null,
       "unchanged": null
+    }
+  ],
+  "models": [
+    {
+      "id": "rcp-applicability",
+      "version": "2026-11-01",
+      "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services",
+      "note": "62 services; RCPs never restrict resources in the management account, calls by service-linked roles, AWS managed KMS keys or kms:RetireGrant"
+    },
+    {
+      "id": "ram-behaviour",
+      "version": "2026-11-01",
+      "reference": "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+      "note": "access through a share ends when the account leaves the organization or the OU the share is addressed to, unless the share was created with RetainSharingOnAccountLeaveOrganization for the account itself; what happens to traffic already flowing is modelled per resource type (transit gateways and subnets keep existing attachments and resources working, Resolver rules stop answering, others unverified)"
     }
   ]
 }

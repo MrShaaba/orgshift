@@ -51,10 +51,15 @@ func writeMarkdownBody(b *strings.Builder, r *evaluator.Result, level int) {
 	}
 	b.WriteString("\n")
 
+	writeCoverage(b, r, h(2))
+
 	for _, c := range r.Checks {
 		fmt.Fprintf(b, "%s %s: %s\n\n", h(2), c.Title, c.Status)
 		if c.Summary != "" {
 			fmt.Fprintf(b, "%s\n\n", c.Summary)
+		}
+		if len(c.CoverageGaps) > 0 {
+			fmt.Fprintf(b, "Evidence incomplete: %s.\n\n", strings.Join(c.CoverageGaps, "; "))
 		}
 		if len(c.Findings) == 0 {
 			b.WriteString("No findings.\n\n")
@@ -71,6 +76,45 @@ func writeMarkdownBody(b *strings.Builder, r *evaluator.Result, level int) {
 		fmt.Fprintf(b, "%s %s\n\n", h(3), d.TypeShort)
 		writeDiff(b, d)
 	}
+}
+
+// writeCoverage renders the collection coverage matrix and the models the
+// evaluation used.
+func writeCoverage(b *strings.Builder, r *evaluator.Result, heading string) {
+	m := r.Coverage
+	fmt.Fprintf(b, "%s Collection coverage\n\n", heading)
+	fmt.Fprintf(b, "Coverage is %s.", m.Line())
+	if m.SameSnapshot {
+		b.WriteString(" Both columns describe the same snapshot.")
+	}
+	b.WriteString(" An empty list only means \"nothing exists\" when its domain is observed or empty; a required domain in any other state makes the check that depends on it REVIEW.\n\n")
+	b.WriteString("| Domain | Decides | Check | Source | Target |\n|---|---|---|---|---|\n")
+	for _, row := range m.Rows {
+		fmt.Fprintf(b, "| `%s` | %s | %s | %s | %s |\n", row.Domain, row.Why, row.Check, coverageCell(row.Source), coverageCell(row.Target))
+	}
+	b.WriteString("\n")
+	if len(r.Models) > 0 {
+		b.WriteString("Models used: ")
+		var parts []string
+		for _, mref := range r.Models {
+			parts = append(parts, fmt.Sprintf("%s %s ([reference](%s))", mref.ID, mref.Version, mref.Reference))
+		}
+		b.WriteString(strings.Join(parts, "; ") + ".\n\n")
+	}
+}
+
+func coverageCell(c evaluator.CoverageCell) string {
+	s := string(c.Status)
+	if c.Asserted {
+		s += " (asserted)"
+	}
+	if !c.Required {
+		s += " (not required)"
+	}
+	if c.Detail != "" && !c.Status.Complete() {
+		s += ": " + strings.ReplaceAll(c.Detail, "|", "\\|")
+	}
+	return s
 }
 
 func writeFinding(b *strings.Builder, f evaluator.Finding) {
@@ -93,6 +137,9 @@ func writeFinding(b *strings.Builder, f evaluator.Finding) {
 	}
 	for _, ev := range f.Evidence {
 		writeEvidence(b, ev)
+	}
+	if len(f.References) > 0 {
+		fmt.Fprintf(b, "Documentation: %s\n\n", strings.Join(f.References, ", "))
 	}
 }
 
@@ -294,10 +341,14 @@ func Text(r *evaluator.Result) string {
 	for _, n := range r.Notes {
 		fmt.Fprintf(&b, "note: %s\n", n)
 	}
+	fmt.Fprintf(&b, "coverage: %s\n", r.Coverage.Line())
 	for _, c := range r.Checks {
 		fmt.Fprintf(&b, "[%-6s] %s", c.Status, c.Title)
 		if c.Summary != "" {
 			fmt.Fprintf(&b, " - %s", c.Summary)
+		}
+		if len(c.CoverageGaps) > 0 {
+			fmt.Fprintf(&b, " [evidence incomplete: %s]", strings.Join(c.CoverageGaps, "; "))
 		}
 		b.WriteString("\n")
 		for _, f := range c.Findings {

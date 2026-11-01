@@ -5,12 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
+
+	"github.com/MrShaaba/orgshift/internal/policy"
 )
 
 var accountIDRe = regexp.MustCompile(`^\d{12}$`)
 
-// Validate checks referential integrity. It is deliberately strict so that
-// hand-edited snapshots fail early with a precise message.
+// Validate checks referential integrity and the structure of every policy
+// document. It is deliberately strict so that hand-edited snapshots fail
+// early with a precise message instead of surfacing as an unevaluable
+// policy or a wrong verdict later.
 func (s *Snapshot) Validate() error {
 	var errs []error
 	fail := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
@@ -44,6 +49,11 @@ func (s *Snapshot) Validate() error {
 			fail("id %s is used by both a %s and an account", a.ID, k)
 		}
 		seen[a.ID] = "account"
+		if a.JoinedAt != "" {
+			if _, err := time.Parse(time.RFC3339, a.JoinedAt); err != nil {
+				fail("account %s (%s): joined_at %q is not an RFC 3339 timestamp", a.ID, a.Name, a.JoinedAt)
+			}
+		}
 	}
 	for _, ou := range s.OUs {
 		if k, ok := seen[ou.ParentID]; !ok || k == "account" {
@@ -67,11 +77,13 @@ func (s *Snapshot) Validate() error {
 		policyIDs[p.ID] = true
 		switch p.Type {
 		case PolicyTypeSCP, PolicyTypeRCP, PolicyTypeTag, PolicyTypeBackup:
+			if len(p.Document) == 0 || !json.Valid(p.Document) {
+				fail("policy %s (%s): document is not valid JSON", p.ID, p.Name)
+			} else if err := ValidatePolicyDocument(p.Type, p.Document); err != nil {
+				fail("policy %s (%s): %v", p.ID, p.Name, err)
+			}
 		default:
 			fail("policy %s (%s): unknown type %q", p.ID, p.Name, p.Type)
-		}
-		if len(p.Document) == 0 || !json.Valid(p.Document) {
-			fail("policy %s (%s): document is not valid JSON", p.ID, p.Name)
 		}
 		for _, t := range p.Targets {
 			if _, ok := seen[t]; !ok {
@@ -86,6 +98,7 @@ func (s *Snapshot) Validate() error {
 	}
 	s.validateControlTower(seen, fail)
 	s.validateIdentityCenter(seen, fail)
+	s.validateCoverage(seen, fail)
 	// Cycles: every OU must reach the root.
 	ix := s.Index()
 	for _, ou := range s.OUs {
@@ -94,6 +107,67 @@ func (s *Snapshot) Validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// ValidatePolicyDocument checks that a document has the structure its policy
+// type requires, so that malformed input is reported with the statement and
+// element at fault. SCPs and RCPs must parse as IAM policy documents; an RCP
+// statement must carry Principal "*" and an SCP statement none; tag and
+// backup policies must be objects with their top-level map.
+func ValidatePolicyDocument(t PolicyType, doc json.RawMessage) error {
+	switch t {
+	case PolicyTypeSCP, PolicyTypeRCP:
+		d, err := policy.Parse(doc)
+		if err != nil {
+			return err
+		}
+		for i := range d.Statements {
+			st := &d.Statements[i]
+			switch t {
+			case PolicyTypeSCP:
+				if st.Principals != nil || st.NotPrincipals != nil {
+					return fmt.Errorf("%s: service control policies cannot carry a Principal or NotPrincipal element", st.Label())
+				}
+			case PolicyTypeRCP:
+				if st.NotPrincipals != nil {
+					return fmt.Errorf("%s: resource control policies do not support NotPrincipal", st.Label())
+				}
+				if st.Principals == nil {
+					return fmt.Errorf("%s: resource control policies require a Principal element", st.Label())
+				}
+				if !st.Principals.All {
+					return fmt.Errorf("%s: the Principal of a resource control policy must be \"*\"", st.Label())
+				}
+			}
+		}
+	case PolicyTypeTag:
+		var d struct {
+			Tags map[string]json.RawMessage `json:"tags"`
+		}
+		if err := json.Unmarshal(doc, &d); err != nil {
+			return fmt.Errorf("tag policy must be an object with a tags map: %v", err)
+		}
+		if d.Tags == nil {
+			return fmt.Errorf("tag policy has no tags element")
+		}
+		for k, v := range d.Tags {
+			var spec map[string]json.RawMessage
+			if err := json.Unmarshal(v, &spec); err != nil {
+				return fmt.Errorf("tag policy: tags.%s must be an object: %v", k, err)
+			}
+		}
+	case PolicyTypeBackup:
+		var d struct {
+			Plans map[string]json.RawMessage `json:"plans"`
+		}
+		if err := json.Unmarshal(doc, &d); err != nil {
+			return fmt.Errorf("backup policy must be an object with a plans map: %v", err)
+		}
+		if d.Plans == nil {
+			return fmt.Errorf("backup policy has no plans element")
+		}
+	}
+	return nil
 }
 
 // validateControlTower checks that every Control Tower reference points at a
@@ -108,6 +182,11 @@ func (s *Snapshot) validateControlTower(seen map[string]string, fail func(string
 			fail("control_tower: shared account %q is not an account in this snapshot", id)
 		}
 	}
+	switch ct.AutoEnrollment {
+	case "", AutoEnrollmentEnabled, AutoEnrollmentDisabled:
+	default:
+		fail("control_tower: auto_enrollment must be enabled, disabled or empty, got %q", ct.AutoEnrollment)
+	}
 	registered := map[string]bool{}
 	for _, ou := range ct.RegisteredOUs {
 		if seen[ou.OUID] != "ou" {
@@ -118,9 +197,22 @@ func (s *Snapshot) validateControlTower(seen map[string]string, fail func(string
 		}
 		registered[ou.OUID] = true
 	}
+	enrolled := map[string]bool{}
 	for _, a := range ct.EnrolledAccounts {
 		if seen[a.AccountID] != "account" {
 			fail("control_tower.enrolled_accounts: %q is not an account", a.AccountID)
+		}
+		if enrolled[a.AccountID] {
+			fail("control_tower.enrolled_accounts: %s is listed twice", a.AccountID)
+		}
+		enrolled[a.AccountID] = true
+		if a.ParentOUID != "" && seen[a.ParentOUID] != "ou" {
+			fail("control_tower.enrolled_accounts: parent_ou_id %q of %s is not an ou", a.ParentOUID, a.AccountID)
+		}
+		switch a.Source {
+		case "", EnrolledFromBaseline, EnrolledManual:
+		default:
+			fail("control_tower.enrolled_accounts: %s has unknown source %q", a.AccountID, a.Source)
 		}
 	}
 	for _, c := range ct.EnabledControls {

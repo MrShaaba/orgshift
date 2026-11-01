@@ -59,8 +59,10 @@ func (s *Store) Names() []string {
 	return append([]string(nil), s.order...)
 }
 
-// LoadFixtures adds the two fixture organizations, source first.
+// LoadFixtures adds the fixture organizations, source first, then the
+// partially collected copy of the source.
 func (s *Store) LoadFixtures() {
 	s.Add(fixtures.LarkspurName, fixtures.Larkspur())
 	s.Add(fixtures.FernhillName, fixtures.Fernhill())
+	s.Add(fixtures.LarkspurPartialName, fixtures.LarkspurPartial())
 }

@@ -8,10 +8,10 @@ import (
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
 
-func (e *evaluation) policyRef(p *snapshot.Policy, level string) PolicyRef {
+func (e *evaluation) policyRef(snap *snapshot.Snapshot, p *snapshot.Policy, level string) PolicyRef {
 	ref := PolicyRef{ID: p.ID, Name: p.Name, Description: p.Description, AWSManaged: p.AWSManaged, ControlTowerManaged: p.ControlTowerManaged(), Level: level, Document: p.Document}
 	if p.Type == snapshot.PolicyTypeSCP || p.Type == snapshot.PolicyTypeRCP {
-		if doc, err := e.parsed(p); err == nil {
+		if doc, err := e.parsed(snap, p); err == nil {
 			for _, st := range doc.Statements {
 				ss := StatementSummary{Sid: st.Sid, Effect: st.Effect, Actions: st.Actions, NotActions: st.NotActions, HasCondition: len(st.Conditions) > 0}
 				for _, c := range st.Conditions {
@@ -46,7 +46,7 @@ func (e *evaluation) diff(t snapshot.PolicyType) Diff {
 		for _, l := range ch {
 			cl := ChainLink{Node: l.node}
 			for _, p := range l.policies {
-				ref := e.policyRef(p, levelLabel(l.node))
+				ref := e.policyRef(l.snap, p, levelLabel(l.node))
 				cl.Policies = append(cl.Policies, ref)
 				if _, ok := byName[p.Name]; !ok {
 					order = append(order, p.Name)

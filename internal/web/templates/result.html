@@ -26,6 +26,13 @@
   {{template "verdict_board" $r}}
 </section>
 
+<section class="panel">
+  <h2>Collection coverage <span class="pill {{if $r.Coverage.Complete}}go{{else}}review{{end}}">{{if $r.Coverage.Complete}}complete{{else}}incomplete{{end}}</span></h2>
+  <p class="muted small">{{$r.Coverage.Line}}. An empty list in a snapshot only means "nothing exists" when the domain's status is observed or empty; a required domain in any other state turns the check that depends on it into a REVIEW.{{if $r.Coverage.SameSnapshot}} Both columns describe the same snapshot.{{end}}</p>
+  {{template "coverage_matrix" $r.Coverage}}
+  <p class="muted small">Models used:{{range $r.Models}} <span title="{{.Note}}">{{.ID}} <code>{{.Version}}</code> (<a href="{{.Reference}}">reference</a>)</span>{{end}}</p>
+</section>
+
 <section class="panel runbook-panel">
   <h2>Migration runbook <span class="muted small">{{.Runbook.Summary}}</span></h2>
   <p class="muted small">An ordered checklist generated from the findings: fix, re-create, move, check, roll back. Ticks are remembered by this browser only. Every command is for you to review and run by hand; orgshift never writes to AWS. <a href="/runbook.md?{{.ExportQuery}}">Export as Markdown</a> · <a href="/runbook.json?{{.ExportQuery}}">JSON</a></p>

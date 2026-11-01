@@ -2,6 +2,13 @@ package policy
 
 import "strings"
 
+// maxPatternLen bounds the inputs of the pattern algorithms. AWS limits a
+// policy document to a few kilobytes and an ARN to 2048 characters, so
+// anything larger is not a real policy value; the matchers then answer
+// conservatively (not matched, not covered, possibly overlapping) instead
+// of spending time on it.
+const maxPatternLen = 16 * 1024
+
 // globMatch reports whether pattern (with * and ? wildcards) matches s.
 // The comparison is case-insensitive when fold is true.
 func globMatch(pattern, s string, fold bool) bool {
@@ -12,32 +19,36 @@ func globMatch(pattern, s string, fold bool) bool {
 	return glob(pattern, s)
 }
 
+// glob is the classic linear-space wildcard matcher: it walks both strings
+// once and backtracks to the most recent '*' when a literal stops matching.
+// It never recurses, so hostile patterns cannot exhaust the stack or take
+// exponential time.
 func glob(p, s string) bool {
-	for len(p) > 0 {
-		switch p[0] {
-		case '*':
-			p = strings.TrimLeft(p, "*")
-			if p == "" {
-				return true
-			}
-			for i := 0; i <= len(s); i++ {
-				if glob(p, s[i:]) {
-					return true
-				}
-			}
-			return false
-		case '?':
-			if s == "" {
-				return false
-			}
-		default:
-			if s == "" || p[0] != s[0] {
-				return false
-			}
-		}
-		p, s = p[1:], s[1:]
+	if len(p) > maxPatternLen || len(s) > maxPatternLen {
+		return false
 	}
-	return s == ""
+	pi, si := 0, 0
+	star, match := -1, 0
+	for si < len(s) {
+		switch {
+		case pi < len(p) && (p[pi] == '?' || p[pi] == s[si]):
+			pi++
+			si++
+		case pi < len(p) && p[pi] == '*':
+			star, match = pi, si
+			pi++
+		case star >= 0:
+			pi = star + 1
+			match++
+			si = match
+		default:
+			return false
+		}
+	}
+	for pi < len(p) && p[pi] == '*' {
+		pi++
+	}
+	return pi == len(p)
 }
 
 // covers reports whether every string matched by the value pattern v is also
@@ -50,13 +61,13 @@ func covers(p, v string, fold bool) bool {
 	}
 	if ps, vs, ok := arnSegments(p, v); ok {
 		for i := range ps {
-			if !coverRec(ps[i], vs[i]) {
+			if !coverDP(ps[i], vs[i]) {
 				return false
 			}
 		}
 		return true
 	}
-	return coverRec(p, v)
+	return coverDP(p, v)
 }
 
 // arnSegments splits two ARN-shaped values into their six colon-separated
@@ -72,32 +83,41 @@ func arnSegments(a, b string) ([]string, []string, bool) {
 	return as, bs, true
 }
 
-func coverRec(p, v string) bool {
-	for len(p) > 0 {
-		switch p[0] {
-		case '*':
-			p = strings.TrimLeft(p, "*")
-			if p == "" {
-				return true
-			}
-			for i := 0; i <= len(v); i++ {
-				if coverRec(p, v[i:]) {
-					return true
-				}
-			}
-			return false
-		case '?':
-			if v == "" || v[0] == '*' || v[0] == '?' {
-				return false
-			}
-		default:
-			if v == "" || v[0] != p[0] {
-				return false
-			}
-		}
-		p, v = p[1:], v[1:]
+// coverDP decides coverage with a dynamic program over the two patterns:
+// row i holds, for every j, whether p[i:] covers v[j:]. It runs in
+// O(len(p)*len(v)) time and O(len(v)) memory, with no recursion.
+func coverDP(p, v string) bool {
+	n, m := len(p), len(v)
+	if n > maxPatternLen || m > maxPatternLen {
+		return false
 	}
-	return v == ""
+	prev := make([]bool, m+1)
+	cur := make([]bool, m+1)
+	prev[m] = true // an exhausted pattern covers only the exhausted value
+	for i := n - 1; i >= 0; i-- {
+		switch p[i] {
+		case '*':
+			// '*' covers v[j:] when the rest of the pattern covers some
+			// suffix of it; a trailing run of '*' covers everything.
+			acc := false
+			for j := m; j >= 0; j-- {
+				acc = acc || prev[j]
+				cur[j] = acc
+			}
+		case '?':
+			for j := 0; j < m; j++ {
+				cur[j] = v[j] != '*' && v[j] != '?' && prev[j+1]
+			}
+			cur[m] = false
+		default:
+			for j := 0; j < m; j++ {
+				cur[j] = v[j] == p[i] && prev[j+1]
+			}
+			cur[m] = false
+		}
+		prev, cur = cur, prev
+	}
+	return prev[0]
 }
 
 // overlaps reports whether two glob patterns can match a common string.
@@ -116,31 +136,38 @@ func overlaps(a, b string, fold bool) bool {
 	return overlapsFlat(a, b)
 }
 
+// overlapsFlat is the same dynamic program for the symmetric question: row
+// i holds whether a[i:] and b[j:] can match a common string. Oversized
+// inputs are reported as possibly overlapping, which callers treat as
+// "unknown" rather than as a match.
 func overlapsFlat(a, b string) bool {
-	memo := map[[2]int]bool{}
-	var rec func(i, j int) bool
-	rec = func(i, j int) bool {
-		key := [2]int{i, j}
-		if r, ok := memo[key]; ok {
-			return r
-		}
-		var r bool
-		switch {
-		case i == len(a) && j == len(b):
-			r = true
-		case i < len(a) && a[i] == '*':
-			r = rec(i+1, j) || (j < len(b) && rec(i, j+1))
-		case j < len(b) && b[j] == '*':
-			r = rec(i, j+1) || (i < len(a) && rec(i+1, j))
-		case i < len(a) && j < len(b) && (a[i] == b[j] || a[i] == '?' || b[j] == '?'):
-			r = rec(i+1, j+1)
-		default:
-			r = false
-		}
-		memo[key] = r
-		return r
+	n, m := len(a), len(b)
+	if n > maxPatternLen || m > maxPatternLen {
+		return true
 	}
-	return rec(0, 0)
+	prev := make([]bool, m+1)
+	cur := make([]bool, m+1)
+	prev[m] = true
+	for j := m - 1; j >= 0; j-- {
+		prev[j] = b[j] == '*' && prev[j+1]
+	}
+	for i := n - 1; i >= 0; i-- {
+		cur[m] = a[i] == '*' && prev[m]
+		for j := m - 1; j >= 0; j-- {
+			switch {
+			case a[i] == '*':
+				cur[j] = prev[j] || cur[j+1]
+			case b[j] == '*':
+				cur[j] = cur[j+1] || prev[j]
+			case a[i] == b[j] || a[i] == '?' || b[j] == '?':
+				cur[j] = prev[j+1]
+			default:
+				cur[j] = false
+			}
+		}
+		prev, cur = cur, prev
+	}
+	return prev[0]
 }
 
 // hasWildcard reports whether s contains glob wildcards.

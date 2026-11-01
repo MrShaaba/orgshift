@@ -59,7 +59,7 @@
     ]
   },
   "verdict": "NO-GO",
-  "summary": "44 steps: 10 before the move (1 blocking), 7 to re-create, 4 for the move itself, 16 checks afterwards and 7 to roll back.",
+  "summary": "44 steps: 10 before the move (4 blocking), 7 to re-create, 4 for the move itself, 16 checks afterwards and 7 to roll back.",
   "phases": [
     {
       "id": "before",
@@ -126,8 +126,8 @@
         {
           "id": "before-5",
           "title": "Hand over delegated administration for config.amazonaws.com before the account leaves",
-          "detail": "Delegated administration is tied to organization membership. Leaving the organization removes the delegation, and the service's organization-wide view (and often its member enrolment) with it. Re-delegate to another account before the move. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
-          "status": "REVIEW",
+          "detail": "Organizations refuses to remove an account that is a delegated administrator for any service: RemoveAccountFromOrganization and LeaveOrganization fail until it is deregistered (or another account that stays is made the administrator). Deregister through the service's console or API, or with the Organizations deregister-delegated-administrator call where the service supports it. The service's organization-wide view, and often its member enrolment, moves with the role. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
+          "status": "NO-GO",
           "kind": "delegated-admin",
           "where": "management account 111111111111 of Larkspur Holdings",
           "check": "org-services",
@@ -148,8 +148,8 @@
         {
           "id": "before-6",
           "title": "Hand over delegated administration for guardduty.amazonaws.com before the account leaves",
-          "detail": "Delegated administration is tied to organization membership. Leaving the organization removes the delegation, and the service's organization-wide view (and often its member enrolment) with it. Re-delegate to another account before the move. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
-          "status": "REVIEW",
+          "detail": "Organizations refuses to remove an account that is a delegated administrator for any service: RemoveAccountFromOrganization and LeaveOrganization fail until it is deregistered (or another account that stays is made the administrator). Deregister through the service's console or API, or with the Organizations deregister-delegated-administrator call where the service supports it. The service's organization-wide view, and often its member enrolment, moves with the role. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
+          "status": "NO-GO",
           "kind": "delegated-admin",
           "where": "management account 111111111111 of Larkspur Holdings",
           "check": "org-services",
@@ -170,8 +170,8 @@
         {
           "id": "before-7",
           "title": "Hand over delegated administration for securityhub.amazonaws.com before the account leaves",
-          "detail": "Delegated administration is tied to organization membership. Leaving the organization removes the delegation, and the service's organization-wide view (and often its member enrolment) with it. Re-delegate to another account before the move. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
-          "status": "REVIEW",
+          "detail": "Organizations refuses to remove an account that is a delegated administrator for any service: RemoveAccountFromOrganization and LeaveOrganization fail until it is deregistered (or another account that stays is made the administrator). Deregister through the service's console or API, or with the Organizations deregister-delegated-administrator call where the service supports it. The service's organization-wide view, and often its member enrolment, moves with the role. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
+          "status": "NO-GO",
           "kind": "delegated-admin",
           "where": "management account 111111111111 of Larkspur Holdings",
           "check": "org-services",
@@ -192,7 +192,7 @@
         {
           "id": "before-8",
           "title": "Make the account able to stand alone",
-          "detail": "Before it can leave, the account needs its own contact information, a payment method, a support plan choice and completed identity verification. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
+          "detail": "Before it can leave, the account needs its own contact information (verified), a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
           "status": "REVIEW",
           "kind": "prerequisite",
           "where": "account larkspur-security (111111111113), signed in as root or an administrator",
@@ -236,7 +236,7 @@
         {
           "id": "before-10",
           "title": "Find what references the 2 AWSReservedSSO_* role(s) of the account",
-          "detail": "Identity Center deletes the IAM roles it provisioned in the account (path /aws-reserved/sso.amazonaws.com/us-east-1/) when the account leaves the organization. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. List the exact role ARNs now, while they exist, and search for them so the references can be updated after the move.",
+          "detail": "When the account leaves the organization, Identity Center cleans up the resources it created in the account; the documentation names the service-linked role, and the IAM roles provisioned for permission sets (path /aws-reserved/sso.amazonaws.com/us-east-1/) go with the instance's control over the account, so plan for them to disappear and confirm in IAM after the move. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. List the exact role ARNs now, while they exist, and search for them so the references can be updated after the move.",
           "status": "REVIEW",
           "kind": "identity-center",
           "where": "account larkspur-security (111111111113)",
@@ -271,7 +271,7 @@
         {
           "id": "recreate-1",
           "title": "Re-share larkspur-core-network with the account directly: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
-          "detail": "Owner 111111111112 shares larkspur-core-network (ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111113 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation. This is a networking share: the move stays NO-GO until it is done.",
+          "detail": "Owner 111111111112 shares larkspur-core-network (ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111113 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation. The documentation says traffic or a declared operation stops with this share, so the move stays NO-GO until it is done: Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. What the documentation says happens: ec2:Subnet: existing participant resources continue to run in the subnet; no new resources can be created in it, while existing ones can still be modified, described and deleted (subnets can only be shared inside one organization). ec2:Subnet can only be shared inside one organization, so it cannot be re-shared with the account once it has left. ec2:TransitGateway: existing transit gateway attachments remain functional; the account can no longer describe the transit gateway or create new attachments, and either side can delete the attachments. route53resolver:ResolverRule: traffic is affected at once, the rule's associations with the account's VPCs are removed and Resolver answers those queries from the remaining rules at once (an OU-scoped rule keeps its associations only when it is also shared with the destination OU). Ask the owner to re-share the resources with the account directly before the move, with external principals allowed, and accept the invitation after the move.",
           "status": "NO-GO",
           "kind": "resource-share",
           "where": "owner account 111111111112",
@@ -287,15 +287,15 @@
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
-              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
+              "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
             }
           ]
         },
         {
           "id": "recreate-2",
           "title": "Re-share larkspur-ipam with the account directly: ec2:IpamPool",
-          "detail": "Owner 111111111112 shares larkspur-ipam (ec2:IpamPool) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111113 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation. This is a networking share: the move stays NO-GO until it is done.",
-          "status": "NO-GO",
+          "detail": "Owner 111111111112 shares larkspur-ipam (ec2:IpamPool) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111113 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation.",
+          "status": "REVIEW",
           "kind": "resource-share",
           "where": "owner account 111111111112",
           "check": "ram",
@@ -310,7 +310,7 @@
               "kind": "resource-share",
               "side": "source",
               "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/01364b18a31c4fdca",
-              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:IpamPool  arn:aws:ec2::111111111112:ipam-pool/ipam-pool-8afc13dafc2e5d265"
+              "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:IpamPool  arn:aws:ec2::111111111112:ipam-pool/ipam-pool-8afc13dafc2e5d265"
             }
           ]
         },
@@ -367,7 +367,7 @@
         {
           "id": "recreate-6",
           "title": "Review permission set AdministratorAccess in the target instance before re-assigning it",
-          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 1 assignment(s) stop granting access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
           "status": "REVIEW",
           "kind": "identity-center",
           "where": "Identity Center of Fernhill Group (o-fernhill0001) (account 222222222221, eu-west-1)",
@@ -402,7 +402,7 @@
         {
           "id": "recreate-7",
           "title": "Review permission set ReadOnlyAccess in the target instance before re-assigning it",
-          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 1 assignment(s) stop granting access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
           "status": "REVIEW",
           "kind": "identity-center",
           "where": "Identity Center of Fernhill Group (o-fernhill0001) (account 222222222221, eu-west-1)",
@@ -549,7 +549,7 @@
               "kind": "resource-share",
               "side": "target",
               "reference": "arn:aws:ram:eu-west-1:222222222222:resource-share/09521366b77824316",
-              "note": "owner 222222222222; principals: organization o-fernhill0001\nec2:TransitGateway  arn:aws:ec2:eu-west-1:222222222222:transit-gateway/tgw-6a7aefe6fddce8281\nroute53resolver:ResolverRule  arn:aws:route53resolver:eu-west-1:222222222222:resolver-rule/rslvr-rr-364b18a31c4fdca47"
+              "note": "owner 222222222222; principals: organization o-fernhill0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:eu-west-1:222222222222:transit-gateway/tgw-6a7aefe6fddce8281\nroute53resolver:ResolverRule  arn:aws:route53resolver:eu-west-1:222222222222:resolver-rule/rslvr-rr-364b18a31c4fdca47"
             }
           ]
         },
@@ -685,7 +685,7 @@
         {
           "id": "after-12",
           "title": "Enroll the account in Control Tower from Account Factory (OU Core)",
-          "detail": "Moving into a registered OU does not enroll the account by itself. The 1 preventive guardrail SCP(s) on the OU chain apply immediately because they are attached to the OUs, but the 1 detective control(s) do not report and the baseline is not deployed until the account is enrolled from Account Factory. Enrolment needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no conflicting Config recorder or delivery channel in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
+          "detail": "Moving into a registered OU applies the OU's SCPs at once (the 1 preventive guardrail SCP(s) on the chain are attached to the OUs), but the 1 detective control(s) do not report and the baseline is not deployed until the account is enrolled. Enrolment is done from Account Factory (enroll account) and needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no Config recorder or delivery channel of the account's own in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
           "status": "REVIEW",
           "kind": "control-tower",
           "where": "management account 222222222221 of Fernhill Group (Account Factory)",
@@ -699,7 +699,7 @@
               "kind": "landing-zone",
               "side": "target",
               "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
-              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1; auto-enrollment disabled"
             },
             {
               "kind": "registered-ou",

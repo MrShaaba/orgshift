@@ -35,6 +35,7 @@ func runCollect(args []string) error {
 	skipRegions := fs.Bool("skip-regions", false, "do not call account:ListRegions for every account")
 	skipControlTower := fs.Bool("skip-control-tower", false, "do not read the Control Tower landing zone (its APIs answer only in the home region, so set --region to it)")
 	skipIdentityCenter := fs.Bool("skip-identity-center", false, "do not read the IAM Identity Center instance, permission sets and account assignments (its APIs answer only in the instance's region)")
+	retries := fs.Int("retry-attempts", 8, "maximum attempts per API call; throttling is retried with the SDK's adaptive retry mode")
 	timeout := fs.Duration("timeout", 10*time.Minute, "overall timeout")
 	// Optional data sources that can cost money. Off by default, and in this
 	// version they only print the cost warning; see ROADMAP.md.
@@ -44,6 +45,7 @@ func runCollect(args []string) error {
 		fmt.Fprintln(os.Stderr, "Usage: orgshift collect --out FILE [--profile NAME] [--name LABEL] [--ram-profiles a,b] [flags]")
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "\nOnly the read-only operations listed in docs/permissions.md are called. Nothing is ever written to AWS.")
+		fmt.Fprintln(os.Stderr, "Every domain the collector could not read is recorded in the snapshot's coverage block instead of being left as an empty list.")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -64,7 +66,11 @@ func runCollect(args []string) error {
 	logger := log.New(os.Stderr, "collect ", log.LstdFlags)
 
 	load := func(p string) (aws.Config, error) {
-		opts := []func(*config.LoadOptions) error{config.WithRegion(*region)}
+		opts := []func(*config.LoadOptions) error{
+			config.WithRegion(*region),
+			config.WithRetryMaxAttempts(*retries),
+			config.WithRetryMode(aws.RetryModeAdaptive),
+		}
 		if p != "" {
 			opts = append(opts, config.WithSharedConfigProfile(p))
 		}
@@ -74,9 +80,12 @@ func runCollect(args []string) error {
 	if err != nil {
 		return fmt.Errorf("load AWS configuration: %w", err)
 	}
-	opts := collector.Options{Name: *name, Region: *region, Organizations: organizations.NewFromConfig(cfg), Logger: logger}
-	if !*skipRAM {
+	opts := collector.Options{Name: *name, Region: *region, Version: "orgshift " + version, Organizations: organizations.NewFromConfig(cfg), Logger: logger, SkipReasons: map[string]string{}}
+	if *skipRAM {
+		opts.SkipReasons[snapshot.DomainResourceShares] = "--skip-ram"
+	} else {
 		opts.RAM = append(opts.RAM, ram.NewFromConfig(cfg))
+		opts.RAMLabels = append(opts.RAMLabels, orDefault(*profile, "default profile"))
 	}
 	for _, p := range strings.Split(*ramProfiles, ",") {
 		p = strings.TrimSpace(p)
@@ -88,15 +97,23 @@ func runCollect(args []string) error {
 			return fmt.Errorf("load AWS profile %s: %w", p, err)
 		}
 		opts.RAM = append(opts.RAM, ram.NewFromConfig(c))
+		opts.RAMLabels = append(opts.RAMLabels, p)
 	}
-	if !*skipRegions {
+	if *skipRegions {
+		opts.SkipReasons[snapshot.DomainEnabledRegions] = "--skip-regions"
+	} else {
 		opts.Account = account.NewFromConfig(cfg)
 	}
-	if !*skipControlTower {
+	if *skipControlTower {
+		opts.SkipReasons[snapshot.DomainControlTower] = "--skip-control-tower"
+		opts.SkipReasons[snapshot.DomainEnrolledAccounts] = "--skip-control-tower"
+	} else {
 		opts.ControlTower = controltower.NewFromConfig(cfg)
 		opts.ControlCatalog = controlcatalog.NewFromConfig(cfg)
 	}
-	if !*skipIdentityCenter {
+	if *skipIdentityCenter {
+		opts.SkipReasons[snapshot.DomainIdentityCenter] = "--skip-identity-center"
+	} else {
 		opts.SSOAdmin = ssoadmin.NewFromConfig(cfg)
 		opts.IdentityStore = identitystore.NewFromConfig(cfg)
 	}
@@ -110,10 +127,20 @@ func runCollect(args []string) error {
 	fmt.Printf("wrote %s\n%s\n", *out, collector.Summary(snap))
 	fmt.Println("Next: add usage.actions (or use --last-accessed at simulate time) for the account you plan to move.")
 	if snap.ControlTower != nil {
-		fmt.Println("Control Tower: list control_tower.enrolled_accounts by hand if you want Account Factory provenance; otherwise accounts in registered OUs are assumed enrolled.")
+		fmt.Println("Control Tower: enrolled accounts were read from ListEnabledBaselines; whether Account Factory vended an account is not visible that way, so add provisioned_product by hand where it matters.")
 	}
 	if snap.IdentityCenter != nil {
 		fmt.Println("Identity Center: assignments were listed for the accounts each permission set is provisioned in; principal names come from the identity store when identitystore:DescribeUser/DescribeGroup are allowed.")
 	}
+	if gaps := snap.CoverageGaps(); len(gaps) > 0 {
+		fmt.Printf("Coverage: %d domain(s) could not be read completely; simulations against this snapshot report them as REVIEW until they are collected.\n", len(gaps))
+	}
 	return nil
+}
+
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }

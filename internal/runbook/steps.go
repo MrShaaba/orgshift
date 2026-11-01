@@ -56,6 +56,9 @@ func (b *builder) policySteps(c evaluator.Check) {
 		if f.Status != evaluator.StatusNoGo && f.Status != evaluator.StatusReview {
 			continue
 		}
+		if hasEvidence(f, "coverage") {
+			continue // handled by coverageSteps
+		}
 		if f.Action == "" {
 			b.add(PhaseBefore, Step{Kind: KindInput, Status: f.Status, Title: f.Title, Detail: f.Detail, Check: c.ID, Finding: f.Title,
 				Commands: []string{fmt.Sprintf("orgshift simulate --from <source snapshot> --to <target snapshot> --account %s --target-ou %s --last-accessed <get-service-last-accessed-details output>", b.acct, b.res.Subject.TargetOUID)}})
@@ -156,6 +159,9 @@ func policyTypeName(short string) string {
 // tagSteps: enforced non-compliance is fixed before the move, the rest after.
 func (b *builder) tagSteps(c evaluator.Check) {
 	for _, f := range c.Findings {
+		if hasEvidence(f, "coverage") {
+			continue // handled by coverageSteps
+		}
 		ev := firstEvidence(f, "tag-compliance")
 		switch {
 		case f.Status == evaluator.StatusReview && ev == nil:
@@ -244,14 +250,6 @@ func (b *builder) shareSteps(c evaluator.Check) {
 					fmt.Sprintf("aws ram update-resource-share --resource-share-arn %s --allow-external-principals", ev.Reference),
 					fmt.Sprintf("aws ram associate-resource-share --resource-share-arn %s --principals <consumer account IDs>", ev.Reference),
 				}, Evidence: f.Evidence})
-		case strings.Contains(f.Title, "confirm it survives"):
-			b.add(PhaseRecreate, Step{Kind: KindShare, Status: f.Status, Title: fmt.Sprintf("Confirm share %s allows external principals", name), Check: c.ID, Finding: f.Title, Where: ownerWhere,
-				Detail: f.Detail + " Ask the owner to check the flag and turn it on before the move.",
-				Commands: []string{
-					fmt.Sprintf("aws ram get-resource-shares --resource-owner SELF --resource-share-arns %s --query \"resourceShares[].allowExternalPrincipals\"", ev.Reference),
-					fmt.Sprintf("aws ram update-resource-share --resource-share-arn %s --allow-external-principals", ev.Reference),
-				}, Evidence: f.Evidence})
-			b.add(PhaseAfter, b.acceptShareStep(name, ev.Reference, typeList, c.ID, f.Title))
 		default:
 			detail := fmt.Sprintf("Owner %s shares %s (%s) with %s today. After the move those principals no longer cover the account. Ask the owner to add account %s as a principal before the move so nothing attached to these resources is interrupted.", orUnknown(owner), name, typeList, scopes, b.acct)
 			cmds := []string{fmt.Sprintf("aws ram associate-resource-share --resource-share-arn %s --principals %s", ev.Reference, b.acct)}
@@ -260,7 +258,7 @@ func (b *builder) shareSteps(c evaluator.Check) {
 				cmds = append([]string{fmt.Sprintf("aws ram update-resource-share --resource-share-arn %s --allow-external-principals", ev.Reference)}, cmds...)
 			}
 			if f.Status == evaluator.StatusNoGo {
-				detail += " This is a networking share: the move stays NO-GO until it is done."
+				detail += " The documentation says traffic or a declared operation stops with this share, so the move stays NO-GO until it is done: " + f.Detail
 			}
 			b.add(PhaseRecreate, Step{Kind: KindShare, Status: f.Status, Title: fmt.Sprintf("Re-share %s with the account directly: %s", name, typeList), Check: c.ID, Finding: f.Title, Where: ownerWhere,
 				Detail: detail, Resource: ev.Reference, Commands: cmds, Evidence: f.Evidence})
@@ -399,6 +397,10 @@ func (b *builder) orgServiceSteps(c evaluator.Check) {
 		case strings.HasPrefix(f.Title, "Account is the management account"):
 			b.add(PhaseBefore, Step{Kind: KindBlocker, Status: f.Status, Title: "Stop: the management account cannot leave its organization", Check: c.ID, Finding: f.Title,
 				Detail: f.Detail + " There is no runbook for this move; pick a member account or plan the deletion of the source organization separately."})
+		case strings.HasPrefix(f.Title, "The account was created"):
+			b.add(PhaseBefore, Step{Kind: KindBlocker, Status: f.Status, Title: "Wait until the account is four days old, or confirm its creation date", Check: c.ID, Finding: f.Title, Where: b.sourceMgmt(),
+				Detail:   f.Detail + " Organizations rejects the removal of an account it created until four days have passed; invited accounts are not affected.",
+				Commands: []string{fmt.Sprintf("aws organizations describe-account --account-id %s --query \"Account.[JoinedMethod,JoinedTimestamp]\"", b.acct)}, Evidence: f.Evidence})
 		case strings.HasPrefix(f.Title, "Standalone account prerequisites"):
 			b.add(PhaseBefore, Step{Kind: KindPrerequisite, Status: f.Status, Title: "Make the account able to stand alone", Check: c.ID, Finding: f.Title, Where: b.accountWhere() + ", signed in as root or an administrator",
 				Detail: f.Detail + " Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",

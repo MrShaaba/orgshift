@@ -16,9 +16,6 @@ var globalServices = map[string]bool{
 	"trustedadvisor": true, "importexport": true, "networkmanager": true, "iq": true, "artifact": true,
 }
 
-// rcpServices are the services resource control policies apply to.
-var rcpServices = map[string]bool{"s3": true, "sts": true, "kms": true, "sqs": true, "secretsmanager": true}
-
 func serviceOf(action string) string {
 	if i := strings.Index(action, ":"); i > 0 {
 		return strings.ToLower(action[:i])

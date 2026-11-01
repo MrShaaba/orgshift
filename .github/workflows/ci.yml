@@ -41,3 +41,16 @@ jobs:
           ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --to /tmp/fx/fernhill-group.json --account 111111111115 --target-ou ou-fern-pay1 --format runbook --out /tmp/runbook.md || test $? -eq 3
           grep -q '^## 3. The move' /tmp/runbook.md
           grep -q 'aws organizations move-account --account-id 111111111115 --source-parent-id r-fern --destination-parent-id ou-fern-pay1' /tmp/runbook.md
+          # a complete snapshot gives GO on this move; the partially collected copy of the same organization must not
+          ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --account 111111111116 --target-ou ou-lark-prod --format json --out /tmp/go.json
+          grep -q '"complete": true' /tmp/go.json
+          ./orgshift simulate --from /tmp/fx/larkspur-holdings-partial.json --account 111111111116 --target-ou ou-lark-prod --format json --out /tmp/partial.json || test $? -eq 2
+          grep -q '"id": "coverage"' /tmp/partial.json
+          grep -q '"status": "access_denied"' /tmp/partial.json
+          grep -q '"complete": false' /tmp/partial.json
+          grep -q '"id": "rcp-applicability"' /tmp/partial.json
+      - name: fuzz smoke test
+        run: |
+          go test ./internal/policy -run '^$' -fuzz FuzzParseAndApply -fuzztime 20s
+          go test ./internal/policy -run '^$' -fuzz FuzzGlob -fuzztime 10s
+          go test ./internal/evaluator -run '^$' -fuzz FuzzEvaluateWithPolicyDocument -fuzztime 20s

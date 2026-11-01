@@ -12,6 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.50.3
 	github.com/aws/aws-sdk-go-v2/service/ram v1.36.0
 	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.37.2
+	github.com/aws/smithy-go v1.24.1
 )
 
 require (
@@ -26,5 +27,4 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.15 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.7 // indirect
-	github.com/aws/smithy-go v1.24.1 // indirect
 )

@@ -1,6 +1,6 @@
 {
   "tool": "orgshift",
-  "result_schema_version": 1,
+  "result_schema_version": 2,
   "subject": {
     "account_id": "222222222225",
     "account_name": "fernhill-retail-prod",
@@ -64,7 +64,240 @@
   },
   "verdict": "REVIEW",
   "summary": "Moving fernhill-retail-prod (222222222225) from Root / Business Units / Retail to Root / Sandbox: REVIEW. Nothing blocks the move outright, but 2 finding(s) could not be decided offline or need a decision.",
+  "coverage": {
+    "same_snapshot": true,
+    "complete": true,
+    "required": 10,
+    "rows": [
+      {
+        "domain": "organization",
+        "why": "the organization identity that decides whether this is a cross-organization move",
+        "check": "coverage",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "tree",
+        "why": "the OU hierarchy, the account's position and the policy attachment targets",
+        "check": "coverage",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.scp",
+        "why": "the SCP chains evaluated against the actions in use",
+        "check": "scp",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.rcp",
+        "why": "the RCP chains evaluated against inbound access and the account's own actions",
+        "check": "rcp",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.tag",
+        "why": "the effective tag policy at the target and the one it replaces",
+        "check": "tags",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "policies.backup",
+        "why": "backup policies are shown in the diff only",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "enabled_regions",
+        "why": "the regions an action is evaluated in when it names none",
+        "check": "scp",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "account_tags",
+        "why": "account tags are shown for context only",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "resource_shares",
+        "why": "RAM shares that stop or start reaching the account",
+        "check": "ram",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "stack_sets",
+        "why": "service-managed StackSets that target the account's OUs",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "delegated_administrators",
+        "why": "delegated administration, which blocks leaving the organization",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "trusted_access",
+        "why": "trusted access the target needs for the integrations in use",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "organization_trails",
+        "why": "organization trails that stop or start covering the account",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "config_aggregators",
+        "why": "organization Config aggregators that stop or start receiving the account",
+        "check": "org-services",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      },
+      {
+        "domain": "control_tower",
+        "why": "the landing zone, its registered OUs and the controls that apply",
+        "check": "control-tower",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "control_tower.enrolled_accounts",
+        "why": "which accounts are enrolled rather than merely placed in a registered OU",
+        "check": "control-tower",
+        "source": {
+          "status": "observed",
+          "required": true
+        },
+        "target": {
+          "status": "observed",
+          "required": true
+        }
+      },
+      {
+        "domain": "identity_center",
+        "why": "the assignments and roles that are removed when the account leaves",
+        "check": "identity-center",
+        "source": {
+          "status": "observed",
+          "required": false
+        },
+        "target": {
+          "status": "observed",
+          "required": false
+        }
+      }
+    ]
+  },
   "checks": [
+    {
+      "id": "coverage",
+      "title": "Collection coverage",
+      "status": "GO",
+      "summary": "Complete: all 10 required collection domains were inspected.",
+      "findings": []
+    },
     {
       "id": "scp",
       "title": "Service control policies",
@@ -76,8 +309,17 @@
       "id": "rcp",
       "title": "Resource control policies",
       "status": "GO",
-      "summary": "2 actions evaluated against the RCP chain; 0 flagged.",
-      "findings": []
+      "summary": "2 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 5 action(s) on services RCPs do not govern were not evaluated, 0 exempt.",
+      "findings": [
+        {
+          "status": "INFO",
+          "title": "5 action(s) use services RCPs do not govern and were not evaluated against RCPs",
+          "detail": "RCPs apply to a fixed list of services (applicability model 2026-11-01, 62 services). These actions are not restricted by RCPs at either position, so nothing changes for them: cloudwatch:PutMetricData, ec2:CreateVolume, ec2:RunInstances, lambda:InvokeFunction, rds:CreateDBInstance. Services added to RCPs after the model date are not covered; the model is updated with the tool.",
+          "references": [
+            "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services"
+          ]
+        }
+      ]
     },
     {
       "id": "tags",
@@ -137,7 +379,7 @@
       "id": "ram",
       "title": "Resource shares (RAM)",
       "status": "GO",
-      "summary": "1 share(s) kept, 0 lost or uncertain, 0 newly available.",
+      "summary": "1 share(s) kept, 0 lost, 0 newly available (RAM behaviour model 2026-11-01).",
       "findings": []
     },
     {
@@ -170,20 +412,30 @@
         {
           "status": "REVIEW",
           "title": "Moving out of the registered OU Retail unenrolls the account from Control Tower",
-          "detail": "Control Tower governs accounts through their OU, and Sandbox (ou-fern-sand) is not registered with Control Tower. After the move the account is no longer enrolled: the 3 preventive guardrail SCP(s) of the old OU chain stop applying (see the SCP diff), 4 detective control(s) stop reporting, baseline updates stop and the landing zone shows the account as drifted until it is unenrolled properly. Unenroll it from Account Factory first if leaving governance is the intent; otherwise register Sandbox and move the account with Control Tower's update-account flow.",
+          "detail": "Control Tower governs accounts through their OU, and Sandbox (ou-fern-sand) is not registered with Control Tower. After the move the account is no longer enrolled: the 3 preventive guardrail SCP(s) of the old OU chain stop applying (see the SCP diff) and 4 detective control(s) stop reporting. The landing zone has auto-enrollment off: moved with Organizations, the account keeps the baseline resources, shows inheritance drift and stays that way until it is unenrolled properly. Unenroll it from Account Factory first if leaving governance is the intent; otherwise register the target OU and move the account with Control Tower's update-account flow.",
           "evidence": [
             {
               "kind": "landing-zone",
               "side": "source",
               "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
-              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1; auto-enrollment disabled"
             },
             {
               "kind": "registered-ou",
               "side": "source",
               "reference": "ou-fern-ret",
               "note": "OU Retail registered: baseline 4.0, status SUCCEEDED, drift IN_SYNC"
+            },
+            {
+              "kind": "enrolled-account",
+              "side": "source",
+              "reference": "222222222225",
+              "note": "enrolled (source manual): status ENROLLED, drift unknown, parent OU unknown"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/controltower/latest/userguide/account-auto-enrollment.html",
+            "https://docs.aws.amazon.com/controltower/latest/userguide/unmanage-account.html"
           ]
         },
         {
@@ -214,7 +466,7 @@
         {
           "status": "INFO",
           "title": "4 detective control(s) stop applying: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_COMMON_PORTS, AWS-GR_RESTRICTED_SSH",
-          "detail": "Enabled on the source OU chain and not on the target's. Detective controls stop applying to the account after the move. The Config rules they deployed are removed when the account is unenrolled or moved through Control Tower; moved by hand, they linger unmanaged.",
+          "detail": "Enabled on the source OU chain and not on the target's. Detective controls stop applying to the account after the move. The Config rules they deployed are removed when the account is unenrolled or moved through Control Tower (or by auto-enrollment); moved by hand without it, they linger unmanaged.",
           "evidence": [
             {
               "kind": "enabled-control",
@@ -245,7 +497,7 @@
         {
           "status": "INFO",
           "title": "Account was vended by Account Factory; move it by updating provisioned product fernhill-retail-prod",
-          "detail": "Account Factory records the OU as a parameter of the provisioned product. Changing the OU through the product (Service Catalog, update provisioned product, or the Control Tower console) performs the move and re-applies the baseline; moving it in Organizations directly leaves the product and the landing zone in drift.",
+          "detail": "Account Factory records the OU as a parameter of the provisioned product. Changing the OU through the product (Service Catalog, update provisioned product, or the Control Tower console) performs the move and re-applies the baseline; moving it in Organizations directly leaves the product behind, and the landing zone in drift unless auto-enrollment is on.",
           "evidence": [
             {
               "kind": "account-factory",
@@ -264,7 +516,7 @@
               "kind": "landing-zone",
               "side": "target",
               "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
-              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1; auto-enrollment disabled"
             }
           ]
         }
@@ -2025,6 +2277,20 @@
       ],
       "changed": null,
       "unchanged": null
+    }
+  ],
+  "models": [
+    {
+      "id": "rcp-applicability",
+      "version": "2026-11-01",
+      "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services",
+      "note": "62 services; RCPs never restrict resources in the management account, calls by service-linked roles, AWS managed KMS keys or kms:RetireGrant"
+    },
+    {
+      "id": "ram-behaviour",
+      "version": "2026-11-01",
+      "reference": "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+      "note": "access through a share ends when the account leaves the organization or the OU the share is addressed to, unless the share was created with RetainSharingOnAccountLeaveOrganization for the account itself; what happens to traffic already flowing is modelled per resource type (transit gateways and subnets keep existing attachments and resources working, Resolver rules stop answering, others unverified)"
     }
   ]
 }

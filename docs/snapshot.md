@@ -32,6 +32,7 @@ human-readable contract.
 | `config_aggregators` | array | `{name, account_id, region, organization_source}` |
 | `stack_sets` | array | See [StackSet](#stackset). |
 | `control_tower` | object | See [Control Tower](#control-tower). Optional; absent when there is no landing zone. |
+| `identity_center` | object | See [Identity Center](#identity-center). Optional; absent when there is no instance. |
 | `usage` | object | Map of account ID to [Account usage](#account-usage). Optional. |
 
 ## Organization
@@ -121,6 +122,26 @@ are ordinary entries in `policies` and are evaluated like any other SCP; the
 name prefix is what marks them as Control Tower managed in the chain and diff
 views.
 
+## Identity Center
+
+Present when IAM Identity Center is attached to the organization. The
+collector fills it from the SSO Admin and Identity Store APIs in the
+instance's region; it can also be written by hand.
+
+| Field | Notes |
+| --- | --- |
+| `instance_arn` | `arn:aws:sso:::instance/ssoins-…`. Required. |
+| `identity_store_id` | The `d-…` directory the users and groups live in. Two organizations always have different identity stores, so principals are never matched across them. |
+| `region` | Where the instance lives. The provisioned roles sit under `/aws-reserved/sso.amazonaws.com/<region>/`. |
+| `owner_account_id`, `name` | The management account (or delegated administrator) and the instance name. |
+| `permission_sets` | Array of `{arn, name, description, session_duration, managed_policies, customer_managed_policies, inline_policy, permissions_boundary, provisioned_accounts}`. `managed_policies` are AWS managed policy ARNs; `customer_managed_policies` are path plus name of policies that have to exist in each account; `inline_policy` is the IAM JSON document; `provisioned_accounts` lists the accounts where the `AWSReservedSSO_<name>_*` role exists. When `provisioned_accounts` is empty the role is assumed to exist wherever the permission set has an assignment. |
+| `account_assignments` | Array of `{account_id, permission_set_arn, principal_type, principal_id, principal_name}`. `principal_type` is `USER` or `GROUP`; `principal_name` is the user name or group display name when known. Each entry must point at an account and a permission set in the snapshot. |
+
+A cross-organization move removes every assignment on the account and
+deletes the provisioned roles; the evaluator reports both and matches
+permission sets in the two instances by name. Inside one organization the
+block is informational only.
+
 ## Account usage
 
 Per-account data about how the account is used. Only needed for the accounts
@@ -175,8 +196,10 @@ Resource Groups Tagging API. Used to check tag policy compliance.
 
 `orgshift collect` fills the organization, root, OUs, accounts (including
 tags and enabled regions), policies with targets, resource shares, delegated
-administrators, trusted-access services and the Control Tower block (landing
-zone, registered OUs and enabled controls; not `enrolled_accounts`).
+administrators, trusted-access services, the Control Tower block (landing
+zone, registered OUs and enabled controls; not `enrolled_accounts`) and the
+Identity Center block (instance, permission sets with their policies and
+provisioned accounts, account assignments with principal names).
 Organization trails, Config aggregators, StackSets and usage are left empty
 by the current collector and can be added by hand; see `ROADMAP.md`.
 

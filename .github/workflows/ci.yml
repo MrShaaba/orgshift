@@ -36,3 +36,5 @@ jobs:
           test -s /tmp/ou-result.json
           ./orgshift simulate --from /tmp/fx/fernhill-group.json --account 222222222225 --target-ou ou-fern-sand --format json --out /tmp/ct-result.json || test $? -eq 2
           grep -q '"id": "control-tower"' /tmp/ct-result.json
+          grep -q '"id": "identity-center"' /tmp/result.json
+          grep -q 'AWSReservedSSO_PaymentsEngineer_\*' /tmp/result.json

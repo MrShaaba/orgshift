@@ -16,6 +16,14 @@ Done since the first pass:
   golden scenario for fernhill-retail-prod leaving its registered OU). Left
   open: enrolled accounts cannot be collected with `List`/`Describe`/`Get`
   calls, so they stay a hand-written list.
+- Identity Center impact for cross-organization moves (`identity_center`
+  snapshot block collected read-only with permission sets, provisioned
+  accounts and assignments with principal names; the IAM Identity Center
+  check listing every assignment on the account, matching permission sets
+  by name and reporting the `AWSReservedSSO_*` roles that are deleted,
+  stale ones included; golden scenario for larkspur-data-prod into
+  Fernhill Retail). Left open: group memberships are not collected and the
+  role suffix is only known inside the member account.
 
 ## Actions in use from CloudTrail and CloudTrail Lake (opt-in, cost warning)
 
@@ -39,15 +47,6 @@ Done since the first pass:
   where the API supports it, as a second opinion on the offline evaluator.
 - Keep it behind `--with-access-analyzer`; the calls are free but need live
   credentials, which the simulator otherwise never requires.
-
-## Identity Center impact for cross-organization moves
-
-- Snapshot fields for IAM Identity Center: instance, permission sets and
-  assignments per account.
-- For a cross-organization move list every permission set assignment on the
-  account (users and groups) that disappears when it leaves, and whether
-  the target organization has a matching permission set name.
-- Report the `AWSReservedSSO_*` roles that will be deleted from the account.
 
 ## Backup policy and AI opt-out policy comparison
 

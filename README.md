@@ -58,6 +58,14 @@ offline and reports:
   vended by Account Factory get a note about their provisioned product, and
   the `aws-guardrails-*` SCPs are labelled as Control Tower managed in the
   chain, diff and tree views.
+- **IAM Identity Center**: when a snapshot carries an Identity Center
+  instance, a cross-organization move lists every account assignment on the
+  account (users and groups per permission set), says whether the target
+  instance has a permission set of the same name and how its settings
+  differ, and reports the `AWSReservedSSO_*` roles that are deleted from the
+  account, including roles still provisioned without an assignment. All of
+  it is REVIEW with the assignment and permission set as evidence; inside
+  one organization the check is a quiet GO.
 
 ## Who it is for
 
@@ -95,6 +103,13 @@ go build -o orgshift ./cmd/orgshift
 # registered OU and see what unenrolling it means
 ./orgshift simulate --from fixtures/fernhill-group.json \
   --account 222222222225 --target-ou ou-fern-sand
+
+# the data platform account into Fernhill Retail: three Identity Center
+# assignments and three AWSReservedSSO_* roles go away with it
+./orgshift simulate \
+  --from fixtures/larkspur-holdings.json \
+  --to fixtures/fernhill-group.json \
+  --account 111111111118 --target-ou ou-fern-ret
 
 # move the whole Workloads OU (two nested OUs, three accounts) into
 # Fernhill's Business Units; --target-ou is the new parent
@@ -140,7 +155,10 @@ account.
    the calling account, so pass `--ram-profiles network` for accounts that own
    the shares you care about. If the organization runs Control Tower, set
    `--region` to the landing zone's home region so the registered OUs and
-   enabled controls are collected (`--skip-control-tower` turns that off). Optional data sources that cost money
+   enabled controls are collected (`--skip-control-tower` turns that off).
+   The same goes for IAM Identity Center: with `--region` set to the
+   instance's region the permission sets and account assignments are
+   collected (`--skip-identity-center` turns that off). Optional data sources that cost money
    (CloudTrail Lake, Config advanced queries) are behind opt-in flags that are
    off by default and refused until they are implemented.
 
@@ -176,6 +194,11 @@ does not end up in the repository.
 - Without a `control_tower.enrolled_accounts` list, an account whose parent
   OU is registered with Control Tower is assumed to be enrolled, and the
   finding says so. The collector cannot fill that list read-only.
+- The `AWSReservedSSO_*` role names end in a random suffix that only IAM in
+  the member account knows, so they are reported as patterns
+  (`AWSReservedSSO_<permission set>_*`). Permission sets in the two
+  instances are matched by name; users and groups are never matched, since
+  the identity stores are different directories.
 
 ## Repository layout
 

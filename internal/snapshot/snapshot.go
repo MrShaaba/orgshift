@@ -63,6 +63,9 @@ type Snapshot struct {
 
 	// ControlTower describes the Control Tower landing zone, when there is one.
 	ControlTower *ControlTower `json:"control_tower,omitempty"`
+	// IdentityCenter describes the IAM Identity Center instance, its
+	// permission sets and account assignments, when there is one.
+	IdentityCenter *IdentityCenter `json:"identity_center,omitempty"`
 
 	// Usage holds per-account information that the evaluator needs about the
 	// account being moved: actions in use, inbound access from other

@@ -165,3 +165,68 @@ func TestControlLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestIdentityCenterValidationAndLookups(t *testing.T) {
+	s := minimal()
+	const admin, ro = "arn:aws:sso:::permissionSet/ssoins-test/ps-admin", "arn:aws:sso:::permissionSet/ssoins-test/ps-readonly"
+	s.IdentityCenter = &IdentityCenter{
+		InstanceARN: "arn:aws:sso:::instance/ssoins-test", IdentityStoreID: "d-test", Region: "us-east-1", OwnerAccountID: "111111111111",
+		PermissionSets: []PermissionSet{
+			{ARN: admin, Name: "AdministratorAccess", ManagedPolicies: []string{"arn:aws:iam::aws:policy/AdministratorAccess"}},
+			{ARN: ro, Name: "ReadOnlyAccess", ProvisionedAccounts: []string{"111111111112"}},
+		},
+		Assignments: []AccountAssignment{
+			{AccountID: "111111111112", PermissionSetARN: admin, PrincipalType: PrincipalGroup, PrincipalID: "g-1", PrincipalName: "Admins"},
+			{AccountID: "111111111111", PermissionSetARN: admin, PrincipalType: PrincipalUser, PrincipalID: "u-1"},
+		},
+	}
+	if err := s.Validate(); err != nil {
+		t.Fatalf("valid Identity Center block rejected: %v", err)
+	}
+	data, _ := Marshal(s)
+	back, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ic := back.IdentityCenter
+	if ic.PermissionSet(ro) == nil || ic.PermissionSetByName("AdministratorAccess") == nil || ic.PermissionSetByName("Nope") != nil {
+		t.Fatalf("permission set lookups wrong: %+v", ic.PermissionSets)
+	}
+	if got := ic.AssignmentsFor("111111111112"); len(got) != 1 || got[0].Label() != "group Admins" {
+		t.Fatalf("assignments wrong: %+v", got)
+	}
+	if got := ic.AssignmentsFor("111111111111"); len(got) != 1 || got[0].Label() != "user u-1" {
+		t.Fatalf("label should fall back to the id: %+v", got)
+	}
+	// Provisioned: ReadOnlyAccess by its explicit list, AdministratorAccess by assignment.
+	prov := ic.ProvisionedIn("111111111112")
+	if len(prov) != 2 || prov[0].ReservedRolePattern() != "AWSReservedSSO_AdministratorAccess_*" || prov[1].Name != "ReadOnlyAccess" {
+		t.Fatalf("provisioned lookup wrong: %+v", prov)
+	}
+	if got := ic.ProvisionedIn("111111111111"); len(got) != 1 || got[0].Name != "AdministratorAccess" {
+		t.Fatalf("an explicit provisioned list must not be widened by assignments elsewhere: %+v", got)
+	}
+	if ic.ReservedRolePath() != "/aws-reserved/sso.amazonaws.com/us-east-1/" {
+		t.Fatal(ic.ReservedRolePath())
+	}
+	var nilIC *IdentityCenter
+	if nilIC.PermissionSet("x") != nil || nilIC.AssignmentsFor("x") != nil || nilIC.ProvisionedIn("x") != nil || nilIC.ReservedRolePath() != "/aws-reserved/sso.amazonaws.com/<region>/" {
+		t.Fatal("nil Identity Center must behave as absent")
+	}
+
+	bad := minimal()
+	bad.IdentityCenter = &IdentityCenter{
+		OwnerAccountID: "ou-test-aaaa",
+		PermissionSets: []PermissionSet{{ARN: admin, Name: "A"}, {ARN: admin, Name: "A", InlinePolicy: json.RawMessage(`{`), ProvisionedAccounts: []string{"r-test"}}},
+		Assignments:    []AccountAssignment{{AccountID: "ou-test-aaaa", PermissionSetARN: "arn:nope", PrincipalType: "ROBOT"}},
+	}
+	err = bad.Validate()
+	if err == nil {
+		t.Fatal("expected validation errors")
+	}
+	for _, want := range []string{"instance_arn is required", "owner account", "listed twice", "used twice", "not valid JSON", "is not an account", "not in permission_sets", "unknown type", "no principal_id"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("validation error should mention %q, got:\n%v", want, err)
+		}
+	}
+}

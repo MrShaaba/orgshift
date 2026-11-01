@@ -40,6 +40,15 @@ const (
 	FernhillAuditAccount    = "222222222223"
 )
 
+// Identifiers of the Identity Center scenario: the Larkspur instance whose
+// assignments on the payments account disappear in a cross-organization
+// move, and the permission set that has no counterpart in Fernhill.
+const (
+	LarkspurIdentityCenterInstance = "arn:aws:sso:::instance/ssoins-larkspur00000001"
+	LarkspurPaymentsEngineerSet    = "PaymentsEngineer"
+	FernhillIdentityCenterInstance = "arn:aws:sso:::instance/ssoins-fernhill00000001"
+)
+
 type gen struct {
 	r *rand.Rand
 }
@@ -56,6 +65,11 @@ func (g *gen) hex(n int) string {
 }
 
 func (g *gen) id(prefix string) string { return prefix + "-0" + g.hex(16) }
+
+// uuid draws an identity store style identifier.
+func (g *gen) uuid() string {
+	return g.hex(8) + "-" + g.hex(4) + "-" + g.hex(4) + "-" + g.hex(4) + "-" + g.hex(12)
+}
 
 func doc(s string) json.RawMessage {
 	var buf json.RawMessage
@@ -253,6 +267,8 @@ func Larkspur() *snapshot.Snapshot {
 			},
 		},
 	}
+	// Drawn after the usage block so the identifiers above keep their values.
+	s.IdentityCenter = larkspurIdentityCenter(g)
 	return s
 }
 
@@ -469,7 +485,8 @@ func Fernhill() *snapshot.Snapshot {
 				AutoDeployment: true, RetainStacksOnAccountRemoval: false, TargetOUs: []string{"ou-fern-bu"},
 				Regions: []string{"eu-west-1"}, Description: "Baseline IAM roles and GuardDuty membership"},
 		},
-		ControlTower: fernhillControlTower(),
+		ControlTower:   fernhillControlTower(),
+		IdentityCenter: fernhillIdentityCenter(g),
 		Usage: map[string]*snapshot.AccountUsage{
 			FernhillRetailProd: {
 				Actions: []snapshot.ActionInUse{
@@ -533,6 +550,105 @@ func fernhillControlTower() *snapshot.ControlTower {
 			control("7f3kq9x2m1pz8r4v6t0nb5cy", "CT.S3.PR.1: Require that an Amazon S3 bucket has block public access settings configured", snapshot.ControlProactive, FernhillPaymentsOU, hook),
 			control("AWS-GR_RESTRICTED_COMMON_PORTS", "Detect whether unrestricted incoming TCP traffic is allowed on common ports", snapshot.ControlDetective, FernhillRetailOU, rule),
 		},
+	}
+}
+
+// larkspurIdentityCenter is the Identity Center instance of Larkspur. The
+// payments account carries four assignments across three permission sets,
+// and the DataPlatformOperator role is still provisioned there although its
+// assignment was removed (a stale AWSReservedSSO_* role).
+func larkspurIdentityCenter(g *gen) *snapshot.IdentityCenter {
+	const (
+		instance = LarkspurIdentityCenterInstance
+		admin    = "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001"
+		payments = "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000002"
+		readOnly = "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003"
+		data     = "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000004"
+		sandbox  = "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000005"
+	)
+	all := []string{"111111111111", "111111111112", "111111111113", "111111111114", LarkspurPaymentsProd, "111111111116", "111111111117", "111111111118"}
+	platformAdmins, paymentsEngineers, securityAuditors, dataPlatform, developers := g.uuid(), g.uuid(), g.uuid(), g.uuid(), g.uuid()
+	oncall := g.uuid()
+	assign := func(account, ps, kind, id, name string) snapshot.AccountAssignment {
+		return snapshot.AccountAssignment{AccountID: account, PermissionSetARN: ps, PrincipalType: kind, PrincipalID: id, PrincipalName: name}
+	}
+	var assignments []snapshot.AccountAssignment
+	for _, a := range all {
+		assignments = append(assignments, assign(a, admin, snapshot.PrincipalGroup, platformAdmins, "Platform-Admins"))
+	}
+	assignments = append(assignments,
+		assign(LarkspurPaymentsProd, payments, snapshot.PrincipalGroup, paymentsEngineers, "Payments-Engineers"),
+		assign(LarkspurPaymentsProd, payments, snapshot.PrincipalUser, oncall, "oncall.payments"),
+		assign(LarkspurPaymentsProd, readOnly, snapshot.PrincipalGroup, securityAuditors, "Security-Auditors"),
+		assign("111111111116", payments, snapshot.PrincipalGroup, paymentsEngineers, "Payments-Engineers"),
+		assign("111111111113", readOnly, snapshot.PrincipalGroup, securityAuditors, "Security-Auditors"),
+		assign("111111111114", readOnly, snapshot.PrincipalGroup, securityAuditors, "Security-Auditors"),
+		assign("111111111118", readOnly, snapshot.PrincipalGroup, securityAuditors, "Security-Auditors"),
+		assign("111111111118", data, snapshot.PrincipalGroup, dataPlatform, "Data-Platform"),
+		assign("111111111117", sandbox, snapshot.PrincipalGroup, developers, "Developers"),
+	)
+	return &snapshot.IdentityCenter{
+		InstanceARN: instance, IdentityStoreID: "d-lark0000001", Region: "us-east-1", OwnerAccountID: "111111111111", Name: "Larkspur SSO",
+		PermissionSets: []snapshot.PermissionSet{
+			{ARN: admin, Name: "AdministratorAccess", Description: "Full access for the platform team", SessionDuration: "PT1H",
+				ManagedPolicies: []string{"arn:aws:iam::aws:policy/AdministratorAccess"}, ProvisionedAccounts: all},
+			{ARN: payments, Name: LarkspurPaymentsEngineerSet, Description: "Day-to-day operations in the payments accounts", SessionDuration: "PT8H",
+				CustomerManagedPolicies: []string{"/larkspur/LarkspurPaymentsEngineer"},
+				InlinePolicy:            doc(`{"Version":"2012-10-17","Statement":[{"Sid":"NoIAMChanges","Effect":"Deny","Action":["iam:Create*","iam:Delete*","iam:Put*","iam:Attach*","iam:Detach*"],"Resource":"*"}]}`),
+				ProvisionedAccounts:     []string{LarkspurPaymentsProd, "111111111116"}},
+			{ARN: readOnly, Name: "ReadOnlyAccess", Description: "Audit access", SessionDuration: "PT8H",
+				ManagedPolicies:     []string{"arn:aws:iam::aws:policy/ReadOnlyAccess"},
+				ProvisionedAccounts: []string{"111111111111", "111111111112", "111111111113", "111111111114", LarkspurPaymentsProd, "111111111116", "111111111118"}},
+			{ARN: data, Name: "DataPlatformOperator", Description: "Glue and Athena operations", SessionDuration: "PT4H",
+				ManagedPolicies:     []string{"arn:aws:iam::aws:policy/AmazonAthenaFullAccess", "arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess"},
+				PermissionsBoundary: "arn:aws:iam::aws:policy/PowerUserAccess",
+				// Still provisioned in the payments account from the ledger export project; the assignment is gone.
+				ProvisionedAccounts: []string{"111111111118", LarkspurPaymentsProd}},
+			{ARN: sandbox, Name: "SandboxDeveloper", SessionDuration: "PT12H",
+				ManagedPolicies: []string{"arn:aws:iam::aws:policy/PowerUserAccess"}, ProvisionedAccounts: []string{"111111111117"}},
+		},
+		Assignments: assignments,
+	}
+}
+
+// fernhillIdentityCenter is the Identity Center instance of Fernhill. It has
+// permission sets named like two of Larkspur's (with different settings) and
+// nothing resembling PaymentsEngineer.
+func fernhillIdentityCenter(g *gen) *snapshot.IdentityCenter {
+	const (
+		admin    = "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001"
+		readOnly = "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002"
+		dev      = "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000003"
+	)
+	all := []string{"222222222221", "222222222222", "222222222223", "222222222224", FernhillRetailProd, "222222222226", "222222222227"}
+	platform, auditors, retailDevs, paymentsDevs := g.uuid(), g.uuid(), g.uuid(), g.uuid()
+	assign := func(account, ps, id, name string) snapshot.AccountAssignment {
+		return snapshot.AccountAssignment{AccountID: account, PermissionSetARN: ps, PrincipalType: snapshot.PrincipalGroup, PrincipalID: id, PrincipalName: name}
+	}
+	var assignments []snapshot.AccountAssignment
+	for _, a := range all {
+		assignments = append(assignments, assign(a, admin, platform, "Fernhill-Platform"))
+		if a != "222222222227" {
+			assignments = append(assignments, assign(a, readOnly, auditors, "Fernhill-Auditors"))
+		}
+	}
+	assignments = append(assignments,
+		assign(FernhillRetailProd, dev, retailDevs, "Retail-Developers"),
+		assign("222222222226", dev, paymentsDevs, "Payments-Developers"),
+	)
+	return &snapshot.IdentityCenter{
+		InstanceARN: FernhillIdentityCenterInstance, IdentityStoreID: "d-fern0000001", Region: "eu-west-1", OwnerAccountID: "222222222221", Name: "Fernhill Identity Center",
+		PermissionSets: []snapshot.PermissionSet{
+			{ARN: admin, Name: "AdministratorAccess", Description: "Platform team break-glass", SessionDuration: "PT2H",
+				ManagedPolicies: []string{"arn:aws:iam::aws:policy/AdministratorAccess"}, ProvisionedAccounts: all},
+			{ARN: readOnly, Name: "ReadOnlyAccess", Description: "Audit and security review", SessionDuration: "PT12H",
+				ManagedPolicies:     []string{"arn:aws:iam::aws:policy/ReadOnlyAccess", "arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"},
+				ProvisionedAccounts: []string{"222222222221", "222222222222", "222222222223", "222222222224", FernhillRetailProd, "222222222226"}},
+			{ARN: dev, Name: "BusinessUnitDeveloper", Description: "Developers in business unit accounts", SessionDuration: "PT8H",
+				ManagedPolicies: []string{"arn:aws:iam::aws:policy/PowerUserAccess"}, PermissionsBoundary: "/fernhill/FernhillDeveloperBoundary",
+				ProvisionedAccounts: []string{FernhillRetailProd, "222222222226"}},
+		},
+		Assignments: assignments,
 	}
 }
 

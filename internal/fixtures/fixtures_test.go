@@ -66,3 +66,23 @@ func TestPlantedProblemsArePresent(t *testing.T) {
 		t.Fatal("expected an org-scoped TGW and subnet share")
 	}
 }
+
+func TestIdentityCenterFixture(t *testing.T) {
+	l, f := Larkspur(), Fernhill()
+	ic := l.IdentityCenter
+	if ic == nil || ic.InstanceARN != LarkspurIdentityCenterInstance || len(ic.PermissionSets) != 5 {
+		t.Fatalf("Larkspur should run Identity Center with five permission sets: %+v", ic)
+	}
+	if got := ic.AssignmentsFor(LarkspurPaymentsProd); len(got) != 4 {
+		t.Errorf("payments account should carry four assignments, got %d", len(got))
+	}
+	if got := ic.ProvisionedIn(LarkspurPaymentsProd); len(got) != 4 || got[3].Name != "DataPlatformOperator" {
+		t.Errorf("payments account should have four provisioned roles including the stale DataPlatformOperator: %+v", got)
+	}
+	if f.IdentityCenter.PermissionSetByName(LarkspurPaymentsEngineerSet) != nil || f.IdentityCenter.PermissionSetByName("ReadOnlyAccess") == nil {
+		t.Error("Fernhill should match ReadOnlyAccess by name and lack PaymentsEngineer")
+	}
+	if f.IdentityCenter.IdentityStoreID == ic.IdentityStoreID {
+		t.Error("the two instances must use different identity stores")
+	}
+}

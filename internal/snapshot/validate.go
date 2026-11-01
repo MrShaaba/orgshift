@@ -85,6 +85,7 @@ func (s *Snapshot) Validate() error {
 		}
 	}
 	s.validateControlTower(seen, fail)
+	s.validateIdentityCenter(seen, fail)
 	// Cycles: every OU must reach the root.
 	ix := s.Index()
 	for _, ou := range s.OUs {
@@ -133,6 +134,59 @@ func (s *Snapshot) validateControlTower(seen map[string]string, fail func(string
 		case "", ControlPreventive, ControlDetective, ControlProactive:
 		default:
 			fail("control_tower.enabled_controls: %s has unknown behavior %q", c.ControlIdentifier, c.Behavior)
+		}
+	}
+}
+
+// validateIdentityCenter checks that permission sets are unique and that
+// every assignment points at a known permission set and account.
+func (s *Snapshot) validateIdentityCenter(seen map[string]string, fail func(string, ...any)) {
+	ic := s.IdentityCenter
+	if ic == nil {
+		return
+	}
+	if ic.InstanceARN == "" {
+		fail("identity_center: instance_arn is required")
+	}
+	if ic.OwnerAccountID != "" && seen[ic.OwnerAccountID] != "account" {
+		fail("identity_center: owner account %q is not an account in this snapshot", ic.OwnerAccountID)
+	}
+	arns, names := map[string]bool{}, map[string]bool{}
+	for _, ps := range ic.PermissionSets {
+		if ps.ARN == "" || ps.Name == "" {
+			fail("identity_center.permission_sets: %q needs both arn and name", ps.ARN+ps.Name)
+			continue
+		}
+		if arns[ps.ARN] {
+			fail("identity_center.permission_sets: arn %s is listed twice", ps.ARN)
+		}
+		if names[ps.Name] {
+			fail("identity_center.permission_sets: name %s is used twice", ps.Name)
+		}
+		arns[ps.ARN], names[ps.Name] = true, true
+		if len(ps.InlinePolicy) > 0 && !json.Valid(ps.InlinePolicy) {
+			fail("identity_center.permission_sets: %s has an inline policy that is not valid JSON", ps.Name)
+		}
+		for _, id := range ps.ProvisionedAccounts {
+			if seen[id] != "account" {
+				fail("identity_center.permission_sets: %s is provisioned in %q, which is not an account", ps.Name, id)
+			}
+		}
+	}
+	for _, a := range ic.Assignments {
+		if seen[a.AccountID] != "account" {
+			fail("identity_center.account_assignments: %q is not an account", a.AccountID)
+		}
+		if !arns[a.PermissionSetARN] {
+			fail("identity_center.account_assignments: permission set %q on %s is not in permission_sets", a.PermissionSetARN, a.AccountID)
+		}
+		switch a.PrincipalType {
+		case PrincipalUser, PrincipalGroup:
+		default:
+			fail("identity_center.account_assignments: principal %q on %s has unknown type %q", a.PrincipalID, a.AccountID, a.PrincipalType)
+		}
+		if a.PrincipalID == "" {
+			fail("identity_center.account_assignments: an assignment on %s has no principal_id", a.AccountID)
 		}
 	}
 }

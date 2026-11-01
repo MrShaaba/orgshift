@@ -186,6 +186,10 @@ func (e *evaluation) applyCoverage(res *Result) {
 	case gaps == 0:
 		cov.Summary = "Nothing is required of the snapshots for this move."
 	default:
+		// The gaps are reported by the checks they affect; the coverage
+		// check itself still reads REVIEW so the board does not show a GO
+		// next to a summary that lists missing evidence.
+		cov.Status = Worst(cov.Status, StatusReview)
 		cov.Summary = fmt.Sprintf("%d of %d required collection domains are incomplete: %s. The checks that depend on them carry a REVIEW finding each; a GO is not issued on incomplete evidence.", gaps, m.Required, strings.Join(m.Gaps, "; "))
 	}
 	if e.from.UpgradedFrom == 1 || (e.to != e.from && e.to.UpgradedFrom == 1) {

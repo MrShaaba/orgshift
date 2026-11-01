@@ -30,6 +30,7 @@ func scenarios() []scenario {
 		{"same-org-sandbox-to-production", l, nil, "111111111117", "ou-lark-prod"},
 		{"cross-org-security-to-fernhill-core", l, f, "111111111113", "ou-fern-core"},
 		{"same-org-fernhill-retail-prod-to-sandbox", f, nil, fixtures.FernhillRetailProd, fixtures.FernhillSandboxOU},
+		{"cross-org-data-prod-to-fernhill-retail", l, f, "111111111118", fixtures.FernhillRetailOU},
 	}
 }
 

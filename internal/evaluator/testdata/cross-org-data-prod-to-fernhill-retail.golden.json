@@ -1,0 +1,2953 @@
+{
+  "tool": "orgshift",
+  "result_schema_version": 1,
+  "subject": {
+    "account_id": "111111111118",
+    "account_name": "larkspur-data-prod",
+    "source_org": {
+      "id": "o-larkspur0001",
+      "name": "Larkspur Holdings"
+    },
+    "target_org": {
+      "id": "o-fernhill0001",
+      "name": "Fernhill Group"
+    },
+    "cross_org": true,
+    "source_path": [
+      {
+        "id": "r-lark",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-lark-work",
+        "name": "Workloads",
+        "kind": "ou"
+      },
+      {
+        "id": "ou-lark-prod",
+        "name": "Production",
+        "kind": "ou"
+      },
+      {
+        "id": "111111111118",
+        "name": "larkspur-data-prod",
+        "kind": "account"
+      }
+    ],
+    "target_path": [
+      {
+        "id": "r-fern",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-fern-bu",
+        "name": "Business Units",
+        "kind": "ou"
+      },
+      {
+        "id": "ou-fern-ret",
+        "name": "Retail",
+        "kind": "ou"
+      },
+      {
+        "id": "111111111118",
+        "name": "larkspur-data-prod",
+        "kind": "account"
+      }
+    ],
+    "source_parent_id": "ou-lark-prod",
+    "target_ou_id": "ou-fern-ret",
+    "actions_in_use": 8,
+    "inbound_access": 1,
+    "tagged_resources": 0,
+    "regions_assumed": [
+      "eu-west-1",
+      "us-east-1"
+    ]
+  },
+  "verdict": "NO-GO",
+  "summary": "Moving larkspur-data-prod (111111111118) from Root / Workloads / Production to Root / Business Units / Retail (organization o-larkspur0001 to o-fernhill0001): NO-GO. 11 blocking finding(s) and 13 to review.",
+  "checks": [
+    {
+      "id": "scp",
+      "title": "Service control policies",
+      "status": "NO-GO",
+      "summary": "8 actions evaluated against the SCP chain; 7 flagged.",
+      "findings": [
+        {
+          "status": "NO-GO",
+          "title": "athena:StartQueryExecution becomes denied after the move",
+          "detail": "Allowed today; after the move it is denied by Fernhill-EU-Only-Regions, DenyOutsideEU, attached at OU Business Units (ou-fern-bu).",
+          "action": "athena:StartQueryExecution",
+          "regions": [
+            "us-east-1"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "target",
+              "level": "OU Business Units (ou-fern-bu)",
+              "policy_id": "p-fern0002",
+              "policy_name": "Fernhill-EU-Only-Regions",
+              "policy_type": "SCP",
+              "statement": "DenyOutsideEU",
+              "statement_json": {
+                "Sid": "DenyOutsideEU",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*",
+                  "access-analyzer:*",
+                  "trustedadvisor:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "eu-west-1",
+                      "eu-central-1"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "status": "NO-GO",
+          "title": "ec2:CreateTransitGatewayVpcAttachment becomes denied after the move",
+          "detail": "Allowed today; after the move it is denied by Fernhill-EU-Only-Regions, DenyOutsideEU, attached at OU Business Units (ou-fern-bu). Note from the usage list: data lake VPC hangs off the shared transit gateway.",
+          "action": "ec2:CreateTransitGatewayVpcAttachment",
+          "regions": [
+            "us-east-1"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "target",
+              "level": "OU Business Units (ou-fern-bu)",
+              "policy_id": "p-fern0002",
+              "policy_name": "Fernhill-EU-Only-Regions",
+              "policy_type": "SCP",
+              "statement": "DenyOutsideEU",
+              "statement_json": {
+                "Sid": "DenyOutsideEU",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*",
+                  "access-analyzer:*",
+                  "trustedadvisor:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "eu-west-1",
+                      "eu-central-1"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "status": "NO-GO",
+          "title": "ec2:RunInstances becomes denied after the move",
+          "detail": "Allowed today; after the move it is denied by Fernhill-EU-Only-Regions, DenyOutsideEU, attached at OU Business Units (ou-fern-bu). Note from the usage list: spot fleet for nightly model training.",
+          "action": "ec2:RunInstances",
+          "regions": [
+            "us-east-1"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "target",
+              "level": "OU Business Units (ou-fern-bu)",
+              "policy_id": "p-fern0002",
+              "policy_name": "Fernhill-EU-Only-Regions",
+              "policy_type": "SCP",
+              "statement": "DenyOutsideEU",
+              "statement_json": {
+                "Sid": "DenyOutsideEU",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*",
+                  "access-analyzer:*",
+                  "trustedadvisor:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "eu-west-1",
+                      "eu-central-1"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "status": "NO-GO",
+          "title": "glue:StartJobRun becomes denied after the move",
+          "detail": "Allowed today; after the move it is denied by Fernhill-EU-Only-Regions, DenyOutsideEU, attached at OU Business Units (ou-fern-bu).",
+          "action": "glue:StartJobRun",
+          "regions": [
+            "us-east-1"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "target",
+              "level": "OU Business Units (ou-fern-bu)",
+              "policy_id": "p-fern0002",
+              "policy_name": "Fernhill-EU-Only-Regions",
+              "policy_type": "SCP",
+              "statement": "DenyOutsideEU",
+              "statement_json": {
+                "Sid": "DenyOutsideEU",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*",
+                  "access-analyzer:*",
+                  "trustedadvisor:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "eu-west-1",
+                      "eu-central-1"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "status": "NO-GO",
+          "title": "kms:Decrypt becomes denied after the move",
+          "detail": "Allowed today; after the move it is denied by Fernhill-EU-Only-Regions, DenyOutsideEU, attached at OU Business Units (ou-fern-bu).",
+          "action": "kms:Decrypt",
+          "regions": [
+            "us-east-1"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "target",
+              "level": "OU Business Units (ou-fern-bu)",
+              "policy_id": "p-fern0002",
+              "policy_name": "Fernhill-EU-Only-Regions",
+              "policy_type": "SCP",
+              "statement": "DenyOutsideEU",
+              "statement_json": {
+                "Sid": "DenyOutsideEU",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*",
+                  "access-analyzer:*",
+                  "trustedadvisor:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "eu-west-1",
+                      "eu-central-1"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "status": "NO-GO",
+          "title": "s3:GetObject becomes denied after the move",
+          "detail": "Allowed today; after the move it is denied by Fernhill-EU-Only-Regions, DenyOutsideEU, attached at OU Business Units (ou-fern-bu). Note from the usage list: reads the ledger export from the payments account.",
+          "action": "s3:GetObject",
+          "resource": "arn:aws:s3:::larkspur-payments-settlement-files/*",
+          "regions": [
+            "us-east-1"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "target",
+              "level": "OU Business Units (ou-fern-bu)",
+              "policy_id": "p-fern0002",
+              "policy_name": "Fernhill-EU-Only-Regions",
+              "policy_type": "SCP",
+              "statement": "DenyOutsideEU",
+              "statement_json": {
+                "Sid": "DenyOutsideEU",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*",
+                  "access-analyzer:*",
+                  "trustedadvisor:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "eu-west-1",
+                      "eu-central-1"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "status": "NO-GO",
+          "title": "s3:PutObject becomes denied after the move",
+          "detail": "Allowed today; after the move it is denied by Fernhill-EU-Only-Regions, DenyOutsideEU, attached at OU Business Units (ou-fern-bu).",
+          "action": "s3:PutObject",
+          "resource": "arn:aws:s3:::larkspur-data-lake/*",
+          "regions": [
+            "us-east-1"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "target",
+              "level": "OU Business Units (ou-fern-bu)",
+              "policy_id": "p-fern0002",
+              "policy_name": "Fernhill-EU-Only-Regions",
+              "policy_type": "SCP",
+              "statement": "DenyOutsideEU",
+              "statement_json": {
+                "Sid": "DenyOutsideEU",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*",
+                  "access-analyzer:*",
+                  "trustedadvisor:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "eu-west-1",
+                      "eu-central-1"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rcp",
+      "title": "Resource control policies",
+      "status": "NO-GO",
+      "summary": "4 actions evaluated against the RCP chain; 0 flagged. 1 inbound requests evaluated; 1 flagged.",
+      "findings": [
+        {
+          "status": "NO-GO",
+          "title": "s3:PutObject by arn:aws:iam::111111111115:role/SettlementExporter becomes denied after the move",
+          "detail": "Allowed today; after the move it is denied by Fernhill-Block-External-Principals, EnforceOrgIdentities, attached at OU Business Units (ou-fern-bu). Note from the usage list: payments account pushes the nightly ledger export.",
+          "action": "s3:PutObject",
+          "resource": "arn:aws:s3:::larkspur-data-lake/ledger/*",
+          "principal": "arn:aws:iam::111111111115:role/SettlementExporter",
+          "regions": [
+            "eu-west-1",
+            "us-east-1"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "target",
+              "level": "OU Business Units (ou-fern-bu)",
+              "policy_id": "p-fern0006",
+              "policy_name": "Fernhill-Block-External-Principals",
+              "policy_type": "RCP",
+              "statement": "EnforceOrgIdentities",
+              "statement_json": {
+                "Sid": "EnforceOrgIdentities",
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": [
+                  "s3:*",
+                  "sts:AssumeRole",
+                  "sts:SetContext",
+                  "kms:*",
+                  "sqs:*",
+                  "secretsmanager:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEqualsIfExists": {
+                    "aws:PrincipalOrgID": "o-fernhill0001"
+                  },
+                  "BoolIfExists": {
+                    "aws:PrincipalIsAWSService": "false"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tags",
+      "title": "Tag policies",
+      "status": "REVIEW",
+      "summary": "2 tag keys governed at the target; no resource sample to check.",
+      "findings": [
+        {
+          "status": "INFO",
+          "title": "Effective tag policy at the target defines cost-center, environment",
+          "detail": "Rules below are the merged result of every tag policy on the target path.",
+          "evidence": [
+            {
+              "kind": "effective-tag-policy",
+              "side": "target",
+              "policy_type": "TAG",
+              "statement_json": [
+                {
+                  "key": "cost-center",
+                  "key_case_enforced": true,
+                  "values": [
+                    "CC-1001",
+                    "CC-1002",
+                    "CC-2001",
+                    "CC-2002"
+                  ],
+                  "enforced_for": [
+                    "ec2:instance",
+                    "ec2:volume",
+                    "rds:db",
+                    "s3:bucket",
+                    "lambda:function"
+                  ],
+                  "sources": [
+                    "Fernhill-Cost-Allocation"
+                  ]
+                },
+                {
+                  "key": "environment",
+                  "key_case_enforced": true,
+                  "values": [
+                    "production",
+                    "staging",
+                    "development"
+                  ],
+                  "sources": [
+                    "Fernhill-Cost-Allocation"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "title": "No tagged resources were provided for this account",
+          "detail": "Add usage.tagged_resources to the source snapshot (for example from the Resource Groups Tagging API) to check compliance against the target tag policy."
+        }
+      ]
+    },
+    {
+      "id": "ram",
+      "title": "Resource shares (RAM)",
+      "status": "NO-GO",
+      "summary": "0 share(s) kept, 4 lost or uncertain, 1 newly available.",
+      "findings": [
+        {
+          "status": "NO-GO",
+          "title": "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
+          "detail": "Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. Anything attached to or routed through these resources from this account breaks unless the owner re-shares them with the account directly (and, for a different organization, enables external principals).",
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "source",
+              "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
+              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
+            }
+          ]
+        },
+        {
+          "status": "NO-GO",
+          "title": "Networking share larkspur-ipam is lost: ec2:IpamPool",
+          "detail": "Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. Anything attached to or routed through these resources from this account breaks unless the owner re-shares them with the account directly (and, for a different organization, enables external principals).",
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "source",
+              "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/01364b18a31c4fdca",
+              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:IpamPool  arn:aws:ec2::111111111112:ipam-pool/ipam-pool-8afc13dafc2e5d265"
+            }
+          ]
+        },
+        {
+          "status": "NO-GO",
+          "title": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
+          "detail": "Shared by account 111111111112 with OU ou-lark-work. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. Anything attached to or routed through these resources from this account breaks unless the owner re-shares them with the account directly (and, for a different organization, enables external principals).",
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "source",
+              "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
+              "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "title": "Share larkspur-license-config is shared with this account directly; confirm it survives leaving the organization",
+          "detail": "Shared by account 111111111113 with the account ID as principal. Outside the organization the share must allow external principals (currently false) and the association may need to be re-accepted. Resource types: license-manager:LicenseConfiguration.",
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "source",
+              "reference": "arn:aws:ram:us-east-1:111111111113:resource-share/016cff3e3072e28ed",
+              "note": "owner 111111111113; principals: account 111111111115, account 111111111118\nlicense-manager:LicenseConfiguration  arn:aws:license-manager:us-east-1:111111111113:license-configuration:lic-4fba2a7c40f73ab7"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "Share fernhill-core-network becomes available after the move: ec2:TransitGateway, route53resolver:ResolverRule",
+          "detail": "Shared by account 222222222222 with organization o-fernhill0001 in the target organization. New attachments must be created by hand; nothing is attached automatically.",
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "target",
+              "reference": "arn:aws:ram:eu-west-1:222222222222:resource-share/09521366b77824316",
+              "note": "owner 222222222222; principals: organization o-fernhill0001\nec2:TransitGateway  arn:aws:ec2:eu-west-1:222222222222:transit-gateway/tgw-6a7aefe6fddce8281\nroute53resolver:ResolverRule  arn:aws:route53resolver:eu-west-1:222222222222:resolver-rule/rslvr-rr-364b18a31c4fdca47"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "org-services",
+      "title": "Organization services",
+      "status": "REVIEW",
+      "summary": "Cross-organization move: 6 item(s) to settle before the account leaves.",
+      "findings": [
+        {
+          "status": "REVIEW",
+          "title": "Config aggregator larkspur-org-aggregator loses this account",
+          "detail": "The organization-sourced aggregator in account 111111111113 (us-east-1) stops receiving this account's configuration and compliance data when it leaves.",
+          "evidence": [
+            {
+              "kind": "config-aggregator",
+              "side": "source",
+              "reference": "larkspur-org-aggregator"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "title": "Organization trail larkspur-org-trail stops logging this account",
+          "detail": "The trail is owned by account 111111111114 and covers members of the source organization only. After the move the account has no CloudTrail coverage from it; the target organization's trail (if any) takes over once the account joins.",
+          "evidence": [
+            {
+              "kind": "org-trail",
+              "side": "source",
+              "reference": "arn:aws:cloudtrail:us-east-1:111111111114:trail/larkspur-org-trail",
+              "note": "bucket larkspur-cloudtrail-archive, home region us-east-1"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "title": "StackSet larkspur-baseline-roles stops targeting the account; stack instances are deleted from the account",
+          "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
+          "evidence": [
+            {
+              "kind": "stackset",
+              "side": "source",
+              "reference": "larkspur-baseline-roles",
+              "note": "admin 111111111111; targets OUs ou-lark-work accounts ; regions us-east-1; auto-deployment true; retain on removal false"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "title": "StackSet larkspur-config-recorder stops targeting the account; stack instances are detached but the stacks are retained in the account (retain_stacks_on_account_removal)",
+          "detail": "Service-managed StackSets deploy by OU. AWS Config recorder and delivery channel. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
+          "evidence": [
+            {
+              "kind": "stackset",
+              "side": "source",
+              "reference": "larkspur-config-recorder",
+              "note": "admin 111111111111; targets OUs r-lark accounts ; regions us-east-1,eu-west-1,ap-southeast-1; auto-deployment true; retain on removal true"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "title": "Standalone account prerequisites and invitation",
+          "detail": "Before it can leave, the account needs its own contact information, a payment method, a support plan choice and completed identity verification. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move."
+        },
+        {
+          "status": "REVIEW",
+          "title": "Trusted access is not enabled in the target for: account.amazonaws.com",
+          "detail": "Organization-integrated features of these services (for example organization-wide GuardDuty, RAM sharing with the organization, service-managed StackSets) are not available in the target organization until trusted access is enabled there."
+        },
+        {
+          "status": "INFO",
+          "title": "Config aggregator fernhill-org-aggregator in the target starts receiving the account",
+          "detail": "Hosted in account 222222222223 (eu-west-1).",
+          "evidence": [
+            {
+              "kind": "config-aggregator",
+              "side": "target",
+              "reference": "fernhill-org-aggregator"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "In the target, 222222222223 administers access-analyzer.amazonaws.com",
+          "detail": "The account will be enrolled by that administrator's configuration once it joins."
+        },
+        {
+          "status": "INFO",
+          "title": "In the target, 222222222223 administers guardduty.amazonaws.com",
+          "detail": "The account will be enrolled by that administrator's configuration once it joins."
+        },
+        {
+          "status": "INFO",
+          "title": "In the target, 222222222223 administers securityhub.amazonaws.com",
+          "detail": "The account will be enrolled by that administrator's configuration once it joins."
+        },
+        {
+          "status": "INFO",
+          "title": "Organization trail fernhill-org-trail in the target starts covering the account",
+          "detail": "Owned by account 222222222224, delivering to fernhill-log-archive.",
+          "evidence": [
+            {
+              "kind": "org-trail",
+              "side": "target",
+              "reference": "arn:aws:cloudtrail:eu-west-1:222222222224:trail/fernhill-org-trail"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "StackSet fernhill-baseline in the target organization starts targeting the account",
+          "detail": "Baseline IAM roles and GuardDuty membership. Stack instances are created automatically when auto-deployment is on.",
+          "evidence": [
+            {
+              "kind": "stackset",
+              "side": "target",
+              "reference": "fernhill-baseline",
+              "note": "admin 222222222221; targets OUs ou-fern-bu; regions eu-west-1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "control-tower",
+      "title": "Control Tower",
+      "status": "REVIEW",
+      "summary": "1 item(s) to settle with Control Tower, 2 informational.",
+      "findings": [
+        {
+          "status": "REVIEW",
+          "title": "Target OU Retail is registered with Control Tower; the account has to be enrolled",
+          "detail": "Moving into a registered OU does not enroll the account by itself. The 3 preventive guardrail SCP(s) on the OU chain apply immediately because they are attached to the OUs, but the 4 detective control(s) do not report and the baseline is not deployed until the account is enrolled from Account Factory. Enrolment needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no conflicting Config recorder or delivery channel in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
+          "evidence": [
+            {
+              "kind": "landing-zone",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+            },
+            {
+              "kind": "registered-ou",
+              "side": "target",
+              "reference": "ou-fern-ret",
+              "note": "OU Retail registered: baseline 4.0, status SUCCEEDED, drift IN_SYNC"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "3 preventive control(s) start applying at Retail: AWS-GR_CLOUDTRAIL_ENABLED, AWS-GR_CONFIG_ENABLED, AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+          "detail": "Preventive controls are the aws-guardrails-* SCPs attached to the OU chain; they apply as soon as the account is in the OU and the SCP check on this board evaluates them against the actions in use.",
+          "evidence": [
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CLOUDTRAIL_ENABLED",
+              "note": "Disallow changes to CloudTrail set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_CONFIG_ENABLED",
+              "note": "Disallow changes to AWS Config set up by AWS Control Tower\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
+              "note": "Disallow creation of access keys for the root user\npreventive control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "4 detective control(s) start applying at Retail: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_COMMON_PORTS, AWS-GR_RESTRICTED_SSH",
+          "detail": "Detective controls are AWS Config rules that Control Tower deploys when the account is enrolled. Findings appear in the audit account's Security Hub and Config aggregator; nothing is blocked. They start reporting only once the account is enrolled.",
+          "evidence": [
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_ENCRYPTED_VOLUMES",
+              "note": "Detect whether encryption is enabled for Amazon EBS volumes attached to Amazon EC2 instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICTED_SSH",
+              "note": "Detect whether unrestricted incoming SSH traffic is allowed\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RDS_STORAGE_ENCRYPTED",
+              "note": "Detect whether storage encryption is enabled for Amazon RDS database instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICTED_COMMON_PORTS",
+              "note": "Detect whether unrestricted incoming TCP traffic is allowed on common ports\ndetective control on OU ou-fern-ret; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "identity-center",
+      "title": "IAM Identity Center",
+      "status": "REVIEW",
+      "summary": "3 assignment(s) across 3 permission set(s) and 3 provisioned role(s) go away with the move; 2 permission set name(s) exist in the target, 1 do not.",
+      "findings": [
+        {
+          "status": "REVIEW",
+          "title": "3 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*, AWSReservedSSO_ReadOnlyAccess_*, AWSReservedSSO_DataPlatformOperator_*",
+          "detail": "Identity Center deletes the IAM roles it provisioned in the account (path /aws-reserved/sso.amazonaws.com/us-east-1/) when the account leaves the organization. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern.",
+          "evidence": [
+            {
+              "kind": "reserved-role",
+              "side": "source",
+              "reference": "AWSReservedSSO_AdministratorAccess_*",
+              "note": "role for permission set AdministratorAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+            },
+            {
+              "kind": "reserved-role",
+              "side": "source",
+              "reference": "AWSReservedSSO_ReadOnlyAccess_*",
+              "note": "role for permission set ReadOnlyAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+            },
+            {
+              "kind": "reserved-role",
+              "side": "source",
+              "reference": "AWSReservedSSO_DataPlatformOperator_*",
+              "note": "role for permission set DataPlatformOperator (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000004) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "title": "Permission set AdministratorAccess: 1 assignment(s) removed when the account leaves (group Platform-Admins)",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
+          "evidence": [
+            {
+              "kind": "account-assignment",
+              "side": "source",
+              "reference": "ba31fe89-32df-0f24-6b40-1c6f590a40ff",
+              "note": "group Platform-Admins has permission set AdministratorAccess in account 111111111118"
+            },
+            {
+              "kind": "permission-set",
+              "side": "source",
+              "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001",
+              "note": "AdministratorAccess\nFull access for the platform team\nsession duration PT1H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 8 account(s)"
+            },
+            {
+              "kind": "permission-set",
+              "side": "target",
+              "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001",
+              "note": "AdministratorAccess\nPlatform team break-glass\nsession duration PT2H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 7 account(s)"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "title": "Permission set DataPlatformOperator: 1 assignment(s) removed when the account leaves (group Data-Platform)",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has no permission set named DataPlatformOperator. Create one there (or choose an equivalent) before re-assigning the 1 principal(s), who have to exist in identity store d-fern0000001 under the target instance.",
+          "evidence": [
+            {
+              "kind": "account-assignment",
+              "side": "source",
+              "reference": "44693b45-1be8-872e-dd8a-3ced7bc68516",
+              "note": "group Data-Platform has permission set DataPlatformOperator in account 111111111118"
+            },
+            {
+              "kind": "permission-set",
+              "side": "source",
+              "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000004",
+              "note": "DataPlatformOperator\nGlue and Athena operations\nsession duration PT4H\nmanaged policies: arn:aws:iam::aws:policy/AmazonAthenaFullAccess, arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess\npermissions boundary arn:aws:iam::aws:policy/PowerUserAccess\nprovisioned in 2 account(s)"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "title": "Permission set ReadOnlyAccess: 1 assignment(s) removed when the account leaves (group Security-Auditors)",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
+          "evidence": [
+            {
+              "kind": "account-assignment",
+              "side": "source",
+              "reference": "fd2d8b09-2a71-ec4a-cc89-1ddb07a87174",
+              "note": "group Security-Auditors has permission set ReadOnlyAccess in account 111111111118"
+            },
+            {
+              "kind": "permission-set",
+              "side": "source",
+              "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003",
+              "note": "ReadOnlyAccess\nAudit access\nsession duration PT8H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess\nprovisioned in 7 account(s)"
+            },
+            {
+              "kind": "permission-set",
+              "side": "target",
+              "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002",
+              "note": "ReadOnlyAccess\nAudit and security review\nsession duration PT12H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess, arn:aws:iam::aws:policy/job-function/ViewOnlyAccess\nprovisioned in 6 account(s)"
+            }
+          ]
+        },
+        {
+          "status": "INFO",
+          "title": "Access is re-created in the target Identity Center instance, not moved",
+          "detail": "Assignments are not copied between instances. The target instance uses identity store d-fern0000001 (the source uses d-lark0000001); users and groups there are separate objects even when their names match, so each assignment is re-created by name after the account has accepted the invitation. Permission set names that exist in both instances: AdministratorAccess, ReadOnlyAccess. Missing in the target: DataPlatformOperator.",
+          "evidence": [
+            {
+              "kind": "identity-center-instance",
+              "side": "source",
+              "reference": "arn:aws:sso:::instance/ssoins-larkspur00000001",
+              "note": "Larkspur SSO; identity store d-lark0000001; region us-east-1; owner account 111111111111; 5 permission set(s), 17 account assignment(s)"
+            },
+            {
+              "kind": "identity-center-instance",
+              "side": "target",
+              "reference": "arn:aws:sso:::instance/ssoins-fernhill00000001",
+              "note": "Fernhill Identity Center; identity store d-fern0000001; region eu-west-1; owner account 222222222221; 3 permission set(s), 15 account assignment(s)"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "diff": [
+    {
+      "type": "SERVICE_CONTROL_POLICY",
+      "type_short": "SCP",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-lark)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-lark0001",
+              "name": "Larkspur-Baseline-Guardrails",
+              "description": "Protects organization-wide logging and membership",
+              "aws_managed": false,
+              "level": "root Root (r-lark)",
+              "statements": [
+                {
+                  "sid": "DenyLeaveOrganization",
+                  "effect": "Deny",
+                  "actions": [
+                    "organizations:LeaveOrganization"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "ProtectOrgTrail",
+                  "effect": "Deny",
+                  "actions": [
+                    "cloudtrail:StopLogging",
+                    "cloudtrail:DeleteTrail",
+                    "cloudtrail:UpdateTrail"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "DenyRootUser",
+                  "effect": "Deny",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyLeaveOrganization",
+                    "Effect": "Deny",
+                    "Action": [
+                      "organizations:LeaveOrganization"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "ProtectOrgTrail",
+                    "Effect": "Deny",
+                    "Action": [
+                      "cloudtrail:StopLogging",
+                      "cloudtrail:DeleteTrail",
+                      "cloudtrail:UpdateTrail"
+                    ],
+                    "Resource": "arn:aws:cloudtrail:*:*:trail/larkspur-org-trail"
+                  },
+                  {
+                    "Sid": "DenyRootUser",
+                    "Effect": "Deny",
+                    "Action": "*",
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:root"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Workloads (ou-lark-work)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-lark0002",
+              "name": "Larkspur-Allowed-Regions",
+              "description": "Keeps workloads in the three regions Larkspur operates in",
+              "aws_managed": false,
+              "level": "OU Workloads (ou-lark-work)",
+              "statements": [
+                {
+                  "sid": "DenyOutsideApprovedRegions",
+                  "effect": "Deny",
+                  "not_actions": [
+                    "iam:*",
+                    "sts:*",
+                    "organizations:*",
+                    "support:*",
+                    "budgets:*",
+                    "cloudfront:*",
+                    "route53:*",
+                    "waf:*",
+                    "health:*",
+                    "account:*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringNotEquals aws:RequestedRegion = us-east-1 | eu-west-1 | ap-southeast-1"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyOutsideApprovedRegions",
+                    "Effect": "Deny",
+                    "NotAction": [
+                      "iam:*",
+                      "sts:*",
+                      "organizations:*",
+                      "support:*",
+                      "budgets:*",
+                      "cloudfront:*",
+                      "route53:*",
+                      "waf:*",
+                      "health:*",
+                      "account:*"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringNotEquals": {
+                        "aws:RequestedRegion": [
+                          "us-east-1",
+                          "eu-west-1",
+                          "ap-southeast-1"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Production (ou-lark-prod)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account larkspur-data-prod (111111111118)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-fern0001",
+              "name": "Fernhill-Root-Guardrails",
+              "description": "Organization-wide guardrails: no leaving, no IAM users, protected logging",
+              "aws_managed": false,
+              "level": "root Root (r-fern)",
+              "statements": [
+                {
+                  "sid": "DenyLeaveOrganization",
+                  "effect": "Deny",
+                  "actions": [
+                    "organizations:LeaveOrganization"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "NoIAMUsers",
+                  "effect": "Deny",
+                  "actions": [
+                    "iam:CreateUser",
+                    "iam:CreateAccessKey",
+                    "iam:CreateLoginProfile"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "ProtectLogging",
+                  "effect": "Deny",
+                  "actions": [
+                    "cloudtrail:StopLogging",
+                    "cloudtrail:DeleteTrail",
+                    "config:DeleteConfigurationRecorder",
+                    "config:StopConfigurationRecorder",
+                    "guardduty:DeleteDetector"
+                  ],
+                  "has_condition": false
+                },
+                {
+                  "sid": "DenyRootUser",
+                  "effect": "Deny",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyLeaveOrganization",
+                    "Effect": "Deny",
+                    "Action": [
+                      "organizations:LeaveOrganization"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "NoIAMUsers",
+                    "Effect": "Deny",
+                    "Action": [
+                      "iam:CreateUser",
+                      "iam:CreateAccessKey",
+                      "iam:CreateLoginProfile"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "ProtectLogging",
+                    "Effect": "Deny",
+                    "Action": [
+                      "cloudtrail:StopLogging",
+                      "cloudtrail:DeleteTrail",
+                      "config:DeleteConfigurationRecorder",
+                      "config:StopConfigurationRecorder",
+                      "guardduty:DeleteDetector"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Sid": "DenyRootUser",
+                    "Effect": "Deny",
+                    "Action": "*",
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:root"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-fern)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-bu",
+            "name": "Business Units",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-fern0002",
+              "name": "Fernhill-EU-Only-Regions",
+              "description": "Business unit workloads stay inside the EU",
+              "aws_managed": false,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "sid": "DenyOutsideEU",
+                  "effect": "Deny",
+                  "not_actions": [
+                    "iam:*",
+                    "sts:*",
+                    "organizations:*",
+                    "support:*",
+                    "budgets:*",
+                    "cloudfront:*",
+                    "route53:*",
+                    "waf:*",
+                    "health:*",
+                    "account:*",
+                    "access-analyzer:*",
+                    "trustedadvisor:*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringNotEquals aws:RequestedRegion = eu-west-1 | eu-central-1"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "DenyOutsideEU",
+                    "Effect": "Deny",
+                    "NotAction": [
+                      "iam:*",
+                      "sts:*",
+                      "organizations:*",
+                      "support:*",
+                      "budgets:*",
+                      "cloudfront:*",
+                      "route53:*",
+                      "waf:*",
+                      "health:*",
+                      "account:*",
+                      "access-analyzer:*",
+                      "trustedadvisor:*"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringNotEquals": {
+                        "aws:RequestedRegion": [
+                          "eu-west-1",
+                          "eu-central-1"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-fern0010",
+              "name": "aws-guardrails-kjwqpf",
+              "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+              "aws_managed": false,
+              "control_tower_managed": true,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "sid": "GRCLOUDTRAILENABLED",
+                  "effect": "Deny",
+                  "actions": [
+                    "cloudtrail:DeleteTrail",
+                    "cloudtrail:PutEventSelectors",
+                    "cloudtrail:StopLogging",
+                    "cloudtrail:UpdateTrail"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+                  ]
+                },
+                {
+                  "sid": "GRCONFIGENABLED",
+                  "effect": "Deny",
+                  "actions": [
+                    "config:DeleteConfigurationRecorder",
+                    "config:DeleteDeliveryChannel",
+                    "config:PutConfigurationRecorder",
+                    "config:PutDeliveryChannel",
+                    "config:StopConfigurationRecorder"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+                  ]
+                },
+                {
+                  "sid": "GRRESTRICTROOTUSERACCESSKEYS",
+                  "effect": "Deny",
+                  "actions": [
+                    "iam:CreateAccessKey"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "GRCLOUDTRAILENABLED",
+                    "Effect": "Deny",
+                    "Action": [
+                      "cloudtrail:DeleteTrail",
+                      "cloudtrail:PutEventSelectors",
+                      "cloudtrail:StopLogging",
+                      "cloudtrail:UpdateTrail"
+                    ],
+                    "Resource": "arn:aws:cloudtrail:*:*:trail/aws-controltower-*",
+                    "Condition": {
+                      "ArnNotLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                      }
+                    }
+                  },
+                  {
+                    "Sid": "GRCONFIGENABLED",
+                    "Effect": "Deny",
+                    "Action": [
+                      "config:DeleteConfigurationRecorder",
+                      "config:DeleteDeliveryChannel",
+                      "config:PutConfigurationRecorder",
+                      "config:PutDeliveryChannel",
+                      "config:StopConfigurationRecorder"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "ArnNotLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                      }
+                    }
+                  },
+                  {
+                    "Sid": "GRRESTRICTROOTUSERACCESSKEYS",
+                    "Effect": "Deny",
+                    "Action": "iam:CreateAccessKey",
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:root"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-ret",
+            "name": "Retail",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Retail (ou-fern-ret)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-FullAWSAccess",
+              "name": "FullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account larkspur-data-prod (111111111118)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "added": [
+        {
+          "id": "p-fern0001",
+          "name": "Fernhill-Root-Guardrails",
+          "description": "Organization-wide guardrails: no leaving, no IAM users, protected logging",
+          "aws_managed": false,
+          "level": "root Root (r-fern)",
+          "statements": [
+            {
+              "sid": "DenyLeaveOrganization",
+              "effect": "Deny",
+              "actions": [
+                "organizations:LeaveOrganization"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "NoIAMUsers",
+              "effect": "Deny",
+              "actions": [
+                "iam:CreateUser",
+                "iam:CreateAccessKey",
+                "iam:CreateLoginProfile"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "ProtectLogging",
+              "effect": "Deny",
+              "actions": [
+                "cloudtrail:StopLogging",
+                "cloudtrail:DeleteTrail",
+                "config:DeleteConfigurationRecorder",
+                "config:StopConfigurationRecorder",
+                "guardduty:DeleteDetector"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "DenyRootUser",
+              "effect": "Deny",
+              "actions": [
+                "*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DenyLeaveOrganization",
+                "Effect": "Deny",
+                "Action": [
+                  "organizations:LeaveOrganization"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "NoIAMUsers",
+                "Effect": "Deny",
+                "Action": [
+                  "iam:CreateUser",
+                  "iam:CreateAccessKey",
+                  "iam:CreateLoginProfile"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "ProtectLogging",
+                "Effect": "Deny",
+                "Action": [
+                  "cloudtrail:StopLogging",
+                  "cloudtrail:DeleteTrail",
+                  "config:DeleteConfigurationRecorder",
+                  "config:StopConfigurationRecorder",
+                  "guardduty:DeleteDetector"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "DenyRootUser",
+                "Effect": "Deny",
+                "Action": "*",
+                "Resource": "*",
+                "Condition": {
+                  "StringLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:root"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "p-fern0002",
+          "name": "Fernhill-EU-Only-Regions",
+          "description": "Business unit workloads stay inside the EU",
+          "aws_managed": false,
+          "level": "OU Business Units (ou-fern-bu)",
+          "statements": [
+            {
+              "sid": "DenyOutsideEU",
+              "effect": "Deny",
+              "not_actions": [
+                "iam:*",
+                "sts:*",
+                "organizations:*",
+                "support:*",
+                "budgets:*",
+                "cloudfront:*",
+                "route53:*",
+                "waf:*",
+                "health:*",
+                "account:*",
+                "access-analyzer:*",
+                "trustedadvisor:*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringNotEquals aws:RequestedRegion = eu-west-1 | eu-central-1"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DenyOutsideEU",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*",
+                  "access-analyzer:*",
+                  "trustedadvisor:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "eu-west-1",
+                      "eu-central-1"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "p-fern0010",
+          "name": "aws-guardrails-kjwqpf",
+          "description": "This policy is managed by AWS Control Tower. Do not edit or detach it.",
+          "aws_managed": false,
+          "control_tower_managed": true,
+          "level": "OU Business Units (ou-fern-bu)",
+          "statements": [
+            {
+              "sid": "GRCLOUDTRAILENABLED",
+              "effect": "Deny",
+              "actions": [
+                "cloudtrail:DeleteTrail",
+                "cloudtrail:PutEventSelectors",
+                "cloudtrail:StopLogging",
+                "cloudtrail:UpdateTrail"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+              ]
+            },
+            {
+              "sid": "GRCONFIGENABLED",
+              "effect": "Deny",
+              "actions": [
+                "config:DeleteConfigurationRecorder",
+                "config:DeleteDeliveryChannel",
+                "config:PutConfigurationRecorder",
+                "config:PutDeliveryChannel",
+                "config:StopConfigurationRecorder"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "ArnNotLike aws:PrincipalArn = arn:aws:iam::*:role/AWSControlTowerExecution"
+              ]
+            },
+            {
+              "sid": "GRRESTRICTROOTUSERACCESSKEYS",
+              "effect": "Deny",
+              "actions": [
+                "iam:CreateAccessKey"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "GRCLOUDTRAILENABLED",
+                "Effect": "Deny",
+                "Action": [
+                  "cloudtrail:DeleteTrail",
+                  "cloudtrail:PutEventSelectors",
+                  "cloudtrail:StopLogging",
+                  "cloudtrail:UpdateTrail"
+                ],
+                "Resource": "arn:aws:cloudtrail:*:*:trail/aws-controltower-*",
+                "Condition": {
+                  "ArnNotLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                  }
+                }
+              },
+              {
+                "Sid": "GRCONFIGENABLED",
+                "Effect": "Deny",
+                "Action": [
+                  "config:DeleteConfigurationRecorder",
+                  "config:DeleteDeliveryChannel",
+                  "config:PutConfigurationRecorder",
+                  "config:PutDeliveryChannel",
+                  "config:StopConfigurationRecorder"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "ArnNotLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                  }
+                }
+              },
+              {
+                "Sid": "GRRESTRICTROOTUSERACCESSKEYS",
+                "Effect": "Deny",
+                "Action": "iam:CreateAccessKey",
+                "Resource": "*",
+                "Condition": {
+                  "StringLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:root"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "removed": [
+        {
+          "id": "p-lark0001",
+          "name": "Larkspur-Baseline-Guardrails",
+          "description": "Protects organization-wide logging and membership",
+          "aws_managed": false,
+          "level": "root Root (r-lark)",
+          "statements": [
+            {
+              "sid": "DenyLeaveOrganization",
+              "effect": "Deny",
+              "actions": [
+                "organizations:LeaveOrganization"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "ProtectOrgTrail",
+              "effect": "Deny",
+              "actions": [
+                "cloudtrail:StopLogging",
+                "cloudtrail:DeleteTrail",
+                "cloudtrail:UpdateTrail"
+              ],
+              "has_condition": false
+            },
+            {
+              "sid": "DenyRootUser",
+              "effect": "Deny",
+              "actions": [
+                "*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringLike aws:PrincipalArn = arn:aws:iam::*:root"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DenyLeaveOrganization",
+                "Effect": "Deny",
+                "Action": [
+                  "organizations:LeaveOrganization"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "ProtectOrgTrail",
+                "Effect": "Deny",
+                "Action": [
+                  "cloudtrail:StopLogging",
+                  "cloudtrail:DeleteTrail",
+                  "cloudtrail:UpdateTrail"
+                ],
+                "Resource": "arn:aws:cloudtrail:*:*:trail/larkspur-org-trail"
+              },
+              {
+                "Sid": "DenyRootUser",
+                "Effect": "Deny",
+                "Action": "*",
+                "Resource": "*",
+                "Condition": {
+                  "StringLike": {
+                    "aws:PrincipalArn": "arn:aws:iam::*:root"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "p-lark0002",
+          "name": "Larkspur-Allowed-Regions",
+          "description": "Keeps workloads in the three regions Larkspur operates in",
+          "aws_managed": false,
+          "level": "OU Workloads (ou-lark-work)",
+          "statements": [
+            {
+              "sid": "DenyOutsideApprovedRegions",
+              "effect": "Deny",
+              "not_actions": [
+                "iam:*",
+                "sts:*",
+                "organizations:*",
+                "support:*",
+                "budgets:*",
+                "cloudfront:*",
+                "route53:*",
+                "waf:*",
+                "health:*",
+                "account:*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "StringNotEquals aws:RequestedRegion = us-east-1 | eu-west-1 | ap-southeast-1"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DenyOutsideApprovedRegions",
+                "Effect": "Deny",
+                "NotAction": [
+                  "iam:*",
+                  "sts:*",
+                  "organizations:*",
+                  "support:*",
+                  "budgets:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "waf:*",
+                  "health:*",
+                  "account:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                      "us-east-1",
+                      "eu-west-1",
+                      "ap-southeast-1"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "changed": null,
+      "unchanged": [
+        {
+          "id": "p-FullAWSAccess",
+          "name": "FullAWSAccess",
+          "description": "Allows access to every operation",
+          "aws_managed": true,
+          "level": "account larkspur-data-prod (111111111118)",
+          "statements": [
+            {
+              "effect": "Allow",
+              "actions": [
+                "*"
+              ],
+              "has_condition": false
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": "*",
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "RESOURCE_CONTROL_POLICY",
+      "type_short": "RCP",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-lark)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Workloads (ou-lark-work)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Production (ou-lark-prod)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account larkspur-data-prod (111111111118)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "root Root (r-fern)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-bu",
+            "name": "Business Units",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-fern0006",
+              "name": "Fernhill-Block-External-Principals",
+              "description": "Resources in business unit accounts can only be used from inside the organization",
+              "aws_managed": false,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "sid": "EnforceOrgIdentities",
+                  "effect": "Deny",
+                  "actions": [
+                    "s3:*",
+                    "sts:AssumeRole",
+                    "sts:SetContext",
+                    "kms:*",
+                    "sqs:*",
+                    "secretsmanager:*"
+                  ],
+                  "has_condition": true,
+                  "conditions": [
+                    "BoolIfExists aws:PrincipalIsAWSService = false",
+                    "StringNotEqualsIfExists aws:PrincipalOrgID = o-fernhill0001"
+                  ]
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "EnforceOrgIdentities",
+                    "Effect": "Deny",
+                    "Principal": "*",
+                    "Action": [
+                      "s3:*",
+                      "sts:AssumeRole",
+                      "sts:SetContext",
+                      "kms:*",
+                      "sqs:*",
+                      "secretsmanager:*"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringNotEqualsIfExists": {
+                        "aws:PrincipalOrgID": "o-fernhill0001"
+                      },
+                      "BoolIfExists": {
+                        "aws:PrincipalIsAWSService": "false"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Business Units (ou-fern-bu)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-ret",
+            "name": "Retail",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "OU Retail (ou-fern-ret)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          },
+          "policies": [
+            {
+              "id": "p-RCPFullAWSAccess",
+              "name": "RCPFullAWSAccess",
+              "description": "Allows access to every operation",
+              "aws_managed": true,
+              "level": "account larkspur-data-prod (111111111118)",
+              "statements": [
+                {
+                  "effect": "Allow",
+                  "actions": [
+                    "*"
+                  ],
+                  "has_condition": false
+                }
+              ],
+              "document": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "*",
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "added": [
+        {
+          "id": "p-fern0006",
+          "name": "Fernhill-Block-External-Principals",
+          "description": "Resources in business unit accounts can only be used from inside the organization",
+          "aws_managed": false,
+          "level": "OU Business Units (ou-fern-bu)",
+          "statements": [
+            {
+              "sid": "EnforceOrgIdentities",
+              "effect": "Deny",
+              "actions": [
+                "s3:*",
+                "sts:AssumeRole",
+                "sts:SetContext",
+                "kms:*",
+                "sqs:*",
+                "secretsmanager:*"
+              ],
+              "has_condition": true,
+              "conditions": [
+                "BoolIfExists aws:PrincipalIsAWSService = false",
+                "StringNotEqualsIfExists aws:PrincipalOrgID = o-fernhill0001"
+              ]
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "EnforceOrgIdentities",
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": [
+                  "s3:*",
+                  "sts:AssumeRole",
+                  "sts:SetContext",
+                  "kms:*",
+                  "sqs:*",
+                  "secretsmanager:*"
+                ],
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEqualsIfExists": {
+                    "aws:PrincipalOrgID": "o-fernhill0001"
+                  },
+                  "BoolIfExists": {
+                    "aws:PrincipalIsAWSService": "false"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "removed": null,
+      "changed": null,
+      "unchanged": [
+        {
+          "id": "p-RCPFullAWSAccess",
+          "name": "RCPFullAWSAccess",
+          "description": "Allows access to every operation",
+          "aws_managed": true,
+          "level": "account larkspur-data-prod (111111111118)",
+          "statements": [
+            {
+              "effect": "Allow",
+              "actions": [
+                "*"
+              ],
+              "has_condition": false
+            }
+          ],
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "*",
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "TAG_POLICY",
+      "type_short": "TAG",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-lark0004",
+              "name": "Larkspur-Tagging-Standard",
+              "description": "Owner tag, reporting only",
+              "aws_managed": false,
+              "level": "root Root (r-lark)",
+              "document": {
+                "tags": {
+                  "owner": {
+                    "tag_key": {
+                      "@@assign": "owner"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": [
+            {
+              "id": "p-fern0007",
+              "name": "Fernhill-Cost-Allocation",
+              "description": "Every billable resource carries a cost-center code",
+              "aws_managed": false,
+              "level": "root Root (r-fern)",
+              "document": {
+                "tags": {
+                  "cost-center": {
+                    "tag_key": {
+                      "@@assign": "cost-center"
+                    },
+                    "tag_value": {
+                      "@@assign": [
+                        "CC-1001",
+                        "CC-1002",
+                        "CC-2001",
+                        "CC-2002"
+                      ]
+                    },
+                    "enforced_for": {
+                      "@@assign": [
+                        "ec2:instance",
+                        "ec2:volume",
+                        "rds:db",
+                        "s3:bucket",
+                        "lambda:function"
+                      ]
+                    }
+                  },
+                  "environment": {
+                    "tag_key": {
+                      "@@assign": "environment"
+                    },
+                    "tag_value": {
+                      "@@assign": [
+                        "production",
+                        "staging",
+                        "development"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-bu",
+            "name": "Business Units",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-fern-ret",
+            "name": "Retail",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "added": [
+        {
+          "id": "p-fern0007",
+          "name": "Fernhill-Cost-Allocation",
+          "description": "Every billable resource carries a cost-center code",
+          "aws_managed": false,
+          "level": "root Root (r-fern)",
+          "document": {
+            "tags": {
+              "cost-center": {
+                "tag_key": {
+                  "@@assign": "cost-center"
+                },
+                "tag_value": {
+                  "@@assign": [
+                    "CC-1001",
+                    "CC-1002",
+                    "CC-2001",
+                    "CC-2002"
+                  ]
+                },
+                "enforced_for": {
+                  "@@assign": [
+                    "ec2:instance",
+                    "ec2:volume",
+                    "rds:db",
+                    "s3:bucket",
+                    "lambda:function"
+                  ]
+                }
+              },
+              "environment": {
+                "tag_key": {
+                  "@@assign": "environment"
+                },
+                "tag_value": {
+                  "@@assign": [
+                    "production",
+                    "staging",
+                    "development"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "removed": [
+        {
+          "id": "p-lark0004",
+          "name": "Larkspur-Tagging-Standard",
+          "description": "Owner tag, reporting only",
+          "aws_managed": false,
+          "level": "root Root (r-lark)",
+          "document": {
+            "tags": {
+              "owner": {
+                "tag_key": {
+                  "@@assign": "owner"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "changed": null,
+      "unchanged": null
+    },
+    {
+      "type": "BACKUP_POLICY",
+      "type_short": "BACKUP",
+      "enabled_at_source": true,
+      "enabled_at_target": true,
+      "source_chain": [
+        {
+          "node": {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-lark0005",
+              "name": "Larkspur-Daily-Backups",
+              "description": "Daily backups for production",
+              "aws_managed": false,
+              "level": "OU Production (ou-lark-prod)",
+              "document": {
+                "plans": {
+                  "larkspur-daily": {
+                    "regions": {
+                      "@@assign": [
+                        "us-east-1",
+                        "eu-west-1"
+                      ]
+                    },
+                    "rules": {
+                      "daily": {
+                        "schedule_expression": {
+                          "@@assign": "cron(0 3 ? * * *)"
+                        },
+                        "target_backup_vault_name": {
+                          "@@assign": "Default"
+                        },
+                        "lifecycle": {
+                          "delete_after_days": {
+                            "@@assign": "35"
+                          }
+                        }
+                      }
+                    },
+                    "selections": {
+                      "tags": {
+                        "prod": {
+                          "iam_role_arn": {
+                            "@@assign": "arn:aws:iam::$account:role/LarkspurBackupRole"
+                          },
+                          "tag_key": {
+                            "@@assign": "environment"
+                          },
+                          "tag_value": {
+                            "@@assign": [
+                              "production"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "target_chain": [
+        {
+          "node": {
+            "id": "r-fern",
+            "name": "Root",
+            "kind": "root"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "ou-fern-bu",
+            "name": "Business Units",
+            "kind": "ou"
+          },
+          "policies": [
+            {
+              "id": "p-fern0009",
+              "name": "Fernhill-Core-Backups",
+              "aws_managed": false,
+              "level": "OU Business Units (ou-fern-bu)",
+              "document": {
+                "plans": {
+                  "fernhill-hourly": {
+                    "regions": {
+                      "@@assign": [
+                        "eu-west-1",
+                        "eu-central-1"
+                      ]
+                    },
+                    "rules": {
+                      "hourly": {
+                        "schedule_expression": {
+                          "@@assign": "cron(0 * ? * * *)"
+                        },
+                        "target_backup_vault_name": {
+                          "@@assign": "FernhillVault"
+                        },
+                        "lifecycle": {
+                          "delete_after_days": {
+                            "@@assign": "14"
+                          }
+                        }
+                      }
+                    },
+                    "selections": {
+                      "tags": {
+                        "all": {
+                          "iam_role_arn": {
+                            "@@assign": "arn:aws:iam::$account:role/FernhillBackupRole"
+                          },
+                          "tag_key": {
+                            "@@assign": "backup"
+                          },
+                          "tag_value": {
+                            "@@assign": [
+                              "true"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "node": {
+            "id": "ou-fern-ret",
+            "name": "Retail",
+            "kind": "ou"
+          },
+          "policies": null
+        },
+        {
+          "node": {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          },
+          "policies": null
+        }
+      ],
+      "added": [
+        {
+          "id": "p-fern0009",
+          "name": "Fernhill-Core-Backups",
+          "aws_managed": false,
+          "level": "OU Business Units (ou-fern-bu)",
+          "document": {
+            "plans": {
+              "fernhill-hourly": {
+                "regions": {
+                  "@@assign": [
+                    "eu-west-1",
+                    "eu-central-1"
+                  ]
+                },
+                "rules": {
+                  "hourly": {
+                    "schedule_expression": {
+                      "@@assign": "cron(0 * ? * * *)"
+                    },
+                    "target_backup_vault_name": {
+                      "@@assign": "FernhillVault"
+                    },
+                    "lifecycle": {
+                      "delete_after_days": {
+                        "@@assign": "14"
+                      }
+                    }
+                  }
+                },
+                "selections": {
+                  "tags": {
+                    "all": {
+                      "iam_role_arn": {
+                        "@@assign": "arn:aws:iam::$account:role/FernhillBackupRole"
+                      },
+                      "tag_key": {
+                        "@@assign": "backup"
+                      },
+                      "tag_value": {
+                        "@@assign": [
+                          "true"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "removed": [
+        {
+          "id": "p-lark0005",
+          "name": "Larkspur-Daily-Backups",
+          "description": "Daily backups for production",
+          "aws_managed": false,
+          "level": "OU Production (ou-lark-prod)",
+          "document": {
+            "plans": {
+              "larkspur-daily": {
+                "regions": {
+                  "@@assign": [
+                    "us-east-1",
+                    "eu-west-1"
+                  ]
+                },
+                "rules": {
+                  "daily": {
+                    "schedule_expression": {
+                      "@@assign": "cron(0 3 ? * * *)"
+                    },
+                    "target_backup_vault_name": {
+                      "@@assign": "Default"
+                    },
+                    "lifecycle": {
+                      "delete_after_days": {
+                        "@@assign": "35"
+                      }
+                    }
+                  }
+                },
+                "selections": {
+                  "tags": {
+                    "prod": {
+                      "iam_role_arn": {
+                        "@@assign": "arn:aws:iam::$account:role/LarkspurBackupRole"
+                      },
+                      "tag_key": {
+                        "@@assign": "environment"
+                      },
+                      "tag_value": {
+                        "@@assign": [
+                          "production"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "changed": null,
+      "unchanged": null
+    }
+  ]
+}

@@ -95,3 +95,23 @@ func TestControlTowerRendering(t *testing.T) {
 		t.Errorf("OU attachments table should label the guardrail:\n%s", omd)
 	}
 }
+
+func TestIdentityCenterRendering(t *testing.T) {
+	res, err := evaluator.Evaluate(evaluator.Input{From: fixtures.Larkspur(), To: fixtures.Fernhill(), AccountID: fixtures.LarkspurPaymentsProd, TargetOUID: fixtures.FernhillPaymentsOU})
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := Markdown(res)
+	for _, want := range []string{"| IAM Identity Center | REVIEW |", "### REVIEW: Permission set PaymentsEngineer: 2 assignment(s) removed when the account leaves (group Payments-Engineers, user oncall.payments)",
+		"- Evidence (account-assignment): source, `", "user oncall.payments has permission set PaymentsEngineer in account 111111111115",
+		"### REVIEW: 4 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*", "- Evidence (reserved-role): source, `AWSReservedSSO_DataPlatformOperator_*`",
+		"- Evidence (permission-set): source, `arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000002`", `"Sid": "NoIAMChanges"`} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown missing %q", want)
+		}
+	}
+	txt := Text(res)
+	if !strings.Contains(txt, "[REVIEW] IAM Identity Center - 4 assignment(s) across 3 permission set(s)") || !strings.Contains(txt, "REVIEW Permission set PaymentsEngineer") {
+		t.Errorf("text summary should list the Identity Center check:\n%s", txt)
+	}
+}

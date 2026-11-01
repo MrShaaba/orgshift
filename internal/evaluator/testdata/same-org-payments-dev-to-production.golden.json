@@ -133,6 +133,13 @@
       "status": "GO",
       "summary": "Neither organization has a Control Tower landing zone.",
       "findings": []
+    },
+    {
+      "id": "identity-center",
+      "title": "IAM Identity Center",
+      "status": "GO",
+      "summary": "Same organization: the 2 assignment(s) and 3 provisioned role(s) on the account are unchanged by a move between OUs.",
+      "findings": []
     }
   ],
   "diff": [

@@ -115,7 +115,9 @@ func evaluateMove(m move) (*Result, error) {
 	e.evaluateOrgServices(&services)
 	controlTower := newCheck("control-tower", "Control Tower")
 	e.evaluateControlTower(&controlTower)
-	res.Checks = []Check{scp, rcp, tags, shares, services, controlTower}
+	identity := newCheck("identity-center", "IAM Identity Center")
+	e.evaluateIdentityCenter(&identity)
+	res.Checks = []Check{scp, rcp, tags, shares, services, controlTower, identity}
 
 	for _, t := range snapshot.AllPolicyTypes {
 		res.Diff = append(res.Diff, e.diff(t))

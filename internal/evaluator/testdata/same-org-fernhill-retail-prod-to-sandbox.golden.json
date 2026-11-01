@@ -269,6 +269,13 @@
           ]
         }
       ]
+    },
+    {
+      "id": "identity-center",
+      "title": "IAM Identity Center",
+      "status": "GO",
+      "summary": "Same organization: the 3 assignment(s) and 3 provisioned role(s) on the account are unchanged by a move between OUs.",
+      "findings": []
     }
   ],
   "diff": [

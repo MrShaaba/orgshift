@@ -97,8 +97,8 @@
       "relative_path": "Workloads / Production",
       "verdict": "NO-GO",
       "blocking": 11,
-      "review": 8,
-      "info": 11,
+      "review": 12,
+      "info": 12,
       "blocking_titles": [
         "athena:StartQueryExecution becomes denied after the move",
         "ec2:CreateTransitGatewayVpcAttachment becomes denied after the move",
@@ -187,7 +187,7 @@
           ]
         },
         "verdict": "NO-GO",
-        "summary": "Moving larkspur-data-prod (111111111118) from Root / Workloads / Production to Root / Business Units / Workloads / Production (organization o-larkspur0001 to o-fernhill0001): NO-GO. 11 blocking finding(s) and 8 to review.",
+        "summary": "Moving larkspur-data-prod (111111111118) from Root / Workloads / Production to Root / Business Units / Workloads / Production (organization o-larkspur0001 to o-fernhill0001): NO-GO. 11 blocking finding(s) and 12 to review.",
         "checks": [
           {
             "id": "scp",
@@ -900,6 +900,127 @@
                     "side": "target",
                     "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
                     "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "identity-center",
+            "title": "IAM Identity Center",
+            "status": "REVIEW",
+            "summary": "3 assignment(s) across 3 permission set(s) and 3 provisioned role(s) go away with the move; 2 permission set name(s) exist in the target, 1 do not.",
+            "findings": [
+              {
+                "status": "REVIEW",
+                "title": "3 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*, AWSReservedSSO_ReadOnlyAccess_*, AWSReservedSSO_DataPlatformOperator_*",
+                "detail": "Identity Center deletes the IAM roles it provisioned in the account (path /aws-reserved/sso.amazonaws.com/us-east-1/) when the account leaves the organization. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern.",
+                "evidence": [
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_AdministratorAccess_*",
+                    "note": "role for permission set AdministratorAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+                  },
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_ReadOnlyAccess_*",
+                    "note": "role for permission set ReadOnlyAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+                  },
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_DataPlatformOperator_*",
+                    "note": "role for permission set DataPlatformOperator (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000004) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+                  }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "title": "Permission set AdministratorAccess: 1 assignment(s) removed when the account leaves (group Platform-Admins)",
+                "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
+                "evidence": [
+                  {
+                    "kind": "account-assignment",
+                    "side": "source",
+                    "reference": "ba31fe89-32df-0f24-6b40-1c6f590a40ff",
+                    "note": "group Platform-Admins has permission set AdministratorAccess in account 111111111118"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "source",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001",
+                    "note": "AdministratorAccess\nFull access for the platform team\nsession duration PT1H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 8 account(s)"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "target",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001",
+                    "note": "AdministratorAccess\nPlatform team break-glass\nsession duration PT2H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 7 account(s)"
+                  }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "title": "Permission set DataPlatformOperator: 1 assignment(s) removed when the account leaves (group Data-Platform)",
+                "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has no permission set named DataPlatformOperator. Create one there (or choose an equivalent) before re-assigning the 1 principal(s), who have to exist in identity store d-fern0000001 under the target instance.",
+                "evidence": [
+                  {
+                    "kind": "account-assignment",
+                    "side": "source",
+                    "reference": "44693b45-1be8-872e-dd8a-3ced7bc68516",
+                    "note": "group Data-Platform has permission set DataPlatformOperator in account 111111111118"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "source",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000004",
+                    "note": "DataPlatformOperator\nGlue and Athena operations\nsession duration PT4H\nmanaged policies: arn:aws:iam::aws:policy/AmazonAthenaFullAccess, arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess\npermissions boundary arn:aws:iam::aws:policy/PowerUserAccess\nprovisioned in 2 account(s)"
+                  }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "title": "Permission set ReadOnlyAccess: 1 assignment(s) removed when the account leaves (group Security-Auditors)",
+                "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
+                "evidence": [
+                  {
+                    "kind": "account-assignment",
+                    "side": "source",
+                    "reference": "fd2d8b09-2a71-ec4a-cc89-1ddb07a87174",
+                    "note": "group Security-Auditors has permission set ReadOnlyAccess in account 111111111118"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "source",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003",
+                    "note": "ReadOnlyAccess\nAudit access\nsession duration PT8H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess\nprovisioned in 7 account(s)"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "target",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002",
+                    "note": "ReadOnlyAccess\nAudit and security review\nsession duration PT12H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess, arn:aws:iam::aws:policy/job-function/ViewOnlyAccess\nprovisioned in 6 account(s)"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "title": "Access is re-created in the target Identity Center instance, not moved",
+                "detail": "Assignments are not copied between instances. The target instance uses identity store d-fern0000001 (the source uses d-lark0000001); users and groups there are separate objects even when their names match, so each assignment is re-created by name after the account has accepted the invitation. Permission set names that exist in both instances: AdministratorAccess, ReadOnlyAccess. Missing in the target: DataPlatformOperator.",
+                "evidence": [
+                  {
+                    "kind": "identity-center-instance",
+                    "side": "source",
+                    "reference": "arn:aws:sso:::instance/ssoins-larkspur00000001",
+                    "note": "Larkspur SSO; identity store d-lark0000001; region us-east-1; owner account 111111111111; 5 permission set(s), 17 account assignment(s)"
+                  },
+                  {
+                    "kind": "identity-center-instance",
+                    "side": "target",
+                    "reference": "arn:aws:sso:::instance/ssoins-fernhill00000001",
+                    "note": "Fernhill Identity Center; identity store d-fern0000001; region eu-west-1; owner account 222222222221; 3 permission set(s), 15 account assignment(s)"
                   }
                 ]
               }
@@ -3031,8 +3152,8 @@
       "relative_path": "Workloads / Development",
       "verdict": "NO-GO",
       "blocking": 6,
-      "review": 7,
-      "info": 11,
+      "review": 10,
+      "info": 12,
       "blocking_titles": [
         "ec2:CreateVpc becomes denied after the move",
         "ec2:RunInstances becomes denied after the move",
@@ -3116,7 +3237,7 @@
           ]
         },
         "verdict": "NO-GO",
-        "summary": "Moving larkspur-payments-dev (111111111116) from Root / Workloads / Development to Root / Business Units / Workloads / Development (organization o-larkspur0001 to o-fernhill0001): NO-GO. 6 blocking finding(s) and 7 to review.",
+        "summary": "Moving larkspur-payments-dev (111111111116) from Root / Workloads / Development to Root / Business Units / Workloads / Development (organization o-larkspur0001 to o-fernhill0001): NO-GO. 6 blocking finding(s) and 10 to review.",
         "checks": [
           {
             "id": "scp",
@@ -3580,6 +3701,119 @@
                     "side": "target",
                     "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
                     "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "identity-center",
+            "title": "IAM Identity Center",
+            "status": "REVIEW",
+            "summary": "2 assignment(s) across 2 permission set(s) and 3 provisioned role(s) go away with the move; 1 permission set name(s) exist in the target, 1 do not.",
+            "findings": [
+              {
+                "status": "REVIEW",
+                "title": "3 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*, AWSReservedSSO_PaymentsEngineer_*, AWSReservedSSO_ReadOnlyAccess_*",
+                "detail": "Identity Center deletes the IAM roles it provisioned in the account (path /aws-reserved/sso.amazonaws.com/us-east-1/) when the account leaves the organization. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. 1 of them (AWSReservedSSO_ReadOnlyAccess_*) are provisioned without any assignment and are already unused; deprovisioning the permission set from the account before the move removes them cleanly.",
+                "evidence": [
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_AdministratorAccess_*",
+                    "note": "role for permission set AdministratorAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+                  },
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_PaymentsEngineer_*",
+                    "note": "role for permission set PaymentsEngineer (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000002) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+                  },
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_ReadOnlyAccess_*",
+                    "note": "role for permission set ReadOnlyAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003) under /aws-reserved/sso.amazonaws.com/us-east-1/; 0 assignment(s) on the account; provisioned without an assignment (stale)"
+                  }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "title": "Permission set AdministratorAccess: 1 assignment(s) removed when the account leaves (group Platform-Admins)",
+                "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
+                "evidence": [
+                  {
+                    "kind": "account-assignment",
+                    "side": "source",
+                    "reference": "ba31fe89-32df-0f24-6b40-1c6f590a40ff",
+                    "note": "group Platform-Admins has permission set AdministratorAccess in account 111111111116"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "source",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001",
+                    "note": "AdministratorAccess\nFull access for the platform team\nsession duration PT1H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 8 account(s)"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "target",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001",
+                    "note": "AdministratorAccess\nPlatform team break-glass\nsession duration PT2H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 7 account(s)"
+                  }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "title": "Permission set PaymentsEngineer: 1 assignment(s) removed when the account leaves (group Payments-Engineers)",
+                "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has no permission set named PaymentsEngineer. Create one there (or choose an equivalent) before re-assigning the 1 principal(s), who have to exist in identity store d-fern0000001 under the target instance.",
+                "evidence": [
+                  {
+                    "kind": "account-assignment",
+                    "side": "source",
+                    "reference": "c3055d88-cb7d-f258-9c41-70aefb8af533",
+                    "note": "group Payments-Engineers has permission set PaymentsEngineer in account 111111111116"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "source",
+                    "statement_json": {
+                      "Version": "2012-10-17",
+                      "Statement": [
+                        {
+                          "Sid": "NoIAMChanges",
+                          "Effect": "Deny",
+                          "Action": [
+                            "iam:Create*",
+                            "iam:Delete*",
+                            "iam:Put*",
+                            "iam:Attach*",
+                            "iam:Detach*"
+                          ],
+                          "Resource": "*"
+                        }
+                      ]
+                    },
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000002",
+                    "note": "PaymentsEngineer\nDay-to-day operations in the payments accounts\nsession duration PT8H\ncustomer managed policies (must exist in the account): /larkspur/LarkspurPaymentsEngineer\nhas an inline policy\nprovisioned in 2 account(s)"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "title": "Access is re-created in the target Identity Center instance, not moved",
+                "detail": "Assignments are not copied between instances. The target instance uses identity store d-fern0000001 (the source uses d-lark0000001); users and groups there are separate objects even when their names match, so each assignment is re-created by name after the account has accepted the invitation. Permission set names that exist in both instances: AdministratorAccess. Missing in the target: PaymentsEngineer.",
+                "evidence": [
+                  {
+                    "kind": "identity-center-instance",
+                    "side": "source",
+                    "reference": "arn:aws:sso:::instance/ssoins-larkspur00000001",
+                    "note": "Larkspur SSO; identity store d-lark0000001; region us-east-1; owner account 111111111111; 5 permission set(s), 17 account assignment(s)"
+                  },
+                  {
+                    "kind": "identity-center-instance",
+                    "side": "target",
+                    "reference": "arn:aws:sso:::instance/ssoins-fernhill00000001",
+                    "note": "Fernhill Identity Center; identity store d-fern0000001; region eu-west-1; owner account 222222222221; 3 permission set(s), 15 account assignment(s)"
                   }
                 ]
               }
@@ -5679,8 +5913,8 @@
       "relative_path": "Workloads / Production",
       "verdict": "NO-GO",
       "blocking": 23,
-      "review": 11,
-      "info": 13,
+      "review": 15,
+      "info": 14,
       "blocking_titles": [
         "cloudwatch:PutMetricData becomes denied after the move",
         "dynamodb:* becomes denied after the move",
@@ -5782,7 +6016,7 @@
           ]
         },
         "verdict": "NO-GO",
-        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root / Business Units / Workloads / Production (organization o-larkspur0001 to o-fernhill0001): NO-GO. 23 blocking finding(s) and 11 to review.",
+        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root / Business Units / Workloads / Production (organization o-larkspur0001 to o-fernhill0001): NO-GO. 23 blocking finding(s) and 15 to review.",
         "checks": [
           {
             "id": "scp",
@@ -7149,6 +7383,156 @@
                     "side": "target",
                     "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
                     "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "identity-center",
+            "title": "IAM Identity Center",
+            "status": "REVIEW",
+            "summary": "4 assignment(s) across 3 permission set(s) and 4 provisioned role(s) go away with the move; 2 permission set name(s) exist in the target, 1 do not.",
+            "findings": [
+              {
+                "status": "REVIEW",
+                "title": "4 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*, AWSReservedSSO_PaymentsEngineer_*, AWSReservedSSO_ReadOnlyAccess_*, AWSReservedSSO_DataPlatformOperator_*",
+                "detail": "Identity Center deletes the IAM roles it provisioned in the account (path /aws-reserved/sso.amazonaws.com/us-east-1/) when the account leaves the organization. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. 1 of them (AWSReservedSSO_DataPlatformOperator_*) are provisioned without any assignment and are already unused; deprovisioning the permission set from the account before the move removes them cleanly.",
+                "evidence": [
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_AdministratorAccess_*",
+                    "note": "role for permission set AdministratorAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+                  },
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_PaymentsEngineer_*",
+                    "note": "role for permission set PaymentsEngineer (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000002) under /aws-reserved/sso.amazonaws.com/us-east-1/; 2 assignment(s) on the account"
+                  },
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_ReadOnlyAccess_*",
+                    "note": "role for permission set ReadOnlyAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+                  },
+                  {
+                    "kind": "reserved-role",
+                    "side": "source",
+                    "reference": "AWSReservedSSO_DataPlatformOperator_*",
+                    "note": "role for permission set DataPlatformOperator (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000004) under /aws-reserved/sso.amazonaws.com/us-east-1/; 0 assignment(s) on the account; provisioned without an assignment (stale)"
+                  }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "title": "Permission set AdministratorAccess: 1 assignment(s) removed when the account leaves (group Platform-Admins)",
+                "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
+                "evidence": [
+                  {
+                    "kind": "account-assignment",
+                    "side": "source",
+                    "reference": "ba31fe89-32df-0f24-6b40-1c6f590a40ff",
+                    "note": "group Platform-Admins has permission set AdministratorAccess in account 111111111115"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "source",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001",
+                    "note": "AdministratorAccess\nFull access for the platform team\nsession duration PT1H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 8 account(s)"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "target",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001",
+                    "note": "AdministratorAccess\nPlatform team break-glass\nsession duration PT2H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 7 account(s)"
+                  }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "title": "Permission set PaymentsEngineer: 2 assignment(s) removed when the account leaves (group Payments-Engineers, user oncall.payments)",
+                "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 2 assignment(s) and the principals lose this access at once. The target instance has no permission set named PaymentsEngineer. Create one there (or choose an equivalent) before re-assigning the 2 principal(s), who have to exist in identity store d-fern0000001 under the target instance.",
+                "evidence": [
+                  {
+                    "kind": "account-assignment",
+                    "side": "source",
+                    "reference": "c3055d88-cb7d-f258-9c41-70aefb8af533",
+                    "note": "group Payments-Engineers has permission set PaymentsEngineer in account 111111111115"
+                  },
+                  {
+                    "kind": "account-assignment",
+                    "side": "source",
+                    "reference": "79d949b7-eef8-371b-7b6d-f030997b6ac4",
+                    "note": "user oncall.payments has permission set PaymentsEngineer in account 111111111115"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "source",
+                    "statement_json": {
+                      "Version": "2012-10-17",
+                      "Statement": [
+                        {
+                          "Sid": "NoIAMChanges",
+                          "Effect": "Deny",
+                          "Action": [
+                            "iam:Create*",
+                            "iam:Delete*",
+                            "iam:Put*",
+                            "iam:Attach*",
+                            "iam:Detach*"
+                          ],
+                          "Resource": "*"
+                        }
+                      ]
+                    },
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000002",
+                    "note": "PaymentsEngineer\nDay-to-day operations in the payments accounts\nsession duration PT8H\ncustomer managed policies (must exist in the account): /larkspur/LarkspurPaymentsEngineer\nhas an inline policy\nprovisioned in 2 account(s)"
+                  }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "title": "Permission set ReadOnlyAccess: 1 assignment(s) removed when the account leaves (group Security-Auditors)",
+                "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
+                "evidence": [
+                  {
+                    "kind": "account-assignment",
+                    "side": "source",
+                    "reference": "fd2d8b09-2a71-ec4a-cc89-1ddb07a87174",
+                    "note": "group Security-Auditors has permission set ReadOnlyAccess in account 111111111115"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "source",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003",
+                    "note": "ReadOnlyAccess\nAudit access\nsession duration PT8H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess\nprovisioned in 7 account(s)"
+                  },
+                  {
+                    "kind": "permission-set",
+                    "side": "target",
+                    "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002",
+                    "note": "ReadOnlyAccess\nAudit and security review\nsession duration PT12H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess, arn:aws:iam::aws:policy/job-function/ViewOnlyAccess\nprovisioned in 6 account(s)"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "title": "Access is re-created in the target Identity Center instance, not moved",
+                "detail": "Assignments are not copied between instances. The target instance uses identity store d-fern0000001 (the source uses d-lark0000001); users and groups there are separate objects even when their names match, so each assignment is re-created by name after the account has accepted the invitation. Permission set names that exist in both instances: AdministratorAccess, ReadOnlyAccess. Missing in the target: PaymentsEngineer.",
+                "evidence": [
+                  {
+                    "kind": "identity-center-instance",
+                    "side": "source",
+                    "reference": "arn:aws:sso:::instance/ssoins-larkspur00000001",
+                    "note": "Larkspur SSO; identity store d-lark0000001; region us-east-1; owner account 111111111111; 5 permission set(s), 17 account assignment(s)"
+                  },
+                  {
+                    "kind": "identity-center-instance",
+                    "side": "target",
+                    "reference": "arn:aws:sso:::instance/ssoins-fernhill00000001",
+                    "note": "Fernhill Identity Center; identity store d-fern0000001; region eu-west-1; owner account 222222222221; 3 permission set(s), 15 account assignment(s)"
                   }
                 ]
               }

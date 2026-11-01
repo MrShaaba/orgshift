@@ -109,3 +109,6 @@ details.account-result.nogo { border-left: 5px solid var(--nogo); } details.acco
 .pill.ct { background: #e6fffa; color: #0f766e; }
 .chip.ct { background: #e6fffa; color: #0f766e; border: 1px dashed #5eead4; }
 .ctmark { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.04em; vertical-align: 1px; }
+
+/* IAM Identity Center */
+.badge.idc { background: #fdf2f8; color: #9d174d; border: 1px solid #fbcfe8; }

@@ -245,3 +245,29 @@ func TestControlTowerInTheUI(t *testing.T) {
 		t.Errorf("OU result should show the guardrail fate and the registered OU finding (%d)", resp.StatusCode)
 	}
 }
+
+func TestIdentityCenterInTheUI(t *testing.T) {
+	ts := newTestServer(t, true)
+	q := "from=" + escape(fixtures.LarkspurName) + "&to=" + escape(fixtures.FernhillName) + "&account=" + fixtures.LarkspurPaymentsProd + "&target_ou=" + fixtures.FernhillPaymentsOU
+	resp, body := get(t, ts, "/simulate?"+q, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("simulate: %d", resp.StatusCode)
+	}
+	for _, want := range []string{
+		"<h3>IAM Identity Center</h3>",
+		"Permission set PaymentsEngineer: 2 assignment(s) removed when the account leaves (group Payments-Engineers, user oncall.payments)",
+		"4 AWSReservedSSO_* role(s) are deleted from the account",
+		`<span class="kind">account-assignment</span>`, `<span class="kind">reserved-role</span>`,
+		`class="badge idc" title="Identity Center assignments: group Platform-Admins → AdministratorAccess, group Payments-Engineers → PaymentsEngineer, user oncall.payments → PaymentsEngineer, group Security-Auditors → ReadOnlyAccess">IdC 4</span>`,
+		"<li>Identity Center assignments: group Platform-Admins → AdministratorAccess, ",
+		"<li>Identity Center roles: <code>AWSReservedSSO_AdministratorAccess_*</code> <code>AWSReservedSSO_PaymentsEngineer_*</code> <code>AWSReservedSSO_ReadOnlyAccess_*</code> <code>AWSReservedSSO_DataPlatformOperator_*</code> </li>",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("result page missing %q", want)
+		}
+	}
+	// Accounts without assignments carry no badge; the target tree shows Fernhill's own.
+	if strings.Contains(body, `title="Identity Center assignments: group Fernhill-Platform → AdministratorAccess, group Fernhill-Auditors → ReadOnlyAccess, group Payments-Developers → BusinessUnitDeveloper">IdC 3`) == false {
+		t.Error("the target tree should show Fernhill's assignments on fernhill-payments-core")
+	}
+}

@@ -66,6 +66,10 @@
         <li>Enabled regions: {{if .Account.EnabledRegions}}{{join .Account.EnabledRegions ", "}}{{else}}<span class="muted">unknown</span>{{end}}</li>
         {{range $k := sortedKeys .Account.Tags}}<li>Tag <code>{{$k}}</code> = {{index $.Account.Tags $k}}</li>{{end}}
         <li>Tagged resources sampled: {{len .Usage.TaggedResources}}</li>
+        {{if or .Assignments .ReservedRoles}}
+        <li>Identity Center assignments: {{if .Assignments}}{{join .Assignments ", "}}{{else}}<span class="muted">none</span>{{end}}</li>
+        <li>Identity Center roles: {{if .ReservedRoles}}{{range .ReservedRoles}}<code>{{.}}</code> {{end}}{{else}}<span class="muted">none</span>{{end}}</li>
+        {{end}}
       </ul>
     </div>
   </div>

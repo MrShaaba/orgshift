@@ -60,6 +60,35 @@ func badgesFor(ix *snapshot.Index, id string) []badge {
 			out = append(out, badge{Type: "CT", Names: title, Count: len(controls), Label: "CT"})
 		}
 	}
+	if ic := ix.Snapshot.IdentityCenter; ic != nil {
+		if labels := assignmentLabels(ic, id); len(labels) > 0 {
+			out = append(out, badge{Type: "IdC", Names: "Identity Center assignments: " + strings.Join(labels, ", "), Count: len(labels)})
+		}
+	}
+	return out
+}
+
+// assignmentLabels renders the Identity Center assignments on an account as
+// "group Name → PermissionSet".
+func assignmentLabels(ic *snapshot.IdentityCenter, accountID string) []string {
+	var out []string
+	for _, a := range ic.AssignmentsFor(accountID) {
+		name := a.PermissionSetARN
+		if ps := ic.PermissionSet(a.PermissionSetARN); ps != nil {
+			name = ps.Name
+		}
+		out = append(out, a.Label()+" → "+name)
+	}
+	return out
+}
+
+// reservedRoles renders the AWSReservedSSO_* role patterns provisioned in an
+// account.
+func reservedRoles(ic *snapshot.IdentityCenter, accountID string) []string {
+	var out []string
+	for _, ps := range ic.ProvisionedIn(accountID) {
+		out = append(out, ps.ReservedRolePattern())
+	}
 	return out
 }
 
@@ -135,6 +164,10 @@ type resultView struct {
 	ExportQuery string
 	Account     *snapshot.Account
 	Usage       *snapshot.AccountUsage
+	// Assignments and ReservedRoles describe the account in the source
+	// Identity Center instance, when there is one.
+	Assignments   []string
+	ReservedRoles []string
 }
 
 func newResultView(res *evaluator.Result, fromName, toName string, from, to *snapshot.Snapshot, query string) *resultView {
@@ -146,6 +179,10 @@ func newResultView(res *evaluator.Result, fromName, toName string, from, to *sna
 	ix := from.Index()
 	v.Account = ix.AccountByID[subject.ID]
 	v.Usage = from.UsageFor(subject.ID)
+	if ic := from.IdentityCenter; ic != nil {
+		v.Assignments = assignmentLabels(ic, subject.ID)
+		v.ReservedRoles = reservedRoles(ic, subject.ID)
+	}
 	return v
 }
 

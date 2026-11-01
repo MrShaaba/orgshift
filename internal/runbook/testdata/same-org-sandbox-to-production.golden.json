@@ -1,0 +1,230 @@
+{
+  "tool": "orgshift",
+  "runbook_schema_version": 1,
+  "subject": {
+    "account_id": "111111111117",
+    "account_name": "larkspur-sandbox-1",
+    "source_org": {
+      "id": "o-larkspur0001",
+      "name": "Larkspur Holdings"
+    },
+    "target_org": {
+      "id": "o-larkspur0001",
+      "name": "Larkspur Holdings"
+    },
+    "cross_org": false,
+    "source_path": [
+      {
+        "id": "r-lark",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-lark-sand",
+        "name": "Sandbox",
+        "kind": "ou"
+      },
+      {
+        "id": "111111111117",
+        "name": "larkspur-sandbox-1",
+        "kind": "account"
+      }
+    ],
+    "target_path": [
+      {
+        "id": "r-lark",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-lark-work",
+        "name": "Workloads",
+        "kind": "ou"
+      },
+      {
+        "id": "ou-lark-prod",
+        "name": "Production",
+        "kind": "ou"
+      },
+      {
+        "id": "111111111117",
+        "name": "larkspur-sandbox-1",
+        "kind": "account"
+      }
+    ],
+    "source_parent_id": "ou-lark-sand",
+    "target_ou_id": "ou-lark-prod",
+    "actions_in_use": 3,
+    "inbound_access": 0,
+    "tagged_resources": 0,
+    "regions_assumed": [
+      "us-east-1"
+    ]
+  },
+  "verdict": "GO",
+  "summary": "7 steps: 0 before the move (0 blocking), 0 to re-create, 1 for the move itself, 4 checks afterwards and 2 to roll back.",
+  "phases": [
+    {
+      "id": "before",
+      "title": "Before the move: fix the blockers and make the decisions",
+      "intro": "Everything here is settled while the account is still at its current position. NO-GO steps block the move; REVIEW steps need a decision or a check by hand.",
+      "steps": []
+    },
+    {
+      "id": "recreate",
+      "title": "Before the move: re-create what does not travel",
+      "intro": "Shares, delegations, permission sets and stacks that are scoped to the account's current position do not follow it. Prepare the replacements now so nothing is interrupted.",
+      "steps": []
+    },
+    {
+      "id": "move",
+      "title": "The move",
+      "intro": "One Organizations call, or the Account Factory flow when Control Tower governs the account.",
+      "steps": [
+        {
+          "id": "move-1",
+          "title": "Move the account from OU Sandbox (ou-lark-sand) to OU Production (ou-lark-prod)",
+          "detail": "A single call; the new chain of policies applies immediately. Policies attached directly to the account stay attached.",
+          "kind": "move",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations move-account --account-id 111111111117 --source-parent-id ou-lark-sand --destination-parent-id ou-lark-prod"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "after",
+      "title": "After the move: checks",
+      "intro": "Confirm what the simulation predicted and finish what could only be done once the account is at its new position.",
+      "steps": [
+        {
+          "id": "after-1",
+          "title": "Confirm the account sits under OU Production (ou-lark-prod) and the expected policies reach it",
+          "detail": "The parent must be ou-lark-prod. The policies listed for the account should match the target chain of the simulation (added: SCP Larkspur-Allowed-Regions, BACKUP Larkspur-Daily-Backups).",
+          "kind": "check",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations list-parents --child-id 111111111117",
+            "aws organizations list-policies-for-target --target-id 111111111117 --filter SERVICE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111117 --filter RESOURCE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111117 --filter TAG_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111117 --filter BACKUP_POLICY"
+          ]
+        },
+        {
+          "id": "after-2",
+          "title": "Share larkspur-workload-prefix-lists becomes available: ec2:PrefixList",
+          "detail": "Shared by account 111111111112 with OU ou-lark-work.",
+          "status": "INFO",
+          "kind": "resource-share",
+          "where": "account larkspur-sandbox-1 (111111111117)",
+          "check": "ram",
+          "finding": "Share larkspur-workload-prefix-lists becomes available after the move: ec2:PrefixList",
+          "commands": [
+            "aws ram list-resources --resource-owner OTHER-ACCOUNTS --resource-share-arns arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243"
+          ],
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "target",
+              "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
+              "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+            }
+          ]
+        },
+        {
+          "id": "after-3",
+          "title": "Confirm StackSet larkspur-baseline-roles deployed its stack instances to the account",
+          "detail": "Audit and break-glass IAM roles for workload accounts. Stack instances are created automatically when auto-deployment is on.",
+          "status": "INFO",
+          "kind": "stackset",
+          "where": "administration account 111111111111",
+          "check": "org-services",
+          "finding": "StackSet larkspur-baseline-roles starts targeting the account",
+          "commands": [
+            "aws cloudformation list-stack-instances --stack-set-name larkspur-baseline-roles --stack-instance-account 111111111117"
+          ],
+          "evidence": [
+            {
+              "kind": "stackset",
+              "side": "source",
+              "reference": "larkspur-baseline-roles",
+              "note": "admin 111111111111; targets OUs ou-lark-work accounts ; regions us-east-1; auto-deployment true; retain on removal false"
+            }
+          ]
+        },
+        {
+          "id": "after-4",
+          "title": "Collect a fresh snapshot and simulate the account at its new position",
+          "detail": "With the account inside the target organization, a simulation of the account against its own parent compares it with itself and should come back GO, which closes the runbook.",
+          "kind": "check",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "orgshift collect --profile \u003ctarget management profile\u003e --out \u003ctarget snapshot\u003e",
+            "orgshift simulate --from \u003ctarget snapshot\u003e --account 111111111117 --target-ou ou-lark-prod"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rollback",
+      "title": "Rollback",
+      "intro": "If something breaks, this puts the account back where it was. Built from the source policy chain of the simulation.",
+      "steps": [
+        {
+          "id": "rollback-1",
+          "title": "Move the account back to OU Sandbox (ou-lark-sand)",
+          "detail": "The reverse of the move; the original chain applies again immediately.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations move-account --account-id 111111111117 --source-parent-id ou-lark-prod --destination-parent-id ou-lark-sand"
+          ]
+        },
+        {
+          "id": "rollback-2",
+          "title": "Verify the original policy chain reaches the account again",
+          "detail": "Compare with the source chain recorded by the simulation, root to account.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations list-policies-for-target --target-id 111111111117 --filter SERVICE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111117 --filter RESOURCE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111117 --filter TAG_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111117 --filter BACKUP_POLICY"
+          ],
+          "evidence": [
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "SCP",
+              "note": "root Root (r-lark): FullAWSAccess (p-FullAWSAccess), Larkspur-Baseline-Guardrails (p-lark0001)\nOU Sandbox (ou-lark-sand): FullAWSAccess (p-FullAWSAccess), Larkspur-Sandbox-Limits (p-lark0003)\naccount larkspur-sandbox-1 (111111111117): FullAWSAccess (p-FullAWSAccess)"
+            },
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "RCP",
+              "note": "root Root (r-lark): RCPFullAWSAccess (p-RCPFullAWSAccess)\nOU Sandbox (ou-lark-sand): RCPFullAWSAccess (p-RCPFullAWSAccess)\naccount larkspur-sandbox-1 (111111111117): RCPFullAWSAccess (p-RCPFullAWSAccess)"
+            },
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "TAG",
+              "note": "root Root (r-lark): Larkspur-Tagging-Standard (p-lark0004)\nOU Sandbox (ou-lark-sand): none\naccount larkspur-sandbox-1 (111111111117): none"
+            },
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "BACKUP",
+              "note": "root Root (r-lark): none\nOU Sandbox (ou-lark-sand): none\naccount larkspur-sandbox-1 (111111111117): none"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Generated from a snapshot simulation. Every command is for an operator to review and run by hand; orgshift never writes to AWS."
+  ]
+}

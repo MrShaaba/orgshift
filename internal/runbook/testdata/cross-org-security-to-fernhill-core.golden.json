@@ -1,0 +1,877 @@
+{
+  "tool": "orgshift",
+  "runbook_schema_version": 1,
+  "subject": {
+    "account_id": "111111111113",
+    "account_name": "larkspur-security",
+    "source_org": {
+      "id": "o-larkspur0001",
+      "name": "Larkspur Holdings"
+    },
+    "target_org": {
+      "id": "o-fernhill0001",
+      "name": "Fernhill Group"
+    },
+    "cross_org": true,
+    "source_path": [
+      {
+        "id": "r-lark",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-lark-sec",
+        "name": "Security",
+        "kind": "ou"
+      },
+      {
+        "id": "111111111113",
+        "name": "larkspur-security",
+        "kind": "account"
+      }
+    ],
+    "target_path": [
+      {
+        "id": "r-fern",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-fern-core",
+        "name": "Core",
+        "kind": "ou"
+      },
+      {
+        "id": "111111111113",
+        "name": "larkspur-security",
+        "kind": "account"
+      }
+    ],
+    "source_parent_id": "ou-lark-sec",
+    "target_ou_id": "ou-fern-core",
+    "actions_in_use": 0,
+    "inbound_access": 0,
+    "tagged_resources": 0,
+    "regions_assumed": [
+      "ap-southeast-1",
+      "eu-west-1",
+      "us-east-1"
+    ]
+  },
+  "verdict": "NO-GO",
+  "summary": "44 steps: 10 before the move (1 blocking), 7 to re-create, 4 for the move itself, 16 checks afterwards and 7 to roll back.",
+  "phases": [
+    {
+      "id": "before",
+      "title": "Before the move: fix the blockers and make the decisions",
+      "intro": "Everything here is settled while the account is still at its current position. NO-GO steps block the move; REVIEW steps need a decision or a check by hand.",
+      "steps": [
+        {
+          "id": "before-1",
+          "title": "No actions in use were provided for this account",
+          "detail": "Add usage.actions to the source snapshot, pass --actions, or import an IAM last-accessed export. Without them nothing can be checked against the policies.",
+          "status": "REVIEW",
+          "kind": "input",
+          "check": "scp",
+          "finding": "No actions in use were provided for this account",
+          "commands": [
+            "orgshift simulate --from \u003csource snapshot\u003e --to \u003ctarget snapshot\u003e --account 111111111113 --target-ou ou-fern-core --last-accessed \u003cget-service-last-accessed-details output\u003e"
+          ]
+        },
+        {
+          "id": "before-2",
+          "title": "No actions in use were provided for this account",
+          "detail": "Add usage.actions to the source snapshot, pass --actions, or import an IAM last-accessed export. Without them nothing can be checked against the policies.",
+          "status": "REVIEW",
+          "kind": "input",
+          "check": "rcp",
+          "finding": "No actions in use were provided for this account",
+          "commands": [
+            "orgshift simulate --from \u003csource snapshot\u003e --to \u003ctarget snapshot\u003e --account 111111111113 --target-ou ou-fern-core --last-accessed \u003cget-service-last-accessed-details output\u003e"
+          ]
+        },
+        {
+          "id": "before-3",
+          "title": "No tagged resources were provided for this account",
+          "detail": "Add usage.tagged_resources to the source snapshot (for example from the Resource Groups Tagging API) to check compliance against the target tag policy.",
+          "status": "REVIEW",
+          "kind": "input",
+          "where": "account larkspur-security (111111111113)",
+          "check": "tags",
+          "finding": "No tagged resources were provided for this account",
+          "commands": [
+            "aws resourcegroupstaggingapi get-resources --resources-per-page 100   # sample to add as usage.tagged_resources"
+          ]
+        },
+        {
+          "id": "before-4",
+          "title": "Move the organization Config aggregator larkspur-org-aggregator out of the account first",
+          "detail": "The aggregator lives in this account; leaving breaks aggregation for the whole source organization. Create the aggregator in the account that stays, confirm it receives data, then delete this one.",
+          "status": "NO-GO",
+          "kind": "logging",
+          "where": "account larkspur-security (111111111113)",
+          "check": "org-services",
+          "finding": "Account hosts the organization Config aggregator larkspur-org-aggregator",
+          "commands": [
+            "aws configservice describe-configuration-aggregators --configuration-aggregator-names larkspur-org-aggregator"
+          ],
+          "evidence": [
+            {
+              "kind": "config-aggregator",
+              "side": "source",
+              "reference": "larkspur-org-aggregator"
+            }
+          ]
+        },
+        {
+          "id": "before-5",
+          "title": "Hand over delegated administration for config.amazonaws.com before the account leaves",
+          "detail": "Delegated administration is tied to organization membership. Leaving the organization removes the delegation, and the service's organization-wide view (and often its member enrolment) with it. Re-delegate to another account before the move. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
+          "status": "REVIEW",
+          "kind": "delegated-admin",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "check": "org-services",
+          "finding": "Account is the delegated administrator for config.amazonaws.com",
+          "commands": [
+            "aws organizations deregister-delegated-administrator --account-id 111111111113 --service-principal config.amazonaws.com",
+            "aws organizations register-delegated-administrator --account-id \u003cstand-in account\u003e --service-principal config.amazonaws.com"
+          ],
+          "evidence": [
+            {
+              "kind": "delegated-admin",
+              "side": "source",
+              "reference": "config.amazonaws.com",
+              "note": "delegated 2024-03-02T10:10:00Z"
+            }
+          ]
+        },
+        {
+          "id": "before-6",
+          "title": "Hand over delegated administration for guardduty.amazonaws.com before the account leaves",
+          "detail": "Delegated administration is tied to organization membership. Leaving the organization removes the delegation, and the service's organization-wide view (and often its member enrolment) with it. Re-delegate to another account before the move. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
+          "status": "REVIEW",
+          "kind": "delegated-admin",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "check": "org-services",
+          "finding": "Account is the delegated administrator for guardduty.amazonaws.com",
+          "commands": [
+            "aws organizations deregister-delegated-administrator --account-id 111111111113 --service-principal guardduty.amazonaws.com",
+            "aws organizations register-delegated-administrator --account-id \u003cstand-in account\u003e --service-principal guardduty.amazonaws.com"
+          ],
+          "evidence": [
+            {
+              "kind": "delegated-admin",
+              "side": "source",
+              "reference": "guardduty.amazonaws.com",
+              "note": "delegated 2024-03-02T10:00:00Z"
+            }
+          ]
+        },
+        {
+          "id": "before-7",
+          "title": "Hand over delegated administration for securityhub.amazonaws.com before the account leaves",
+          "detail": "Delegated administration is tied to organization membership. Leaving the organization removes the delegation, and the service's organization-wide view (and often its member enrolment) with it. Re-delegate to another account before the move. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
+          "status": "REVIEW",
+          "kind": "delegated-admin",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "check": "org-services",
+          "finding": "Account is the delegated administrator for securityhub.amazonaws.com",
+          "commands": [
+            "aws organizations deregister-delegated-administrator --account-id 111111111113 --service-principal securityhub.amazonaws.com",
+            "aws organizations register-delegated-administrator --account-id \u003cstand-in account\u003e --service-principal securityhub.amazonaws.com"
+          ],
+          "evidence": [
+            {
+              "kind": "delegated-admin",
+              "side": "source",
+              "reference": "securityhub.amazonaws.com",
+              "note": "delegated 2024-03-02T10:05:00Z"
+            }
+          ]
+        },
+        {
+          "id": "before-8",
+          "title": "Make the account able to stand alone",
+          "detail": "Before it can leave, the account needs its own contact information, a payment method, a support plan choice and completed identity verification. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
+          "status": "REVIEW",
+          "kind": "prerequisite",
+          "where": "account larkspur-security (111111111113), signed in as root or an administrator",
+          "check": "org-services",
+          "finding": "Standalone account prerequisites and invitation",
+          "commands": [
+            "aws account get-contact-information",
+            "aws account get-alternate-contact --alternate-contact-type BILLING",
+            "# console: Billing and Cost Management → Payment preferences; Account → Identity verification; Support → Support plan"
+          ]
+        },
+        {
+          "id": "before-9",
+          "title": "Lift the deny on organizations:LeaveOrganization in SCP Larkspur-Baseline-Guardrails / DenyLeaveOrganization, or let the management account remove the account",
+          "detail": "SCP Larkspur-Baseline-Guardrails (p-lark0001) is attached at root Root (r-lark) and denies organizations:LeaveOrganization without a condition, so leave-organization run from inside the account fails. Either detach the policy or edit the statement for the duration of the move and put it back afterwards, or run remove-account-from-organization from the management account, which SCPs do not restrict.",
+          "status": "REVIEW",
+          "kind": "policy-change",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "check": "org-services",
+          "finding": "Standalone account prerequisites and invitation",
+          "actions": [
+            "organizations:LeaveOrganization"
+          ],
+          "commands": [
+            "aws organizations describe-policy --policy-id p-lark0001 --query Content --output text",
+            "aws organizations remove-account-from-organization --account-id 111111111113   # the alternative that needs no policy change"
+          ],
+          "evidence": [
+            {
+              "kind": "policy-statement",
+              "side": "source",
+              "level": "root Root (r-lark)",
+              "policy_id": "p-lark0001",
+              "policy_name": "Larkspur-Baseline-Guardrails",
+              "policy_type": "SCP",
+              "statement": "DenyLeaveOrganization",
+              "note": "Deny organizations:LeaveOrganization"
+            }
+          ]
+        },
+        {
+          "id": "before-10",
+          "title": "Find what references the 2 AWSReservedSSO_* role(s) of the account",
+          "detail": "Identity Center deletes the IAM roles it provisioned in the account (path /aws-reserved/sso.amazonaws.com/us-east-1/) when the account leaves the organization. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. List the exact role ARNs now, while they exist, and search for them so the references can be updated after the move.",
+          "status": "REVIEW",
+          "kind": "identity-center",
+          "where": "account larkspur-security (111111111113)",
+          "check": "identity-center",
+          "finding": "2 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*, AWSReservedSSO_ReadOnlyAccess_*",
+          "commands": [
+            "aws iam list-roles --path-prefix /aws-reserved/sso.amazonaws.com/us-east-1/ --query \"Roles[].Arn\"",
+            "# search bucket, key, topic, queue and secret policies, EKS access entries, role trust policies and CI configuration for AWSReservedSSO_"
+          ],
+          "evidence": [
+            {
+              "kind": "reserved-role",
+              "side": "source",
+              "reference": "AWSReservedSSO_AdministratorAccess_*",
+              "note": "role for permission set AdministratorAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+            },
+            {
+              "kind": "reserved-role",
+              "side": "source",
+              "reference": "AWSReservedSSO_ReadOnlyAccess_*",
+              "note": "role for permission set ReadOnlyAccess (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recreate",
+      "title": "Before the move: re-create what does not travel",
+      "intro": "Shares, delegations, permission sets and stacks that are scoped to the account's current position do not follow it. Prepare the replacements now so nothing is interrupted.",
+      "steps": [
+        {
+          "id": "recreate-1",
+          "title": "Re-share larkspur-core-network with the account directly: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
+          "detail": "Owner 111111111112 shares larkspur-core-network (ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111113 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation. This is a networking share: the move stays NO-GO until it is done.",
+          "status": "NO-GO",
+          "kind": "resource-share",
+          "where": "owner account 111111111112",
+          "check": "ram",
+          "finding": "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
+          "resource": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
+          "commands": [
+            "aws ram update-resource-share --resource-share-arn arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828 --allow-external-principals",
+            "aws ram associate-resource-share --resource-share-arn arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828 --principals 111111111113"
+          ],
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "source",
+              "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
+              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
+            }
+          ]
+        },
+        {
+          "id": "recreate-2",
+          "title": "Re-share larkspur-ipam with the account directly: ec2:IpamPool",
+          "detail": "Owner 111111111112 shares larkspur-ipam (ec2:IpamPool) with arn:aws:organizations::111111111111:organization/o-larkspur0001 today. After the move those principals no longer cover the account. Ask the owner to add account 111111111113 as a principal before the move so nothing attached to these resources is interrupted. The account will be outside the organization, so the share has to allow external principals and the account has to accept an invitation. This is a networking share: the move stays NO-GO until it is done.",
+          "status": "NO-GO",
+          "kind": "resource-share",
+          "where": "owner account 111111111112",
+          "check": "ram",
+          "finding": "Networking share larkspur-ipam is lost: ec2:IpamPool",
+          "resource": "arn:aws:ram:us-east-1:111111111112:resource-share/01364b18a31c4fdca",
+          "commands": [
+            "aws ram update-resource-share --resource-share-arn arn:aws:ram:us-east-1:111111111112:resource-share/01364b18a31c4fdca --allow-external-principals",
+            "aws ram associate-resource-share --resource-share-arn arn:aws:ram:us-east-1:111111111112:resource-share/01364b18a31c4fdca --principals 111111111113"
+          ],
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "source",
+              "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/01364b18a31c4fdca",
+              "note": "owner 111111111112; principals: organization o-larkspur0001\nec2:IpamPool  arn:aws:ec2::111111111112:ipam-pool/ipam-pool-8afc13dafc2e5d265"
+            }
+          ]
+        },
+        {
+          "id": "recreate-3",
+          "title": "Replace what StackSet larkspur-config-recorder deploys into the account",
+          "detail": "Service-managed StackSets deploy by OU. AWS Config recorder and delivery channel. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
+          "status": "REVIEW",
+          "kind": "stackset",
+          "where": "administration account 111111111111",
+          "check": "org-services",
+          "finding": "StackSet larkspur-config-recorder stops targeting the account; stack instances are detached but the stacks are retained in the account (retain_stacks_on_account_removal)",
+          "commands": [
+            "aws cloudformation list-stack-instances --stack-set-name larkspur-config-recorder --stack-instance-account 111111111113",
+            "aws cloudformation describe-stack-set --stack-set-name larkspur-config-recorder --query StackSet.TemplateBody --output text"
+          ],
+          "evidence": [
+            {
+              "kind": "stackset",
+              "side": "source",
+              "reference": "larkspur-config-recorder",
+              "note": "admin 111111111111; targets OUs r-lark accounts ; regions us-east-1,eu-west-1,ap-southeast-1; auto-deployment true; retain on removal true"
+            }
+          ]
+        },
+        {
+          "id": "recreate-4",
+          "title": "Enable trusted access in Fernhill Group (o-fernhill0001) for: account.amazonaws.com",
+          "detail": "Organization-integrated features of these services (for example organization-wide GuardDuty, RAM sharing with the organization, service-managed StackSets) are not available in the target organization until trusted access is enabled there. Only for the integrations the account relies on; enabling trusted access is an organization-wide setting.",
+          "status": "REVIEW",
+          "kind": "trusted-access",
+          "where": "management account 222222222221 of Fernhill Group",
+          "check": "org-services",
+          "finding": "Trusted access is not enabled in the target for: account.amazonaws.com",
+          "commands": [
+            "aws organizations enable-aws-service-access --service-principal account.amazonaws.com"
+          ]
+        },
+        {
+          "id": "recreate-5",
+          "title": "Create the AWSControlTowerExecution role in the account, trusting management account 222222222221",
+          "detail": "Account Factory assumes this role to enroll an existing account. It needs AdministratorAccess and a trust policy for the target management account. Also make sure no Config recorder or delivery channel of the account's own conflicts in the governed regions.",
+          "status": "REVIEW",
+          "kind": "control-tower",
+          "where": "account larkspur-security (111111111113)",
+          "check": "control-tower",
+          "finding": "Target OU Core is registered with Control Tower; the account has to be enrolled",
+          "commands": [
+            "aws iam create-role --role-name AWSControlTowerExecution --assume-role-policy-document '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::222222222221:root\"},\"Action\":\"sts:AssumeRole\"}]}'",
+            "aws iam attach-role-policy --role-name AWSControlTowerExecution --policy-arn arn:aws:iam::aws:policy/AdministratorAccess",
+            "aws configservice describe-configuration-recorders   # per governed region"
+          ]
+        },
+        {
+          "id": "recreate-6",
+          "title": "Review permission set AdministratorAccess in the target instance before re-assigning it",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
+          "status": "REVIEW",
+          "kind": "identity-center",
+          "where": "Identity Center of Fernhill Group (o-fernhill0001) (account 222222222221, eu-west-1)",
+          "check": "identity-center",
+          "finding": "Permission set AdministratorAccess: 1 assignment(s) removed when the account leaves (group Platform-Admins)",
+          "commands": [
+            "aws sso-admin describe-permission-set --instance-arn arn:aws:sso:::instance/ssoins-fernhill00000001 --permission-set-arn arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001",
+            "aws sso-admin list-managed-policies-in-permission-set --instance-arn arn:aws:sso:::instance/ssoins-fernhill00000001 --permission-set-arn arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001",
+            "aws sso-admin get-inline-policy-for-permission-set --instance-arn arn:aws:sso:::instance/ssoins-fernhill00000001 --permission-set-arn arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001"
+          ],
+          "evidence": [
+            {
+              "kind": "account-assignment",
+              "side": "source",
+              "reference": "ba31fe89-32df-0f24-6b40-1c6f590a40ff",
+              "note": "group Platform-Admins has permission set AdministratorAccess in account 111111111113"
+            },
+            {
+              "kind": "permission-set",
+              "side": "source",
+              "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001",
+              "note": "AdministratorAccess\nFull access for the platform team\nsession duration PT1H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 8 account(s)"
+            },
+            {
+              "kind": "permission-set",
+              "side": "target",
+              "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001",
+              "note": "AdministratorAccess\nPlatform team break-glass\nsession duration PT2H\nmanaged policies: arn:aws:iam::aws:policy/AdministratorAccess\nprovisioned in 7 account(s)"
+            }
+          ]
+        },
+        {
+          "id": "recreate-7",
+          "title": "Review permission set ReadOnlyAccess in the target instance before re-assigning it",
+          "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center deletes these 1 assignment(s) and the principals lose this access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
+          "status": "REVIEW",
+          "kind": "identity-center",
+          "where": "Identity Center of Fernhill Group (o-fernhill0001) (account 222222222221, eu-west-1)",
+          "check": "identity-center",
+          "finding": "Permission set ReadOnlyAccess: 1 assignment(s) removed when the account leaves (group Security-Auditors)",
+          "commands": [
+            "aws sso-admin describe-permission-set --instance-arn arn:aws:sso:::instance/ssoins-fernhill00000001 --permission-set-arn arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002",
+            "aws sso-admin list-managed-policies-in-permission-set --instance-arn arn:aws:sso:::instance/ssoins-fernhill00000001 --permission-set-arn arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002",
+            "aws sso-admin get-inline-policy-for-permission-set --instance-arn arn:aws:sso:::instance/ssoins-fernhill00000001 --permission-set-arn arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002"
+          ],
+          "evidence": [
+            {
+              "kind": "account-assignment",
+              "side": "source",
+              "reference": "fd2d8b09-2a71-ec4a-cc89-1ddb07a87174",
+              "note": "group Security-Auditors has permission set ReadOnlyAccess in account 111111111113"
+            },
+            {
+              "kind": "permission-set",
+              "side": "source",
+              "reference": "arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003",
+              "note": "ReadOnlyAccess\nAudit access\nsession duration PT8H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess\nprovisioned in 7 account(s)"
+            },
+            {
+              "kind": "permission-set",
+              "side": "target",
+              "reference": "arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002",
+              "note": "ReadOnlyAccess\nAudit and security review\nsession duration PT12H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess, arn:aws:iam::aws:policy/job-function/ViewOnlyAccess\nprovisioned in 6 account(s)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "move",
+      "title": "The move",
+      "intro": "Run these in order. Between leaving and accepting the invitation the account is standalone, with no SCPs and no organization features; keep that window short.",
+      "steps": [
+        {
+          "id": "move-1",
+          "title": "Invite the account into Fernhill Group (o-fernhill0001)",
+          "detail": "The invitation (a handshake) is valid for 15 days. Send it before the account leaves so the standalone window is short.",
+          "kind": "move",
+          "where": "management account 222222222221 of Fernhill Group",
+          "commands": [
+            "aws organizations invite-account-to-organization --target Id=111111111113,Type=ACCOUNT --notes \"Move of larkspur-security planned with orgshift\""
+          ]
+        },
+        {
+          "id": "move-2",
+          "title": "Leave Larkspur Holdings (o-larkspur0001)",
+          "detail": "Run leave-organization from inside the account, or remove it from the management account (which SCPs do not restrict). Both need the standalone prerequisites to be in place. From this moment no SCP, RCP or tag policy of the source applies, organization-scoped shares stop reaching the account and Identity Center deletes its assignments and roles.",
+          "kind": "move",
+          "where": "account larkspur-security (111111111113), or management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations leave-organization   # run inside the account",
+            "aws organizations remove-account-from-organization --account-id 111111111113   # alternative, run by the management account"
+          ]
+        },
+        {
+          "id": "move-3",
+          "title": "Accept the invitation",
+          "detail": "The account joins Fernhill Group (o-fernhill0001) at its root with the AWS managed default policies attached. Everything on the verdict board that applies at the target position applies from the next step on.",
+          "kind": "move",
+          "where": "account larkspur-security (111111111113)",
+          "commands": [
+            "aws organizations list-handshakes-for-account --query \"Handshakes[?State=='OPEN'].[Id,Action]\" --output table",
+            "aws organizations accept-handshake --handshake-id \u003chandshake ID from the previous command\u003e"
+          ]
+        },
+        {
+          "id": "move-4",
+          "title": "Move the account from the root to OU Core (ou-fern-core)",
+          "detail": "Until this call the account sits at the target root with only the policies attached there.",
+          "kind": "move",
+          "where": "management account 222222222221 of Fernhill Group",
+          "commands": [
+            "aws organizations move-account --account-id 111111111113 --source-parent-id r-fern --destination-parent-id ou-fern-core"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "after",
+      "title": "After the move: checks",
+      "intro": "Confirm what the simulation predicted and finish what could only be done once the account is at its new position.",
+      "steps": [
+        {
+          "id": "after-1",
+          "title": "Confirm the account sits under OU Core (ou-fern-core) and the expected policies reach it",
+          "detail": "The parent must be ou-fern-core. The policies listed for the account should match the target chain of the simulation (added: SCP Fernhill-Root-Guardrails, SCP aws-guardrails-ztmvqe, TAG Fernhill-Cost-Allocation).",
+          "kind": "check",
+          "where": "management account 222222222221 of Fernhill Group",
+          "commands": [
+            "aws organizations list-parents --child-id 111111111113",
+            "aws organizations list-policies-for-target --target-id 111111111113 --filter SERVICE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111113 --filter RESOURCE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111113 --filter TAG_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111113 --filter BACKUP_POLICY"
+          ]
+        },
+        {
+          "id": "after-2",
+          "title": "Accept the invitation for share larkspur-core-network and confirm the resources",
+          "detail": "Outside the owner's organization the share arrives as an invitation. Accept it, then check that the ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule are listed and that what is attached to them still works.",
+          "kind": "check",
+          "where": "account larkspur-security (111111111113)",
+          "check": "ram",
+          "finding": "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
+          "commands": [
+            "aws ram get-resource-share-invitations --query \"resourceShareInvitations[?resourceShareName=='larkspur-core-network']\"",
+            "aws ram accept-resource-share-invitation --resource-share-invitation-arn \u003cinvitation ARN from the previous command\u003e",
+            "aws ram list-resources --resource-owner OTHER-ACCOUNTS --resource-share-arns arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828"
+          ]
+        },
+        {
+          "id": "after-3",
+          "title": "Accept the invitation for share larkspur-ipam and confirm the resources",
+          "detail": "Outside the owner's organization the share arrives as an invitation. Accept it, then check that the ec2:IpamPool are listed and that what is attached to them still works.",
+          "kind": "check",
+          "where": "account larkspur-security (111111111113)",
+          "check": "ram",
+          "finding": "Networking share larkspur-ipam is lost: ec2:IpamPool",
+          "commands": [
+            "aws ram get-resource-share-invitations --query \"resourceShareInvitations[?resourceShareName=='larkspur-ipam']\"",
+            "aws ram accept-resource-share-invitation --resource-share-invitation-arn \u003cinvitation ARN from the previous command\u003e",
+            "aws ram list-resources --resource-owner OTHER-ACCOUNTS --resource-share-arns arn:aws:ram:us-east-1:111111111112:resource-share/01364b18a31c4fdca"
+          ]
+        },
+        {
+          "id": "after-4",
+          "title": "Share fernhill-core-network becomes available: ec2:TransitGateway, route53resolver:ResolverRule",
+          "detail": "Shared by account 222222222222 with organization o-fernhill0001 in the target organization. New attachments must be created by hand; nothing is attached automatically.",
+          "status": "INFO",
+          "kind": "resource-share",
+          "where": "account larkspur-security (111111111113)",
+          "check": "ram",
+          "finding": "Share fernhill-core-network becomes available after the move: ec2:TransitGateway, route53resolver:ResolverRule",
+          "commands": [
+            "aws ram list-resources --resource-owner OTHER-ACCOUNTS --resource-share-arns arn:aws:ram:eu-west-1:222222222222:resource-share/09521366b77824316"
+          ],
+          "evidence": [
+            {
+              "kind": "resource-share",
+              "side": "target",
+              "reference": "arn:aws:ram:eu-west-1:222222222222:resource-share/09521366b77824316",
+              "note": "owner 222222222222; principals: organization o-fernhill0001\nec2:TransitGateway  arn:aws:ec2:eu-west-1:222222222222:transit-gateway/tgw-6a7aefe6fddce8281\nroute53resolver:ResolverRule  arn:aws:route53resolver:eu-west-1:222222222222:resolver-rule/rslvr-rr-364b18a31c4fdca47"
+            }
+          ]
+        },
+        {
+          "id": "after-5",
+          "title": "Re-create the delegation for config.amazonaws.com in Fernhill Group (o-fernhill0001) if the account keeps that role",
+          "detail": "Delegated administration does not travel. Decide whether the account administers the service in the target organization too; if so, enable trusted access there (when it is not enabled yet) and register the account once it has joined.",
+          "status": "REVIEW",
+          "kind": "delegated-admin",
+          "where": "management account 222222222221 of Fernhill Group",
+          "check": "org-services",
+          "finding": "Account is the delegated administrator for config.amazonaws.com",
+          "commands": [
+            "aws organizations enable-aws-service-access --service-principal config.amazonaws.com",
+            "aws organizations register-delegated-administrator --account-id 111111111113 --service-principal config.amazonaws.com"
+          ]
+        },
+        {
+          "id": "after-6",
+          "title": "Re-create the delegation for guardduty.amazonaws.com in Fernhill Group (o-fernhill0001) if the account keeps that role",
+          "detail": "Delegated administration does not travel. Decide whether the account administers the service in the target organization too; if so, enable trusted access there (when it is not enabled yet) and register the account once it has joined.",
+          "status": "REVIEW",
+          "kind": "delegated-admin",
+          "where": "management account 222222222221 of Fernhill Group",
+          "check": "org-services",
+          "finding": "Account is the delegated administrator for guardduty.amazonaws.com",
+          "commands": [
+            "aws organizations enable-aws-service-access --service-principal guardduty.amazonaws.com",
+            "aws organizations register-delegated-administrator --account-id 111111111113 --service-principal guardduty.amazonaws.com"
+          ]
+        },
+        {
+          "id": "after-7",
+          "title": "Re-create the delegation for securityhub.amazonaws.com in Fernhill Group (o-fernhill0001) if the account keeps that role",
+          "detail": "Delegated administration does not travel. Decide whether the account administers the service in the target organization too; if so, enable trusted access there (when it is not enabled yet) and register the account once it has joined.",
+          "status": "REVIEW",
+          "kind": "delegated-admin",
+          "where": "management account 222222222221 of Fernhill Group",
+          "check": "org-services",
+          "finding": "Account is the delegated administrator for securityhub.amazonaws.com",
+          "commands": [
+            "aws organizations enable-aws-service-access --service-principal securityhub.amazonaws.com",
+            "aws organizations register-delegated-administrator --account-id 111111111113 --service-principal securityhub.amazonaws.com"
+          ]
+        },
+        {
+          "id": "after-8",
+          "title": "Confirm CloudTrail coverage",
+          "detail": "Organization trail(s) larkspur-org-trail stop logging the account the moment it leaves. Trail(s) fernhill-org-trail (bucket fernhill-log-archive) of the target cover it once it has joined; confirm events arrive there. Between leaving and joining nothing logs management events unless the account has a trail of its own.",
+          "kind": "logging",
+          "where": "account larkspur-security (111111111113)",
+          "check": "org-services",
+          "commands": [
+            "aws cloudtrail describe-trails --include-shadow-trails",
+            "aws cloudtrail lookup-events --max-results 5   # the most recent management events should be minutes old"
+          ],
+          "evidence": [
+            {
+              "kind": "org-trail",
+              "side": "source",
+              "reference": "arn:aws:cloudtrail:us-east-1:111111111114:trail/larkspur-org-trail",
+              "note": "bucket larkspur-cloudtrail-archive, home region us-east-1"
+            },
+            {
+              "kind": "org-trail",
+              "side": "target",
+              "reference": "arn:aws:cloudtrail:eu-west-1:222222222224:trail/fernhill-org-trail"
+            }
+          ]
+        },
+        {
+          "id": "after-9",
+          "title": "Confirm AWS Config aggregation",
+          "detail": "Aggregator(s) larkspur-org-aggregator of the source stop receiving the account's configuration and compliance data. Aggregator(s) fernhill-org-aggregator in the target pick it up once it has joined and the recorder in the account is running; confirm the account appears as a source.",
+          "kind": "logging",
+          "where": "account larkspur-security (111111111113)",
+          "check": "org-services",
+          "commands": [
+            "aws configservice describe-configuration-recorder-status",
+            "aws configservice describe-configuration-aggregator-sources-status --configuration-aggregator-name \u003ctarget aggregator\u003e   # in the aggregator account"
+          ],
+          "evidence": [
+            {
+              "kind": "config-aggregator",
+              "side": "source",
+              "reference": "larkspur-org-aggregator"
+            },
+            {
+              "kind": "config-aggregator",
+              "side": "target",
+              "reference": "fernhill-org-aggregator"
+            }
+          ]
+        },
+        {
+          "id": "after-10",
+          "title": "Confirm the target's delegated administrators enrol the account",
+          "detail": "In the target organization: 222222222223 administers access-analyzer.amazonaws.com; 222222222223 administers guardduty.amazonaws.com; 222222222223 administers securityhub.amazonaws.com. Each administrator's auto-enable settings decide whether the account is enrolled on joining; check the service consoles for the new member.",
+          "status": "INFO",
+          "kind": "delegated-admin",
+          "where": "management account 222222222221 of Fernhill Group",
+          "check": "org-services",
+          "commands": [
+            "aws organizations list-delegated-administrators"
+          ]
+        },
+        {
+          "id": "after-11",
+          "title": "Confirm the Control Tower controls that start applying at Core",
+          "detail": "1 detective control(s) start applying at Core: AWS-GR_AUDIT_BUCKET_PUBLIC_READ_PROHIBITED. 1 preventive control(s) start applying at Core: AWS-GR_AUDIT_BUCKET_POLICY_CHANGES_PROHIBITED. Preventive controls apply through the OU's SCPs at once; detective and proactive ones report once the account is enrolled.",
+          "status": "INFO",
+          "kind": "control-tower",
+          "where": "management account 222222222221 of Fernhill Group",
+          "check": "control-tower",
+          "commands": [
+            "aws controltower list-enabled-controls --target-identifier \u003cARN of OU ou-fern-core\u003e"
+          ],
+          "evidence": [
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_AUDIT_BUCKET_PUBLIC_READ_PROHIBITED",
+              "note": "Detect whether public read access to Amazon S3 buckets created by AWS Control Tower is allowed\ndetective control on OU ou-fern-core; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_AUDIT_BUCKET_POLICY_CHANGES_PROHIBITED",
+              "note": "Disallow changes to bucket policy for Amazon S3 buckets created by AWS Control Tower\npreventive control on OU ou-fern-core; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Organizations::Policy"
+            }
+          ]
+        },
+        {
+          "id": "after-12",
+          "title": "Enroll the account in Control Tower from Account Factory (OU Core)",
+          "detail": "Moving into a registered OU does not enroll the account by itself. The 1 preventive guardrail SCP(s) on the OU chain apply immediately because they are attached to the OUs, but the 1 detective control(s) do not report and the baseline is not deployed until the account is enrolled from Account Factory. Enrolment needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no conflicting Config recorder or delivery channel in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
+          "status": "REVIEW",
+          "kind": "control-tower",
+          "where": "management account 222222222221 of Fernhill Group (Account Factory)",
+          "check": "control-tower",
+          "finding": "Target OU Core is registered with Control Tower; the account has to be enrolled",
+          "commands": [
+            "# Control Tower console → Account Factory → Enroll account → larkspur-security, OU OU Core (ou-fern-core)"
+          ],
+          "evidence": [
+            {
+              "kind": "landing-zone",
+              "side": "target",
+              "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+            },
+            {
+              "kind": "registered-ou",
+              "side": "target",
+              "reference": "ou-fern-core",
+              "note": "OU Core registered: baseline 4.0, status SUCCEEDED, drift IN_SYNC"
+            }
+          ]
+        },
+        {
+          "id": "after-13",
+          "title": "Update references to the deleted AWSReservedSSO_* roles with the ARNs the target instance provisions",
+          "detail": "The new roles have a different random suffix. Replace the old ARNs found before the move in resource policies, key policies, EKS access entries and tooling.",
+          "kind": "identity-center",
+          "where": "account larkspur-security (111111111113)",
+          "check": "identity-center",
+          "finding": "2 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*, AWSReservedSSO_ReadOnlyAccess_*",
+          "commands": [
+            "aws iam list-roles --path-prefix /aws-reserved/sso.amazonaws.com/ --query \"Roles[].Arn\""
+          ]
+        },
+        {
+          "id": "after-14",
+          "title": "Assign AdministratorAccess to group Platform-Admins for the account in the target instance",
+          "detail": "Users and groups in identity store d-fern0000001 are different objects from the source ones, so look each one up by name first; create it there if it is missing. Identity Center then provisions a new AWSReservedSSO_AdministratorAccess_* role in the account.",
+          "status": "REVIEW",
+          "kind": "identity-center",
+          "where": "Identity Center of Fernhill Group (o-fernhill0001) (account 222222222221, eu-west-1)",
+          "check": "identity-center",
+          "finding": "Permission set AdministratorAccess: 1 assignment(s) removed when the account leaves (group Platform-Admins)",
+          "commands": [
+            "aws identitystore list-groups --identity-store-id d-fern0000001 --filters AttributePath=DisplayName,AttributeValue=\"Platform-Admins\" --query \"Groups[].GroupId\" --output text",
+            "aws sso-admin create-account-assignment --instance-arn arn:aws:sso:::instance/ssoins-fernhill00000001 --target-id 111111111113 --target-type AWS_ACCOUNT --permission-set-arn arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000001 --principal-type GROUP --principal-id \u003cID from the previous command\u003e"
+          ]
+        },
+        {
+          "id": "after-15",
+          "title": "Assign ReadOnlyAccess to group Security-Auditors for the account in the target instance",
+          "detail": "Users and groups in identity store d-fern0000001 are different objects from the source ones, so look each one up by name first; create it there if it is missing. Identity Center then provisions a new AWSReservedSSO_ReadOnlyAccess_* role in the account.",
+          "status": "REVIEW",
+          "kind": "identity-center",
+          "where": "Identity Center of Fernhill Group (o-fernhill0001) (account 222222222221, eu-west-1)",
+          "check": "identity-center",
+          "finding": "Permission set ReadOnlyAccess: 1 assignment(s) removed when the account leaves (group Security-Auditors)",
+          "commands": [
+            "aws identitystore list-groups --identity-store-id d-fern0000001 --filters AttributePath=DisplayName,AttributeValue=\"Security-Auditors\" --query \"Groups[].GroupId\" --output text",
+            "aws sso-admin create-account-assignment --instance-arn arn:aws:sso:::instance/ssoins-fernhill00000001 --target-id 111111111113 --target-type AWS_ACCOUNT --permission-set-arn arn:aws:sso:::permissionSet/ssoins-fernhill00000001/ps-fern00000002 --principal-type GROUP --principal-id \u003cID from the previous command\u003e"
+          ]
+        },
+        {
+          "id": "after-16",
+          "title": "Collect a fresh snapshot and simulate the account at its new position",
+          "detail": "With the account inside the target organization, a simulation of the account against its own parent compares it with itself and should come back GO, which closes the runbook.",
+          "kind": "check",
+          "where": "management account 222222222221 of Fernhill Group",
+          "commands": [
+            "orgshift collect --profile \u003ctarget management profile\u003e --out \u003ctarget snapshot\u003e",
+            "orgshift simulate --from \u003ctarget snapshot\u003e --account 111111111113 --target-ou ou-fern-core"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rollback",
+      "title": "Rollback",
+      "intro": "If something breaks, this puts the account back where it was. Built from the source policy chain of the simulation.",
+      "steps": [
+        {
+          "id": "rollback-1",
+          "title": "Leave Fernhill Group (o-fernhill0001) again",
+          "detail": "Leave the target organization the same way the account left the source, or have the target management account remove it. The target chain denies organizations:LeaveOrganization (Fernhill-Root-Guardrails / DenyLeaveOrganization at root Root (r-fern)), so use remove-account-from-organization from the target management account.",
+          "kind": "rollback",
+          "where": "account larkspur-security (111111111113), or management account 222222222221 of Fernhill Group",
+          "commands": [
+            "aws organizations leave-organization   # run inside the account",
+            "aws organizations remove-account-from-organization --account-id 111111111113   # alternative, run by the target management account"
+          ]
+        },
+        {
+          "id": "rollback-2",
+          "title": "Re-invite the account into Larkspur Holdings (o-larkspur0001) and accept",
+          "detail": "The account comes back at the source root with the AWS managed defaults only.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings, then account larkspur-security (111111111113)",
+          "commands": [
+            "aws organizations invite-account-to-organization --target Id=111111111113,Type=ACCOUNT",
+            "aws organizations list-handshakes-for-account --query \"Handshakes[?State=='OPEN'].[Id,Action]\" --output table",
+            "aws organizations accept-handshake --handshake-id \u003chandshake ID\u003e"
+          ]
+        },
+        {
+          "id": "rollback-3",
+          "title": "Move the account back to OU Security (ou-lark-sec)",
+          "detail": "Restores the original chain of OU attachments.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations move-account --account-id 111111111113 --source-parent-id r-lark --destination-parent-id ou-lark-sec"
+          ]
+        },
+        {
+          "id": "rollback-4",
+          "title": "Re-create the 2 Identity Center assignment(s) in the source instance",
+          "detail": "The source identity store still has the users and groups; the principal IDs below come from the snapshot. New AWSReservedSSO_* roles are provisioned with new suffixes, so references to the old ARNs do not come back by themselves.",
+          "kind": "rollback",
+          "where": "Identity Center of Larkspur Holdings (o-larkspur0001) (account 111111111111, us-east-1)",
+          "commands": [
+            "aws sso-admin create-account-assignment --instance-arn arn:aws:sso:::instance/ssoins-larkspur00000001 --target-id 111111111113 --target-type AWS_ACCOUNT --permission-set-arn arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000001 --principal-type GROUP --principal-id ba31fe89-32df-0f24-6b40-1c6f590a40ff   # group Platform-Admins",
+            "aws sso-admin create-account-assignment --instance-arn arn:aws:sso:::instance/ssoins-larkspur00000001 --target-id 111111111113 --target-type AWS_ACCOUNT --permission-set-arn arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000003 --principal-type GROUP --principal-id fd2d8b09-2a71-ec4a-cc89-1ddb07a87174   # group Security-Auditors"
+          ]
+        },
+        {
+          "id": "rollback-5",
+          "title": "Re-delegate administration to the account: config.amazonaws.com, guardduty.amazonaws.com, securityhub.amazonaws.com",
+          "detail": "Only if the hand-over before the move is to be reversed; deregister the stand-in first.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations register-delegated-administrator --account-id 111111111113 --service-principal config.amazonaws.com",
+            "aws organizations register-delegated-administrator --account-id 111111111113 --service-principal guardduty.amazonaws.com",
+            "aws organizations register-delegated-administrator --account-id 111111111113 --service-principal securityhub.amazonaws.com"
+          ]
+        },
+        {
+          "id": "rollback-6",
+          "title": "Organization-scoped shares and the organization trail cover the account again on their own",
+          "detail": "Shares offered to the source organization or its OUs, the organization trail, the Config aggregator and service-managed StackSets follow membership and need no action. Shares that owners narrowed to the account ID keep working as well.",
+          "kind": "rollback"
+        },
+        {
+          "id": "rollback-7",
+          "title": "Verify the original policy chain reaches the account again",
+          "detail": "Compare with the source chain recorded by the simulation, root to account.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations list-policies-for-target --target-id 111111111113 --filter SERVICE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111113 --filter RESOURCE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111113 --filter TAG_POLICY",
+            "aws organizations list-policies-for-target --target-id 111111111113 --filter BACKUP_POLICY"
+          ],
+          "evidence": [
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "SCP",
+              "note": "root Root (r-lark): FullAWSAccess (p-FullAWSAccess), Larkspur-Baseline-Guardrails (p-lark0001)\nOU Security (ou-lark-sec): FullAWSAccess (p-FullAWSAccess)\naccount larkspur-security (111111111113): FullAWSAccess (p-FullAWSAccess)"
+            },
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "RCP",
+              "note": "root Root (r-lark): RCPFullAWSAccess (p-RCPFullAWSAccess)\nOU Security (ou-lark-sec): RCPFullAWSAccess (p-RCPFullAWSAccess)\naccount larkspur-security (111111111113): RCPFullAWSAccess (p-RCPFullAWSAccess)"
+            },
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "TAG",
+              "note": "root Root (r-lark): Larkspur-Tagging-Standard (p-lark0004)\nOU Security (ou-lark-sec): none\naccount larkspur-security (111111111113): none"
+            },
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "BACKUP",
+              "note": "root Root (r-lark): none\nOU Security (ou-lark-sec): none\naccount larkspur-security (111111111113): none"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Generated from a snapshot simulation. Every command is for an operator to review and run by hand; orgshift never writes to AWS."
+  ]
+}

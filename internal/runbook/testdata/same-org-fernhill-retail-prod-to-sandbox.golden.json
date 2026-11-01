@@ -1,0 +1,291 @@
+{
+  "tool": "orgshift",
+  "runbook_schema_version": 1,
+  "subject": {
+    "account_id": "222222222225",
+    "account_name": "fernhill-retail-prod",
+    "source_org": {
+      "id": "o-fernhill0001",
+      "name": "Fernhill Group"
+    },
+    "target_org": {
+      "id": "o-fernhill0001",
+      "name": "Fernhill Group"
+    },
+    "cross_org": false,
+    "source_path": [
+      {
+        "id": "r-fern",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-fern-bu",
+        "name": "Business Units",
+        "kind": "ou"
+      },
+      {
+        "id": "ou-fern-ret",
+        "name": "Retail",
+        "kind": "ou"
+      },
+      {
+        "id": "222222222225",
+        "name": "fernhill-retail-prod",
+        "kind": "account"
+      }
+    ],
+    "target_path": [
+      {
+        "id": "r-fern",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-fern-sand",
+        "name": "Sandbox",
+        "kind": "ou"
+      },
+      {
+        "id": "222222222225",
+        "name": "fernhill-retail-prod",
+        "kind": "account"
+      }
+    ],
+    "source_parent_id": "ou-fern-ret",
+    "target_ou_id": "ou-fern-sand",
+    "actions_in_use": 7,
+    "inbound_access": 0,
+    "tagged_resources": 0,
+    "regions_assumed": [
+      "eu-central-1",
+      "eu-west-1"
+    ]
+  },
+  "verdict": "REVIEW",
+  "summary": "8 steps: 1 before the move (0 blocking), 1 to re-create, 1 for the move itself, 3 checks afterwards and 2 to roll back.",
+  "phases": [
+    {
+      "id": "before",
+      "title": "Before the move: fix the blockers and make the decisions",
+      "intro": "Everything here is settled while the account is still at its current position. NO-GO steps block the move; REVIEW steps need a decision or a check by hand.",
+      "steps": [
+        {
+          "id": "before-1",
+          "title": "Moving out of the registered OU Retail unenrolls the account from Control Tower",
+          "detail": "Control Tower governs accounts through their OU, and Sandbox (ou-fern-sand) is not registered with Control Tower. After the move the account is no longer enrolled: the 3 preventive guardrail SCP(s) of the old OU chain stop applying (see the SCP diff), 4 detective control(s) stop reporting, baseline updates stop and the landing zone shows the account as drifted until it is unenrolled properly. Unenroll it from Account Factory first if leaving governance is the intent; otherwise register Sandbox and move the account with Control Tower's update-account flow. Decide which of the two it is and record it here; the rest of this runbook assumes the account is moved with Organizations and ends up unenrolled.",
+          "status": "REVIEW",
+          "kind": "decision",
+          "where": "management account 222222222221 of Fernhill Group (Account Factory)",
+          "check": "control-tower",
+          "finding": "Moving out of the registered OU Retail unenrolls the account from Control Tower",
+          "commands": [
+            "# unenroll: Control Tower console → Account Factory → fernhill-retail-prod → Unmanage account",
+            "# or register the target OU: Control Tower console → Organization → the OU → Register OU, then move the account with the Update account flow"
+          ],
+          "evidence": [
+            {
+              "kind": "landing-zone",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1:222222222221:landingzone/FERNHILLLZ000001",
+              "note": "version 3.3, status ACTIVE, drift IN_SYNC; home region eu-west-1; governed regions eu-west-1, eu-central-1"
+            },
+            {
+              "kind": "registered-ou",
+              "side": "source",
+              "reference": "ou-fern-ret",
+              "note": "OU Retail registered: baseline 4.0, status SUCCEEDED, drift IN_SYNC"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recreate",
+      "title": "Before the move: re-create what does not travel",
+      "intro": "Shares, delegations, permission sets and stacks that are scoped to the account's current position do not follow it. Prepare the replacements now so nothing is interrupted.",
+      "steps": [
+        {
+          "id": "recreate-1",
+          "title": "Replace what StackSet fernhill-baseline deploys into the account",
+          "detail": "Service-managed StackSets deploy by OU. Baseline IAM roles and GuardDuty membership. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
+          "status": "REVIEW",
+          "kind": "stackset",
+          "where": "administration account 222222222221",
+          "check": "org-services",
+          "finding": "StackSet fernhill-baseline stops targeting the account; stack instances are deleted from the account",
+          "commands": [
+            "aws cloudformation list-stack-instances --stack-set-name fernhill-baseline --stack-instance-account 222222222225",
+            "aws cloudformation describe-stack-set --stack-set-name fernhill-baseline --query StackSet.TemplateBody --output text"
+          ],
+          "evidence": [
+            {
+              "kind": "stackset",
+              "side": "source",
+              "reference": "fernhill-baseline",
+              "note": "admin 222222222221; targets OUs ou-fern-bu accounts ; regions eu-west-1; auto-deployment true; retain on removal false"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "move",
+      "title": "The move",
+      "intro": "One Organizations call, or the Account Factory flow when Control Tower governs the account.",
+      "steps": [
+        {
+          "id": "move-1",
+          "title": "Move the account through Account Factory to OU Sandbox (ou-fern-sand)",
+          "detail": "Control Tower expects the move to go through Account Factory so the baseline follows the account; moving it with Organizations directly leaves the landing zone in drift. Account Factory records the OU as a parameter of the provisioned product. Changing the OU through the product (Service Catalog, update provisioned product, or the Control Tower console) performs the move and re-applies the baseline; moving it in Organizations directly leaves the product and the landing zone in drift.",
+          "kind": "move",
+          "where": "management account 222222222221 of Fernhill Group (Account Factory)",
+          "check": "control-tower",
+          "finding": "Account was vended by Account Factory; move it by updating provisioned product fernhill-retail-prod",
+          "commands": [
+            "# Control Tower console → Account Factory → fernhill-retail-prod → Update account → Organizational unit: OU Sandbox (ou-fern-sand)",
+            "aws servicecatalog update-provisioned-product --provisioned-product-name fernhill-retail-prod --product-name \"AWS Control Tower Account Factory\" --provisioning-artifact-name \u003ccurrent version\u003e --provisioning-parameters Key=ManagedOrganizationalUnit,Value=\"Sandbox (ou-fern-sand)\",UsePreviousValue=false Key=AccountName,UsePreviousValue=true Key=AccountEmail,UsePreviousValue=true Key=SSOUserEmail,UsePreviousValue=true Key=SSOUserFirstName,UsePreviousValue=true Key=SSOUserLastName,UsePreviousValue=true"
+          ],
+          "evidence": [
+            {
+              "kind": "account-factory",
+              "side": "source",
+              "reference": "fernhill-retail-prod",
+              "note": "status ENROLLED"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "after",
+      "title": "After the move: checks",
+      "intro": "Confirm what the simulation predicted and finish what could only be done once the account is at its new position.",
+      "steps": [
+        {
+          "id": "after-1",
+          "title": "Confirm the account sits under OU Sandbox (ou-fern-sand) and the expected policies reach it",
+          "detail": "The parent must be ou-fern-sand. The policies listed for the account should match the target chain of the simulation (added: SCP Fernhill-Sandbox-Limits).",
+          "kind": "check",
+          "where": "management account 222222222221 of Fernhill Group",
+          "commands": [
+            "aws organizations list-parents --child-id 222222222225",
+            "aws organizations list-policies-for-target --target-id 222222222225 --filter SERVICE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 222222222225 --filter RESOURCE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 222222222225 --filter TAG_POLICY",
+            "aws organizations list-policies-for-target --target-id 222222222225 --filter BACKUP_POLICY"
+          ]
+        },
+        {
+          "id": "after-2",
+          "title": "Check for Config rules left behind by the detective controls that stopped applying",
+          "detail": "Enabled on the source OU chain and not on the target's. Detective controls stop applying to the account after the move. The Config rules they deployed are removed when the account is unenrolled or moved through Control Tower; moved by hand, they linger unmanaged.",
+          "status": "INFO",
+          "kind": "control-tower",
+          "where": "account fernhill-retail-prod (222222222225)",
+          "check": "control-tower",
+          "finding": "4 detective control(s) stop applying: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_COMMON_PORTS, AWS-GR_RESTRICTED_SSH",
+          "commands": [
+            "aws configservice describe-config-rules --query \"ConfigRules[?starts_with(ConfigRuleName, 'AWSControlTower')].ConfigRuleName\""
+          ],
+          "evidence": [
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_ENCRYPTED_VOLUMES",
+              "note": "Detect whether encryption is enabled for Amazon EBS volumes attached to Amazon EC2 instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICTED_SSH",
+              "note": "Detect whether unrestricted incoming SSH traffic is allowed\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RDS_STORAGE_ENCRYPTED",
+              "note": "Detect whether storage encryption is enabled for Amazon RDS database instances\ndetective control on OU ou-fern-bu; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            },
+            {
+              "kind": "enabled-control",
+              "side": "source",
+              "reference": "arn:aws:controltower:eu-west-1::control/AWS-GR_RESTRICTED_COMMON_PORTS",
+              "note": "Detect whether unrestricted incoming TCP traffic is allowed on common ports\ndetective control on OU ou-fern-ret; status SUCCEEDED, drift IN_SYNC; implemented as AWS::Config::ConfigRule"
+            }
+          ]
+        },
+        {
+          "id": "after-3",
+          "title": "Collect a fresh snapshot and simulate the account at its new position",
+          "detail": "With the account inside the target organization, a simulation of the account against its own parent compares it with itself and should come back GO, which closes the runbook.",
+          "kind": "check",
+          "where": "management account 222222222221 of Fernhill Group",
+          "commands": [
+            "orgshift collect --profile \u003ctarget management profile\u003e --out \u003ctarget snapshot\u003e",
+            "orgshift simulate --from \u003ctarget snapshot\u003e --account 222222222225 --target-ou ou-fern-sand"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rollback",
+      "title": "Rollback",
+      "intro": "If something breaks, this puts the account back where it was. Built from the source policy chain of the simulation.",
+      "steps": [
+        {
+          "id": "rollback-1",
+          "title": "Move the account back to OU Retail (ou-fern-ret) through Account Factory",
+          "detail": "Update the account in Account Factory again, with the original OU, so the baseline follows it back.",
+          "kind": "rollback",
+          "where": "management account 222222222221 of Fernhill Group (Account Factory)",
+          "commands": [
+            "# Control Tower console → Account Factory → fernhill-retail-prod → Update account → Organizational unit: OU Retail (ou-fern-ret)"
+          ]
+        },
+        {
+          "id": "rollback-2",
+          "title": "Verify the original policy chain reaches the account again",
+          "detail": "Compare with the source chain recorded by the simulation, root to account.",
+          "kind": "rollback",
+          "where": "management account 222222222221 of Fernhill Group",
+          "commands": [
+            "aws organizations list-policies-for-target --target-id 222222222225 --filter SERVICE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 222222222225 --filter RESOURCE_CONTROL_POLICY",
+            "aws organizations list-policies-for-target --target-id 222222222225 --filter TAG_POLICY",
+            "aws organizations list-policies-for-target --target-id 222222222225 --filter BACKUP_POLICY"
+          ],
+          "evidence": [
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "SCP",
+              "note": "root Root (r-fern): Fernhill-Root-Guardrails (p-fern0001), FullAWSAccess (p-FullAWSAccess)\nOU Business Units (ou-fern-bu): Fernhill-EU-Only-Regions (p-fern0002), FullAWSAccess (p-FullAWSAccess), aws-guardrails-kjwqpf (p-fern0010) Control Tower guardrail\nOU Retail (ou-fern-ret): FullAWSAccess (p-FullAWSAccess)\naccount fernhill-retail-prod (222222222225): FullAWSAccess (p-FullAWSAccess)"
+            },
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "RCP",
+              "note": "root Root (r-fern): RCPFullAWSAccess (p-RCPFullAWSAccess)\nOU Business Units (ou-fern-bu): Fernhill-Block-External-Principals (p-fern0006), RCPFullAWSAccess (p-RCPFullAWSAccess)\nOU Retail (ou-fern-ret): RCPFullAWSAccess (p-RCPFullAWSAccess)\naccount fernhill-retail-prod (222222222225): RCPFullAWSAccess (p-RCPFullAWSAccess)"
+            },
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "TAG",
+              "note": "root Root (r-fern): Fernhill-Cost-Allocation (p-fern0007)\nOU Business Units (ou-fern-bu): none\nOU Retail (ou-fern-ret): none\naccount fernhill-retail-prod (222222222225): none"
+            },
+            {
+              "kind": "source-chain",
+              "side": "source",
+              "policy_type": "BACKUP",
+              "note": "root Root (r-fern): none\nOU Business Units (ou-fern-bu): Fernhill-Core-Backups (p-fern0009)\nOU Retail (ou-fern-ret): none\naccount fernhill-retail-prod (222222222225): none"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Generated from a snapshot simulation. Every command is for an operator to review and run by hand; orgshift never writes to AWS."
+  ]
+}

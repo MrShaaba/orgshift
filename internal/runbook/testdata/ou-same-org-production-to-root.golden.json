@@ -1,0 +1,617 @@
+{
+  "tool": "orgshift",
+  "runbook_schema_version": 1,
+  "subject": {
+    "ou_id": "ou-lark-prod",
+    "ou_name": "Production",
+    "source_org": {
+      "id": "o-larkspur0001",
+      "name": "Larkspur Holdings"
+    },
+    "target_org": {
+      "id": "o-larkspur0001",
+      "name": "Larkspur Holdings"
+    },
+    "cross_org": false,
+    "source_path": [
+      {
+        "id": "r-lark",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-lark-work",
+        "name": "Workloads",
+        "kind": "ou"
+      },
+      {
+        "id": "ou-lark-prod",
+        "name": "Production",
+        "kind": "ou"
+      }
+    ],
+    "target_path": [
+      {
+        "id": "r-lark",
+        "name": "Root",
+        "kind": "root"
+      },
+      {
+        "id": "ou-lark-prod",
+        "name": "Production",
+        "kind": "ou"
+      }
+    ],
+    "source_parent_id": "ou-lark-work",
+    "target_parent_id": "r-lark",
+    "nested_ous": 0,
+    "accounts": 2
+  },
+  "verdict": "NO-GO",
+  "summary": "12 OU-level steps and 2 account runbook(s): 2 NO-GO, 0 REVIEW, 0 GO. Clear every account's blockers before the OU tree is recreated.",
+  "phases": [
+    {
+      "id": "before",
+      "title": "Before the move: the OU tree",
+      "intro": "What has to be settled for the OUs themselves. Every account's own blockers are in its runbook below and have to be cleared first.",
+      "steps": [
+        {
+          "id": "ou-before-1",
+          "title": "Clear the blockers of 2 account(s) first",
+          "detail": "The OU verdict is the worst account verdict. Work through the first phase of each account runbook below: larkspur-data-prod (111111111118): Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList | larkspur-payments-prod (111111111115): Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList.",
+          "status": "NO-GO",
+          "kind": "blocker"
+        }
+      ]
+    },
+    {
+      "id": "recreate",
+      "title": "Before the move: create the new OU tree",
+      "intro": "Organizations cannot move an OU, so the tree is built again under the new parent with the same attachments before any account moves.",
+      "steps": [
+        {
+          "id": "ou-recreate-1",
+          "title": "Create OU Production under root Root (r-lark)",
+          "detail": "The source OU Production (ou-lark-prod) keeps existing until its accounts have moved. Note the new ID; the later steps refer to it as \u003cID of the new Production OU\u003e.",
+          "kind": "organizational-unit",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations create-organizational-unit --parent-id r-lark --name \"Production\""
+          ]
+        },
+        {
+          "id": "ou-recreate-2",
+          "title": "Attach to the new Production OU: BACKUP Larkspur-Daily-Backups",
+          "detail": "Same attachments as the source OU, so the accounts see the same chain below the moved OU once they arrive. The AWS managed defaults are attached automatically.",
+          "kind": "policy-change",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations attach-policy --policy-id p-lark0005 --target-id \u003cID of the new Production OU\u003e"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "move",
+      "title": "The move",
+      "intro": "Move the accounts one by one into the new OUs. Each account's runbook lists what changes for it.",
+      "steps": [
+        {
+          "id": "ou-move-1",
+          "title": "Move larkspur-data-prod (111111111118) from Production (ou-lark-prod) into the new Production OU",
+          "detail": "Policies attached directly to the account stay with it; from the new OU upwards the chain is the one the simulation evaluated.",
+          "kind": "move",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations move-account --account-id 111111111118 --source-parent-id ou-lark-prod --destination-parent-id \u003cID of the new Production OU\u003e"
+          ]
+        },
+        {
+          "id": "ou-move-2",
+          "title": "Move larkspur-payments-prod (111111111115) from Production (ou-lark-prod) into the new Production OU",
+          "detail": "Policies attached directly to the account stay with it; from the new OU upwards the chain is the one the simulation evaluated.",
+          "kind": "move",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations move-account --account-id 111111111115 --source-parent-id ou-lark-prod --destination-parent-id \u003cID of the new Production OU\u003e"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "after",
+      "title": "After the move: checks",
+      "intro": "Confirm the tree, register it where Control Tower is involved and remove what is left behind.",
+      "steps": [
+        {
+          "id": "ou-after-1",
+          "title": "Confirm the new tree under root Root (r-lark) and every account's parent",
+          "detail": "Every account should list its new OU as parent and the new OUs should carry the attachments from the steps above.",
+          "kind": "check",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations list-parents --child-id 111111111118",
+            "aws organizations list-parents --child-id 111111111115",
+            "aws organizations list-organizational-units-for-parent --parent-id r-lark"
+          ]
+        },
+        {
+          "id": "ou-after-2",
+          "title": "Delete the 1 empty source OU(s)",
+          "detail": "An OU can only be deleted when it is empty, so delete the deepest ones first. Detach nothing by hand: deleting the OU drops its attachments.",
+          "kind": "organizational-unit",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations delete-organizational-unit --organizational-unit-id ou-lark-prod"
+          ]
+        },
+        {
+          "id": "ou-after-3",
+          "title": "Collect a fresh snapshot and simulate the new OU against its own parent",
+          "detail": "With the tree in place, a simulation of the new OU against its current parent compares it with itself and should come back GO.",
+          "kind": "check",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "orgshift collect --profile \u003ctarget management profile\u003e --out \u003ctarget snapshot\u003e",
+            "orgshift simulate --from \u003ctarget snapshot\u003e --ou \u003cID of the new Production OU\u003e --target-ou r-lark"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rollback",
+      "title": "Rollback",
+      "intro": "Puts the OU tree back where it was. Built from the source attachments of the simulation.",
+      "steps": [
+        {
+          "id": "ou-rollback-1",
+          "title": "Recreate OU Production under OU Workloads (ou-lark-work) with its attachments",
+          "detail": "If the source OU Production (ou-lark-prod) still exists, skip the creation and reuse it. The policies still exist in the source organization.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations create-organizational-unit --parent-id ou-lark-work --name \"Production\"   # only if Production (ou-lark-prod) was already deleted",
+            "aws organizations attach-policy --policy-id p-lark0005 --target-id \u003cID of the new Production OU\u003e"
+          ]
+        },
+        {
+          "id": "ou-rollback-2",
+          "title": "Move larkspur-data-prod (111111111118) back into Production",
+          "detail": "Reverse of the move; the original chain applies again.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations move-account --account-id 111111111118 --source-parent-id \u003cID of the new Production OU\u003e --destination-parent-id ou-lark-prod"
+          ]
+        },
+        {
+          "id": "ou-rollback-3",
+          "title": "Move larkspur-payments-prod (111111111115) back into Production",
+          "detail": "Reverse of the move; the original chain applies again.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations move-account --account-id 111111111115 --source-parent-id \u003cID of the new Production OU\u003e --destination-parent-id ou-lark-prod"
+          ]
+        },
+        {
+          "id": "ou-rollback-4",
+          "title": "Delete the new OUs once they are empty",
+          "detail": "Deepest first; the attachments go with them.",
+          "kind": "rollback",
+          "where": "management account 111111111111 of Larkspur Holdings",
+          "commands": [
+            "aws organizations delete-organizational-unit --organizational-unit-id \u003cnew OU ID\u003e"
+          ]
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "tool": "orgshift",
+      "runbook_schema_version": 1,
+      "subject": {
+        "account_id": "111111111118",
+        "account_name": "larkspur-data-prod",
+        "source_org": {
+          "id": "o-larkspur0001",
+          "name": "Larkspur Holdings"
+        },
+        "target_org": {
+          "id": "o-larkspur0001",
+          "name": "Larkspur Holdings"
+        },
+        "cross_org": false,
+        "source_path": [
+          {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          }
+        ],
+        "target_path": [
+          {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          {
+            "id": "111111111118",
+            "name": "larkspur-data-prod",
+            "kind": "account"
+          }
+        ],
+        "source_parent_id": "ou-lark-prod",
+        "target_ou_id": "ou-lark-prod",
+        "actions_in_use": 8,
+        "inbound_access": 1,
+        "tagged_resources": 0,
+        "regions_assumed": [
+          "eu-west-1",
+          "us-east-1"
+        ]
+      },
+      "verdict": "NO-GO",
+      "summary": "5 steps: 0 before the move (0 blocking), 2 to re-create, 1 for the move itself, 1 checks afterwards and 1 to roll back.",
+      "phases": [
+        {
+          "id": "before",
+          "title": "Before the move: fix the blockers and make the decisions",
+          "intro": "Everything here is settled while the account is still at its current position. NO-GO steps block the move; REVIEW steps need a decision or a check by hand.",
+          "steps": []
+        },
+        {
+          "id": "recreate",
+          "title": "Before the move: re-create what does not travel",
+          "intro": "Shares, delegations, permission sets and stacks that are scoped to the account's current position do not follow it. Prepare the replacements now so nothing is interrupted.",
+          "steps": [
+            {
+              "id": "recreate-1",
+              "title": "Re-share larkspur-workload-prefix-lists with the account directly: ec2:PrefixList",
+              "detail": "Owner 111111111112 shares larkspur-workload-prefix-lists (ec2:PrefixList) with arn:aws:organizations::111111111111:ou/o-larkspur0001/ou-lark-work today. After the move those principals no longer cover the account. Ask the owner to add account 111111111118 as a principal before the move so nothing attached to these resources is interrupted. This is a networking share: the move stays NO-GO until it is done.",
+              "status": "NO-GO",
+              "kind": "resource-share",
+              "where": "owner account 111111111112",
+              "check": "ram",
+              "finding": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
+              "resource": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
+              "commands": [
+                "aws ram associate-resource-share --resource-share-arn arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243 --principals 111111111118"
+              ],
+              "evidence": [
+                {
+                  "kind": "resource-share",
+                  "side": "source",
+                  "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
+                  "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+                }
+              ]
+            },
+            {
+              "id": "recreate-2",
+              "title": "Replace what StackSet larkspur-baseline-roles deploys into the account",
+              "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
+              "status": "REVIEW",
+              "kind": "stackset",
+              "where": "administration account 111111111111",
+              "check": "org-services",
+              "finding": "StackSet larkspur-baseline-roles stops targeting the account; stack instances are deleted from the account",
+              "commands": [
+                "aws cloudformation list-stack-instances --stack-set-name larkspur-baseline-roles --stack-instance-account 111111111118",
+                "aws cloudformation describe-stack-set --stack-set-name larkspur-baseline-roles --query StackSet.TemplateBody --output text"
+              ],
+              "evidence": [
+                {
+                  "kind": "stackset",
+                  "side": "source",
+                  "reference": "larkspur-baseline-roles",
+                  "note": "admin 111111111111; targets OUs ou-lark-work accounts ; regions us-east-1; auto-deployment true; retain on removal false"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "move",
+          "title": "The move",
+          "intro": "One Organizations call, or the Account Factory flow when Control Tower governs the account.",
+          "steps": [
+            {
+              "id": "move-1",
+              "title": "Moved together with OU Production",
+              "detail": "The account does not move on its own; the move steps are in the OU part of the runbook.",
+              "kind": "move"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "title": "After the move: checks",
+          "intro": "Confirm what the simulation predicted and finish what could only be done once the account is at its new position.",
+          "steps": [
+            {
+              "id": "after-1",
+              "title": "Confirm share larkspur-workload-prefix-lists still reaches the account",
+              "detail": "Inside one organization no invitation is needed. The ec2:PrefixList should still be listed and the attachments that use them should still work.",
+              "kind": "check",
+              "where": "account larkspur-data-prod (111111111118)",
+              "check": "ram",
+              "finding": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
+              "commands": [
+                "aws ram list-resources --resource-owner OTHER-ACCOUNTS --resource-share-arns arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rollback",
+          "title": "Rollback",
+          "intro": "If something breaks, this puts the account back where it was. Built from the source policy chain of the simulation.",
+          "steps": [
+            {
+              "id": "rollback-1",
+              "title": "Rolled back together with OU Production",
+              "detail": "The rollback of the OU recreates the original OUs and moves every account back; the account's own policies to re-attach are listed below.",
+              "kind": "rollback",
+              "evidence": [
+                {
+                  "kind": "source-chain",
+                  "side": "source",
+                  "policy_type": "SCP",
+                  "note": "root Root (r-lark): FullAWSAccess (p-FullAWSAccess), Larkspur-Baseline-Guardrails (p-lark0001)\nOU Workloads (ou-lark-work): FullAWSAccess (p-FullAWSAccess), Larkspur-Allowed-Regions (p-lark0002)\nOU Production (ou-lark-prod): FullAWSAccess (p-FullAWSAccess)\naccount larkspur-data-prod (111111111118): FullAWSAccess (p-FullAWSAccess)"
+                },
+                {
+                  "kind": "source-chain",
+                  "side": "source",
+                  "policy_type": "RCP",
+                  "note": "root Root (r-lark): RCPFullAWSAccess (p-RCPFullAWSAccess)\nOU Workloads (ou-lark-work): RCPFullAWSAccess (p-RCPFullAWSAccess)\nOU Production (ou-lark-prod): RCPFullAWSAccess (p-RCPFullAWSAccess)\naccount larkspur-data-prod (111111111118): RCPFullAWSAccess (p-RCPFullAWSAccess)"
+                },
+                {
+                  "kind": "source-chain",
+                  "side": "source",
+                  "policy_type": "TAG",
+                  "note": "root Root (r-lark): Larkspur-Tagging-Standard (p-lark0004)\nOU Workloads (ou-lark-work): none\nOU Production (ou-lark-prod): none\naccount larkspur-data-prod (111111111118): none"
+                },
+                {
+                  "kind": "source-chain",
+                  "side": "source",
+                  "policy_type": "BACKUP",
+                  "note": "root Root (r-lark): none\nOU Workloads (ou-lark-work): none\nOU Production (ou-lark-prod): Larkspur-Daily-Backups (p-lark0005)\naccount larkspur-data-prod (111111111118): none"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "notes": [
+        "Generated from a snapshot simulation. Every command is for an operator to review and run by hand; orgshift never writes to AWS."
+      ]
+    },
+    {
+      "tool": "orgshift",
+      "runbook_schema_version": 1,
+      "subject": {
+        "account_id": "111111111115",
+        "account_name": "larkspur-payments-prod",
+        "source_org": {
+          "id": "o-larkspur0001",
+          "name": "Larkspur Holdings"
+        },
+        "target_org": {
+          "id": "o-larkspur0001",
+          "name": "Larkspur Holdings"
+        },
+        "cross_org": false,
+        "source_path": [
+          {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          {
+            "id": "ou-lark-work",
+            "name": "Workloads",
+            "kind": "ou"
+          },
+          {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          {
+            "id": "111111111115",
+            "name": "larkspur-payments-prod",
+            "kind": "account"
+          }
+        ],
+        "target_path": [
+          {
+            "id": "r-lark",
+            "name": "Root",
+            "kind": "root"
+          },
+          {
+            "id": "ou-lark-prod",
+            "name": "Production",
+            "kind": "ou"
+          },
+          {
+            "id": "111111111115",
+            "name": "larkspur-payments-prod",
+            "kind": "account"
+          }
+        ],
+        "source_parent_id": "ou-lark-prod",
+        "target_ou_id": "ou-lark-prod",
+        "actions_in_use": 20,
+        "inbound_access": 5,
+        "tagged_resources": 8,
+        "regions_assumed": [
+          "ap-southeast-1",
+          "eu-west-1",
+          "us-east-1"
+        ]
+      },
+      "verdict": "NO-GO",
+      "summary": "5 steps: 0 before the move (0 blocking), 2 to re-create, 1 for the move itself, 1 checks afterwards and 1 to roll back.",
+      "phases": [
+        {
+          "id": "before",
+          "title": "Before the move: fix the blockers and make the decisions",
+          "intro": "Everything here is settled while the account is still at its current position. NO-GO steps block the move; REVIEW steps need a decision or a check by hand.",
+          "steps": []
+        },
+        {
+          "id": "recreate",
+          "title": "Before the move: re-create what does not travel",
+          "intro": "Shares, delegations, permission sets and stacks that are scoped to the account's current position do not follow it. Prepare the replacements now so nothing is interrupted.",
+          "steps": [
+            {
+              "id": "recreate-1",
+              "title": "Re-share larkspur-workload-prefix-lists with the account directly: ec2:PrefixList",
+              "detail": "Owner 111111111112 shares larkspur-workload-prefix-lists (ec2:PrefixList) with arn:aws:organizations::111111111111:ou/o-larkspur0001/ou-lark-work today. After the move those principals no longer cover the account. Ask the owner to add account 111111111115 as a principal before the move so nothing attached to these resources is interrupted. This is a networking share: the move stays NO-GO until it is done.",
+              "status": "NO-GO",
+              "kind": "resource-share",
+              "where": "owner account 111111111112",
+              "check": "ram",
+              "finding": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
+              "resource": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
+              "commands": [
+                "aws ram associate-resource-share --resource-share-arn arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243 --principals 111111111115"
+              ],
+              "evidence": [
+                {
+                  "kind": "resource-share",
+                  "side": "source",
+                  "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243",
+                  "note": "owner 111111111112; principals: OU ou-lark-work\nec2:PrefixList  arn:aws:ec2:us-east-1:111111111112:prefix-list/pl-071c30c49f742a6da"
+                }
+              ]
+            },
+            {
+              "id": "recreate-2",
+              "title": "Replace what StackSet larkspur-baseline-roles deploys into the account",
+              "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
+              "status": "REVIEW",
+              "kind": "stackset",
+              "where": "administration account 111111111111",
+              "check": "org-services",
+              "finding": "StackSet larkspur-baseline-roles stops targeting the account; stack instances are deleted from the account",
+              "commands": [
+                "aws cloudformation list-stack-instances --stack-set-name larkspur-baseline-roles --stack-instance-account 111111111115",
+                "aws cloudformation describe-stack-set --stack-set-name larkspur-baseline-roles --query StackSet.TemplateBody --output text"
+              ],
+              "evidence": [
+                {
+                  "kind": "stackset",
+                  "side": "source",
+                  "reference": "larkspur-baseline-roles",
+                  "note": "admin 111111111111; targets OUs ou-lark-work accounts ; regions us-east-1; auto-deployment true; retain on removal false"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "move",
+          "title": "The move",
+          "intro": "One Organizations call, or the Account Factory flow when Control Tower governs the account.",
+          "steps": [
+            {
+              "id": "move-1",
+              "title": "Moved together with OU Production",
+              "detail": "The account does not move on its own; the move steps are in the OU part of the runbook.",
+              "kind": "move"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "title": "After the move: checks",
+          "intro": "Confirm what the simulation predicted and finish what could only be done once the account is at its new position.",
+          "steps": [
+            {
+              "id": "after-1",
+              "title": "Confirm share larkspur-workload-prefix-lists still reaches the account",
+              "detail": "Inside one organization no invitation is needed. The ec2:PrefixList should still be listed and the attachments that use them should still work.",
+              "kind": "check",
+              "where": "account larkspur-payments-prod (111111111115)",
+              "check": "ram",
+              "finding": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
+              "commands": [
+                "aws ram list-resources --resource-owner OTHER-ACCOUNTS --resource-share-arns arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rollback",
+          "title": "Rollback",
+          "intro": "If something breaks, this puts the account back where it was. Built from the source policy chain of the simulation.",
+          "steps": [
+            {
+              "id": "rollback-1",
+              "title": "Rolled back together with OU Production",
+              "detail": "The rollback of the OU recreates the original OUs and moves every account back; the account's own policies to re-attach are listed below.",
+              "kind": "rollback",
+              "evidence": [
+                {
+                  "kind": "source-chain",
+                  "side": "source",
+                  "policy_type": "SCP",
+                  "note": "root Root (r-lark): FullAWSAccess (p-FullAWSAccess), Larkspur-Baseline-Guardrails (p-lark0001)\nOU Workloads (ou-lark-work): FullAWSAccess (p-FullAWSAccess), Larkspur-Allowed-Regions (p-lark0002)\nOU Production (ou-lark-prod): FullAWSAccess (p-FullAWSAccess)\naccount larkspur-payments-prod (111111111115): FullAWSAccess (p-FullAWSAccess)"
+                },
+                {
+                  "kind": "source-chain",
+                  "side": "source",
+                  "policy_type": "RCP",
+                  "note": "root Root (r-lark): RCPFullAWSAccess (p-RCPFullAWSAccess)\nOU Workloads (ou-lark-work): RCPFullAWSAccess (p-RCPFullAWSAccess)\nOU Production (ou-lark-prod): RCPFullAWSAccess (p-RCPFullAWSAccess)\naccount larkspur-payments-prod (111111111115): RCPFullAWSAccess (p-RCPFullAWSAccess)"
+                },
+                {
+                  "kind": "source-chain",
+                  "side": "source",
+                  "policy_type": "TAG",
+                  "note": "root Root (r-lark): Larkspur-Tagging-Standard (p-lark0004)\nOU Workloads (ou-lark-work): none\nOU Production (ou-lark-prod): none\naccount larkspur-payments-prod (111111111115): none"
+                },
+                {
+                  "kind": "source-chain",
+                  "side": "source",
+                  "policy_type": "BACKUP",
+                  "note": "root Root (r-lark): none\nOU Workloads (ou-lark-work): none\nOU Production (ou-lark-prod): Larkspur-Daily-Backups (p-lark0005)\naccount larkspur-payments-prod (111111111115): none"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "notes": [
+        "Generated from a snapshot simulation. Every command is for an operator to review and run by hand; orgshift never writes to AWS."
+      ]
+    }
+  ],
+  "notes": [
+    "Generated from a snapshot simulation. Every command is for an operator to review and run by hand; orgshift never writes to AWS.",
+    "Organizations has no call that moves an OU. The OU tree is created again under the new parent, the policies are attached to the new OUs and the accounts are moved one by one; new OU IDs are placeholders in angle brackets until they exist."
+  ]
+}

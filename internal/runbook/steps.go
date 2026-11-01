@@ -147,6 +147,8 @@ func policyTypeName(short string) string {
 		return string(snapshot.PolicyTypeRCP)
 	case "TAG":
 		return string(snapshot.PolicyTypeTag)
+	case "BACKUP":
+		return string(snapshot.PolicyTypeBackup)
 	}
 	return string(snapshot.PolicyTypeSCP)
 }

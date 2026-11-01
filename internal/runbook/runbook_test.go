@@ -332,3 +332,125 @@ func TestWithoutSnapshotsStillBuilds(t *testing.T) {
 		t.Fatalf("json round trip: %v", err)
 	}
 }
+
+type ouScenario struct {
+	name     string
+	from, to *snapshot.Snapshot
+	ou       string
+	parent   string
+}
+
+func ouScenarios() []ouScenario {
+	l, f := fixtures.Larkspur(), fixtures.Fernhill()
+	return []ouScenario{
+		{"ou-cross-org-workloads-to-fernhill-business-units", l, f, fixtures.LarkspurWorkloadsOU, fixtures.FernhillBusinessUnitsOU},
+		{"ou-same-org-production-to-root", l, nil, "ou-lark-prod", "r-lark"},
+	}
+}
+
+func buildOUScenario(t *testing.T, sc ouScenario) *OURunbook {
+	t.Helper()
+	res, err := evaluator.EvaluateOU(evaluator.OUInput{From: sc.from, To: sc.to, OUID: sc.ou, TargetParentID: sc.parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return BuildOU(res, sc.from, sc.to)
+}
+
+func TestGoldenOU(t *testing.T) {
+	for _, sc := range ouScenarios() {
+		t.Run(sc.name, func(t *testing.T) {
+			compareGolden(t, sc.name, buildOUScenario(t, sc))
+		})
+	}
+}
+
+func ouStepWith(t *testing.T, rb *OURunbook, phase string, want string) Step {
+	t.Helper()
+	for _, s := range rb.Phase(phase).Steps {
+		if strings.Contains(s.Title, want) {
+			return s
+		}
+	}
+	t.Fatalf("no OU step in phase %s with %q in its title; have:\n%s", phase, want, titles(rb.Phase(phase)))
+	return Step{}
+}
+
+func TestOURunbooks(t *testing.T) {
+	rb := buildOUScenario(t, ouScenarios()[0]) // Workloads into Fernhill Business Units
+	if rb.Verdict != evaluator.StatusNoGo || len(rb.Accounts) != 3 {
+		t.Fatalf("verdict %s, %d accounts", rb.Verdict, len(rb.Accounts))
+	}
+	s := ouStepWith(t, rb, PhaseBefore, "Clear the blockers of")
+	if s.Status != evaluator.StatusNoGo || !strings.Contains(s.Detail, "larkspur-payments-prod (111111111115)") {
+		t.Errorf("blocker overview: %+v", s)
+	}
+	s = ouStepWith(t, rb, PhaseRecreate, "Create policy Larkspur-Allowed-Regions (SCP) in Fernhill Group")
+	if len(s.Evidence) != 1 || len(s.Evidence[0].StatementJSON) == 0 || !strings.Contains(strings.Join(s.Commands, "\n"), "create-policy --name Larkspur-Allowed-Regions --type SERVICE_CONTROL_POLICY") {
+		t.Errorf("policy recreation should carry the document: %+v", s)
+	}
+	if s = ouStepWith(t, rb, PhaseRecreate, "Create policy Larkspur-Daily-Backups (BACKUP)"); !strings.Contains(s.Commands[0], "--type BACKUP_POLICY") {
+		t.Errorf("backup policy type: %v", s.Commands)
+	}
+	rec := rb.Phase(PhaseRecreate).Steps
+	var order []string
+	for _, st := range rec {
+		if st.Kind == KindOU {
+			order = append(order, st.Title)
+		}
+	}
+	if len(order) != 3 || !strings.HasPrefix(order[0], "Create OU Workloads under OU Business Units (ou-fern-bu)") || !strings.Contains(order[1], "under the new Workloads OU") {
+		t.Errorf("OU creation order: %v", order)
+	}
+	s = ouStepWith(t, rb, PhaseRecreate, "Attach to the new Workloads OU: SCP Larkspur-Allowed-Regions")
+	if !strings.Contains(strings.Join(s.Commands, "\n"), "attach-policy --policy-id <ID of the recreated Larkspur-Allowed-Regions> --target-id <ID of the new Workloads OU>") {
+		t.Errorf("cross-org attach should use placeholders: %v", s.Commands)
+	}
+	ouStepWith(t, rb, PhaseMove, "Move the 3 account(s) one by one")
+	s = ouStepWith(t, rb, PhaseMove, "Move larkspur-payments-prod (111111111115) from the target root into the new Production OU")
+	if !strings.Contains(strings.Join(s.Commands, "\n"), "--source-parent-id r-fern --destination-parent-id <ID of the new Production OU>") {
+		t.Errorf("cross-org account move: %v", s.Commands)
+	}
+	ouStepWith(t, rb, PhaseAfter, "The new parent Business Units is registered with Control Tower")
+	s = ouStepWith(t, rb, PhaseAfter, "Delete the 3 empty source OU(s)")
+	if len(s.Commands) != 3 || !strings.Contains(s.Commands[0], "ou-lark-dev") && !strings.Contains(s.Commands[0], "ou-lark-prod") || !strings.Contains(s.Commands[2], "ou-lark-work") {
+		t.Errorf("source OUs should be deleted deepest first: %v", s.Commands)
+	}
+	ouStepWith(t, rb, PhaseRollback, "Recreate OU Workloads under root Root (r-lark) with its attachments")
+	// Account runbooks are embedded and do not move on their own.
+	var acct *Runbook
+	for _, a := range rb.Accounts {
+		if a.Subject.AccountID == fixtures.LarkspurPaymentsProd {
+			acct = a
+		}
+	}
+	if acct == nil || rb.Accounts[0].Verdict != evaluator.StatusNoGo {
+		t.Fatalf("accounts should keep the rollup order (worst first) and include the payments account")
+	}
+	if mv := acct.Phase(PhaseMove).Steps; len(mv) != 1 || !strings.Contains(mv[0].Title, "Moved together with OU Workloads") {
+		t.Errorf("embedded account runbook should not move on its own:\n%s", titles(acct.Phase(PhaseMove)))
+	}
+	if len(acct.Phase(PhaseBefore).Steps) == 0 || len(acct.Phase(PhaseRecreate).Steps) == 0 {
+		t.Error("embedded account runbook should still carry its blockers and re-creations")
+	}
+	if rb.Accounts[0].Phase(PhaseRollback).Steps[0].Kind != KindRollback || len(rb.Accounts[0].Phase(PhaseRollback).Steps[0].Evidence) == 0 {
+		t.Error("embedded rollback should carry the source chain")
+	}
+
+	// Same-org: real policy IDs, accounts moved by the OU, old OUs deleted.
+	rb = buildOUScenario(t, ouScenarios()[1])
+	s = ouStepWith(t, rb, PhaseRecreate, "Attach to the new Production OU: BACKUP Larkspur-Daily-Backups")
+	if !strings.Contains(strings.Join(s.Commands, "\n"), "attach-policy --policy-id p-lark0005 --target-id <ID of the new Production OU>") {
+		t.Errorf("same-org attach should reuse the policy: %v", s.Commands)
+	}
+	s = ouStepWith(t, rb, PhaseMove, "Move larkspur-payments-prod (111111111115) from Production (ou-lark-prod) into the new Production OU")
+	if !strings.Contains(strings.Join(s.Commands, "\n"), "--source-parent-id ou-lark-prod --destination-parent-id <ID of the new Production OU>") {
+		t.Errorf("same-org account move: %v", s.Commands)
+	}
+	ouStepWith(t, rb, PhaseRollback, "Move larkspur-payments-prod (111111111115) back into Production")
+	for _, st := range rb.Steps() {
+		if strings.Contains(st.Title, "invite") || strings.Contains(st.Title, "Create policy") {
+			t.Errorf("same-org OU runbook must not recreate policies or invite accounts: %s", st.Title)
+		}
+	}
+}

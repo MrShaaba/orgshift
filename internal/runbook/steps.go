@@ -94,7 +94,7 @@ func (b *builder) policyStep(typ, checkID string, status evaluator.Status, ev *e
 	if len(fs) == 1 {
 		s.Finding, s.Principal, s.Resource, s.Regions = fs[0].Title, fs[0].Principal, fs[0].Resource, fs[0].Regions
 	} else {
-		s.Finding = fmt.Sprintf("%d findings: %s", len(fs), strings.Join(what, "; "))
+		s.Finding = fmt.Sprintf("%d findings with the same cause", len(fs))
 	}
 	count := plural(len(fs), "request", "requests")
 	if len(principals) == 0 {

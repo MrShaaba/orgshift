@@ -84,7 +84,7 @@
           "kind": "policy-change",
           "where": "management account 222222222221 of Fernhill Group",
           "check": "scp",
-          "finding": "15 findings: cloudwatch:PutMetricData in ap-southeast-1, us-east-1; dynamodb:* in ap-southeast-1, us-east-1; ec2:CreateTransitGatewayVpcAttachment in ap-southeast-1, us-east-1; ec2:CreateVpc in ap-southeast-1, us-east-1; ec2:DescribeInstances in ap-southeast-1, us-east-1; ec2:RunInstances in ap-southeast-1, us-east-1; ec2:TerminateInstances in ap-southeast-1, us-east-1; kms:Decrypt in ap-southeast-1, us-east-1; lambda:InvokeFunction in ap-southeast-1, us-east-1; logs:CreateLogGroup in ap-southeast-1, us-east-1; rds:CreateDBInstance in us-east-1; rds:DescribeDBInstances in ap-southeast-1, us-east-1; s3:GetObject in ap-southeast-1, us-east-1; s3:PutObject in ap-southeast-1, us-east-1; secretsmanager:GetSecretValue in ap-southeast-1, us-east-1",
+          "finding": "15 findings with the same cause",
           "actions": [
             "cloudwatch:PutMetricData",
             "dynamodb:*",
@@ -153,7 +153,7 @@
           "kind": "policy-change",
           "where": "management account 222222222221 of Fernhill Group",
           "check": "scp",
-          "finding": "2 findings: ec2:CreateTransitGatewayVpcAttachment in eu-west-1; ec2:CreateVpc in eu-west-1",
+          "finding": "2 findings with the same cause",
           "actions": [
             "ec2:CreateTransitGatewayVpcAttachment",
             "ec2:CreateVpc"
@@ -279,7 +279,7 @@
           "kind": "policy-change",
           "where": "management account 222222222221 of Fernhill Group",
           "check": "rcp",
-          "finding": "4 findings: kms:Decrypt by arn:aws:iam::111111111118:role/DataPlatformIngest in us-east-1; s3:GetObject by 999999999999 in ap-southeast-1, eu-west-1, us-east-1; s3:ListBucket by 999999999999 in ap-southeast-1, eu-west-1, us-east-1; sts:AssumeRole by arn:aws:iam::111111111118:role/DataPlatformIngest",
+          "finding": "4 findings with the same cause",
           "actions": [
             "kms:Decrypt",
             "s3:GetObject",

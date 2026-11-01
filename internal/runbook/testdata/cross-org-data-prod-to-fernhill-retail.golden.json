@@ -83,7 +83,7 @@
           "kind": "policy-change",
           "where": "management account 222222222221 of Fernhill Group",
           "check": "scp",
-          "finding": "7 findings: athena:StartQueryExecution in us-east-1; ec2:CreateTransitGatewayVpcAttachment in us-east-1; ec2:RunInstances in us-east-1; glue:StartJobRun in us-east-1; kms:Decrypt in us-east-1; s3:GetObject in us-east-1; s3:PutObject in us-east-1",
+          "finding": "7 findings with the same cause",
           "actions": [
             "athena:StartQueryExecution",
             "ec2:CreateTransitGatewayVpcAttachment",

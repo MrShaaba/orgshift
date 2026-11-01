@@ -58,6 +58,25 @@ offline and reports:
   vended by Account Factory get a note about their provisioned product, and
   the `aws-guardrails-*` SCPs are labelled as Control Tower managed in the
   chain, diff and tree views.
+- **Migration runbook**: every result comes with an ordered checklist
+  generated from the findings. Before the move: each denied action grouped
+  by the SCP or RCP statement that causes it, with the exact change to
+  review and the statement as evidence, tags to fix, delegated
+  administration to hand over, Control Tower unenrolment, the
+  `LeaveOrganization` deny to lift, the standalone prerequisites. Then what
+  does not travel and has to be re-created: RAM shares re-shared with the
+  account directly, permission sets prepared in the target Identity Center,
+  StackSets, trusted access. Then the move itself (invite, leave, accept,
+  move; or the Account Factory flow when Control Tower requires it), the
+  checks afterwards (position, shares, CloudTrail and Config coverage,
+  assignments, flagged actions, a fresh simulation) and a rollback built
+  from the source chain. Whole-OU moves get the OU-level steps (the tree is
+  recreated, policies attached, accounts moved one by one) plus one
+  checklist per account. The UI renders it as a checklist that remembers
+  ticks in the browser; it exports as Markdown and JSON. It is a document:
+  every command is for you to review and run by hand, and orgshift still
+  never writes to AWS. The phases and the JSON shape are in
+  [docs/runbook.md](docs/runbook.md).
 - **IAM Identity Center**: when a snapshot carries an Identity Center
   instance, a cross-organization move lists every account assignment on the
   account (users and groups per permission set), says whether the target
@@ -117,10 +136,19 @@ go build -o orgshift ./cmd/orgshift
   --from fixtures/larkspur-holdings.json \
   --to fixtures/fernhill-group.json \
   --ou ou-lark-work --target-ou ou-fern-bu
+
+# the migration runbook for the payments move, as a Markdown checklist
+./orgshift simulate \
+  --from fixtures/larkspur-holdings.json \
+  --to fixtures/fernhill-group.json \
+  --account 111111111115 --target-ou ou-fern-pay1 \
+  --format runbook --out payments-runbook.md
 ```
 
 `simulate` exits 0 for GO, 2 for REVIEW and 3 for NO-GO, so it can gate a
-pipeline. `--format json|markdown` and `--out` write the full report.
+pipeline. `--format json|markdown` and `--out` write the full report;
+`--format runbook` (Markdown) and `--format runbook-json` write the
+migration runbook instead.
 
 ### The web UI
 
@@ -130,10 +158,12 @@ pipeline. `--format json|markdown` and `--out` write the full report.
 ```
 
 Load two snapshots (or the fixtures), pick the account and the target OU,
-and the page shows the verdict board with expandable explanations, the two
-organization trees side by side with the policy chain highlighted and the
-account drawn at its future position, the "what changes" diff of effective
-policies, and export buttons.
+and the page shows the verdict board with expandable explanations, the
+migration runbook as a checklist (ticks are remembered by the browser, the
+"Export runbook" button writes it as Markdown), the two organization trees
+side by side with the policy chain highlighted and the account drawn at its
+future position, the "what changes" diff of effective policies, and export
+buttons.
 
 Switch "What moves" to "a whole OU" to move an OU instead: the result opens
 with the per-account rollup table, the OU's own findings (what travels with
@@ -174,7 +204,9 @@ account.
      --account 111111111115 --target-ou ou-xxxx-yyyy --last-accessed last-accessed.json
    ```
 
-3. Read the verdict, fix what it lists, collect again, repeat until GO.
+3. Read the verdict, work through the runbook (fix what it lists before
+   the move, re-create what does not travel), collect again, repeat until
+   GO. The runbook's commands are for you to run; orgshift only reads.
 
 `snapshots/`, `*.snapshot.json` and `.env` are ignored by git so real data
 does not end up in the repository.
@@ -208,18 +240,19 @@ internal/snapshot     versioned snapshot schema, loader, validation
 internal/policy       IAM policy parsing and tri-state statement matching
 internal/evaluator    effective policies, tag policies, cross-org checks, verdict
 internal/fixtures     the Larkspur Holdings and Fernhill Group generator
-internal/report       JSON, Markdown and text rendering
+internal/runbook      migration runbook built from a result: fix, re-create, move, check, roll back
+internal/report       JSON, Markdown and text rendering, runbook Markdown
 internal/usage        actions-in-use files and IAM last-accessed import
 internal/web          html/template + HTMX UI, embedded static files
 internal/collector    read-only AWS collector behind an operation allowlist
-docs/                 snapshot schema, permissions, screenshot
+docs/                 snapshot schema, permissions, runbook, screenshot
 ```
 
 ## Development
 
 ```sh
 go vet ./... && go run honnef.co/go/tools/cmd/staticcheck@2024.1.1 ./... && go test ./...
-go test ./internal/evaluator -update   # refresh golden files after reviewing a change
+go test ./internal/evaluator ./internal/runbook ./internal/report -update   # refresh golden files after reviewing a change
 ```
 
 See [ROADMAP.md](ROADMAP.md) for what comes next.

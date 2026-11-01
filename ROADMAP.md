@@ -24,6 +24,15 @@ Done since the first pass:
   stale ones included; golden scenario for larkspur-data-prod into
   Fernhill Retail). Left open: group memberships are not collected and the
   role suffix is only known inside the member account.
+- The migration runbook (`internal/runbook`, `simulate --format runbook`,
+  the checklist panel and the "Export runbook" button in the UI): blockers
+  grouped by the policy statement to review, shares and delegations to
+  re-create, the `LeaveOrganization` deny found in the source chain, the
+  move in order, the checks afterwards and a rollback from the source
+  chain; OU runbooks recreate the tree and embed one checklist per account.
+  Golden tests on every fixture scenario. Left open: the runbook knows
+  Organizations, RAM, Control Tower and Identity Center; CloudTrail Lake
+  import and Access Analyzer validation would add steps of their own.
 
 ## Actions in use from CloudTrail and CloudTrail Lake (opt-in, cost warning)
 
@@ -59,18 +68,6 @@ Done since the first pass:
 - Add `DECLARATIVE_POLICY_EC2`, `CHATBOT_POLICY` and `SECURITYHUB_POLICY` to
   the chain display so nothing attached is invisible, even before they are
   evaluated.
-
-## Migration runbook generated from the findings
-
-- Turn the findings into an ordered checklist: re-share networking
-  resources with the account directly, re-delegate administration, lift the
-  `LeaveOrganization` deny, satisfy standalone prerequisites, accept the
-  invitation, verify the trail and Config coverage, re-tag resources, and
-  so on.
-- Export it as Markdown next to the existing JSON and Markdown reports, with
-  the evidence links kept.
-- Include a rollback section (move back, re-attach policies) built from the
-  source chain.
 
 ## Smaller items
 

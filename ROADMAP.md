@@ -18,6 +18,21 @@ the summary says what to try.
 - **M4 and later:** Section 5 beyond Organizations, Control Tower and
   Identity Center; then Section 8; then the rest.
 
+## Next up: about 35 hours
+
+Remaining work, sized. Details for each item are in the sections below.
+
+| Item | Hours |
+| --- | --- |
+| M4: workload inventory and deployment provenance, so the workload layer and the recreate strategy are evaluated rather than only reported | 8 |
+| Section 8: network-path reasoning behind the validation stages | 6 |
+| Section 9: stable finding identifiers, severities and redaction | 3 |
+| Actions in use from CloudTrail and CloudTrail Lake | 4 |
+| IAM Access Analyzer policy validation | 3 |
+| Backup policy and AI opt-out policy comparison | 4 |
+| Smaller items | 7 |
+| **Total** | **35** |
+
 Hard rule for the development sessions: never run `orgshift collect`, the
 AWS CLI or any AWS SDK call against a real account; fixtures and mocks only.
 Live collection is run by the owner. The server on 8080 is left alone.
@@ -208,7 +223,7 @@ Done since the first pass:
   Organizations, RAM, Control Tower and Identity Center; CloudTrail Lake
   import and Access Analyzer validation would add steps of their own.
 
-## Actions in use from CloudTrail and CloudTrail Lake (opt-in, cost warning)
+## Actions in use from CloudTrail and CloudTrail Lake (opt-in, cost warning) (4 h)
 
 - `orgshift collect --with-cloudtrail-lake --event-data-store … --days 90`
   runs one aggregated query (`eventSource`, `eventName`, `awsRegion`,
@@ -221,7 +236,7 @@ Done since the first pass:
 - Record `source: cloudtrail-lake` on the entries so the UI can show where
   each action came from.
 
-## IAM Access Analyzer policy validation
+## IAM Access Analyzer policy validation (3 h)
 
 - Run `access-analyzer:ValidatePolicy` (policy type `SERVICE_CONTROL_POLICY`
   and `RESOURCE_CONTROL_POLICY`) over every policy in the target chain and
@@ -231,7 +246,7 @@ Done since the first pass:
 - Keep it behind `--with-access-analyzer`; the calls are free but need live
   credentials, which the simulator otherwise never requires.
 
-## Backup policy and AI opt-out policy comparison
+## Backup policy and AI opt-out policy comparison (4 h)
 
 - Merge backup policies along both chains with the same inheritance
   operators as tag policies and diff plans, rules, vault names, regions and
@@ -243,15 +258,15 @@ Done since the first pass:
   the chain display so nothing attached is invisible, even before they are
   evaluated.
 
-## Smaller items
+## Smaller items (7 h)
 
 - Collect organization trails, Config aggregators and StackSets in
   `orgshift collect` (free `Describe`/`List` calls, with the allowlist test
-  extended). Until then the coverage block records them as unsupported.
+  extended). Until then the coverage block records them as unsupported. (3 h)
 - Collect a tagged resource sample with `tag:GetResources` for tag policy
-  checks.
+  checks. (1.5 h)
 - Evaluate `aws:SourceVpc`, `aws:SourceIp` and `aws:CalledVia` conditions
-  when the usage entry supplies them, instead of returning REVIEW.
-- A `--fail-on review` switch for CI so a REVIEW can be made blocking.
+  when the usage entry supplies them, instead of returning REVIEW. (2 h)
+- A `--fail-on review` switch for CI so a REVIEW can be made blocking. (0.5 h)
 - Stable finding identifiers and severities on every finding (Section 9 of
-  the brief).
+  the brief; counted in the Section 9 line above).

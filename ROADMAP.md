@@ -8,8 +8,9 @@ the summary says what to try.
 
 - **M1 (done, 2026-11-01):** Section 2, the audit findings with regression
   tests and fuzzing, plus Section 4, the collection completeness model.
-- **M2:** Section 3, onboarding configuration, IAM templates and the
-  permission preflight.
+- **M2 (done, 2026-11-02):** Section 3, onboarding configuration, IAM
+  templates and the permission preflight, plus bounded concurrency,
+  retries, resumable collection and the move to Go 1.24.
 - **M3:** Sections 6 and 7 for the same-organization and cross-organization
   paths, with end-to-end fixtures and the CLI and UI.
 - **M4 and later:** Section 5 beyond Organizations, Control Tower and
@@ -71,11 +72,50 @@ Completeness (Section 4):
   gap.
 - A third fixture, Larkspur Holdings (partial collection), shows all of it.
 
-Left for later milestones: bounded concurrency and resumable collection
-(M2, with the onboarding configuration); the scenario overlay file that
-keeps proposed changes apart from the immutable snapshot (M3, with the stage
-model); reading `RetainSharingOnAccountLeaveOrganization` from RAM (the SDK
-module that exposes it requires Go 1.24).
+Left for later milestones: the scenario overlay file that keeps proposed
+changes apart from the immutable snapshot (M3, with the stage model).
+
+### M2 outcome
+
+Onboarding (Section 3):
+
+- One configuration file (`internal/config`, YAML or JSON, `orgshift config
+  example` and `config check`) describes the source and destination
+  management access, the member inspection role, the network and security
+  accounts, the Control Tower home region, the Identity Center region (and
+  optionally its delegated administrator) and the workload regions.
+  Credentials come from profiles, Identity Center sessions (`sso_session`,
+  cached token) or the management credentials, with optional assume-role
+  chains (`internal/awsaccess`). Unknown fields are errors.
+- Every credential is verified with `sts:GetCallerIdentity` against the
+  account the configuration names; `collect` refuses to run on a mismatch
+  and the preflight reports it without probing further.
+- The operation allowlist became a catalog (`internal/collector/operations.go`)
+  that classifies every operation orgshift calls or plans to call by
+  semantics (read, read-billable, session) and responsibility; tests refuse
+  any write or write verb, any billable read without an opt-in, any call not
+  in the catalog and any catalog entry nothing calls.
+- IAM templates (`internal/iamtemplates`, `orgshift iam-templates`,
+  docs/iam) generate one role per responsibility from the catalog: trust
+  policy, permissions policy with a justification for every `Resource: "*"`,
+  the account it goes in, the delegated-administrator alternative (an
+  Organizations delegation policy example; none for Control Tower; the
+  Identity Center delegated administrator) and the planned operations of
+  later milestones, listed but not granted.
+- The preflight (`internal/preflight`, `orgshift preflight`) tries the
+  cheapest read of every collection domain plus `sts:AssumeRole` into the
+  member role, classifies each call as available, denied, error or unknown,
+  and renders the result in the coverage matrix layout (text, Markdown and
+  JSON, `schema_version` 1) with the action and identity to grant for every
+  denial. Exit code 2 when not ready.
+- The collector runs per-item calls with bounded concurrency in a stable
+  order, retries throttling with full-jitter backoff on top of the SDK's
+  adaptive mode and records the retries per domain, and writes a checkpoint
+  after every completed step so a rerun restores the completed domains and
+  reads only the failed ones.
+- Go 1.24 and the current AWS SDK modules; the collector now reads
+  `RetainSharingOnAccountLeaveOrganization` from each share's configuration
+  and the RAM behaviour model uses it.
 
 ## Items the first pass deliberately left out
 

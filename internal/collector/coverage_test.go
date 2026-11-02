@@ -37,7 +37,8 @@ func (fakeRAMDenied) GetResourceShares(context.Context, *ram.GetResourceSharesIn
 	return nil, denied("ram:GetResourceShares")
 }
 
-// fakeOrgsPartial returns one page of policies and then fails.
+// fakeOrgsPartial lists two SCPs over two pages and fails to describe the
+// second one, so the first was read before the failure.
 type fakeOrgsPartial struct{ fakeOrgs }
 
 func (fakeOrgsPartial) ListPolicies(_ context.Context, in *organizations.ListPoliciesInput, _ ...func(*organizations.Options)) (*organizations.ListPoliciesOutput, error) {
@@ -47,7 +48,14 @@ func (fakeOrgsPartial) ListPolicies(_ context.Context, in *organizations.ListPol
 	if aws.ToString(in.NextToken) == "" {
 		return &organizations.ListPoliciesOutput{NextToken: aws.String("page2"), Policies: []orgtypes.PolicySummary{{Id: aws.String("p-FullAWSAccess"), Name: aws.String("FullAWSAccess"), AwsManaged: true, Type: orgtypes.PolicyTypeServiceControlPolicy}}}, nil
 	}
-	return nil, errors.New("ThrottlingException: Rate exceeded")
+	return &organizations.ListPoliciesOutput{Policies: []orgtypes.PolicySummary{{Id: aws.String("p-second"), Name: aws.String("Second"), Type: orgtypes.PolicyTypeServiceControlPolicy}}}, nil
+}
+
+func (f fakeOrgsPartial) DescribePolicy(ctx context.Context, in *organizations.DescribePolicyInput, opts ...func(*organizations.Options)) (*organizations.DescribePolicyOutput, error) {
+	if aws.ToString(in.PolicyId) == "p-second" {
+		return nil, errors.New("ThrottlingException: Rate exceeded")
+	}
+	return f.fakeOrgs.DescribePolicy(ctx, in, opts...)
 }
 
 // fakeOrgsCTTrusted is fakeOrgs with trusted access for Control Tower and
@@ -122,7 +130,7 @@ func TestCoverageRecordsPartialPaginationAndDropsTheHalfReadType(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := record(t, snap, snapshot.DomainPoliciesSCP)
-	if rec.Status != snapshot.CoveragePartial || rec.Pages < 1 || !strings.Contains(rec.Error, "1 policies read before the failure were dropped") || !strings.Contains(rec.Error, "ThrottlingException") {
+	if rec.Status != snapshot.CoveragePartial || rec.Pages < 2 || !strings.Contains(rec.Error, "1 policies read before the failure were dropped") || !strings.Contains(rec.Error, "describe p-second") || !strings.Contains(rec.Error, "ThrottlingException") {
 		t.Errorf("record: %+v", rec)
 	}
 	if len(snap.Policies) != 0 {
@@ -172,7 +180,7 @@ func TestWrongRegionIsAnErrorNotAnAbsence(t *testing.T) {
 		t.Fatal("no landing zone must be invented")
 	}
 	rec := record(t, snap, snapshot.DomainControlTower)
-	if rec.Status != snapshot.CoverageError || !strings.Contains(rec.Error, "trusted access for controltower.amazonaws.com is enabled") || !strings.Contains(rec.Error, "--region <home region>") || rec.Region != "eu-west-3" {
+	if rec.Status != snapshot.CoverageError || !strings.Contains(rec.Error, "trusted access for controltower.amazonaws.com is enabled") || !strings.Contains(rec.Error, "control_tower.home_region") || rec.Region != "eu-west-3" {
 		t.Errorf("wrong-region record: %+v", rec)
 	}
 	if rec := record(t, snap, snapshot.DomainEnrolledAccounts); rec.Status != snapshot.CoverageError {

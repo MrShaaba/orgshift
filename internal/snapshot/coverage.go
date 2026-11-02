@@ -145,6 +145,9 @@ type DomainCoverage struct {
 	// Items counts the observations recorded; Pages the API pages read.
 	Items int `json:"items,omitempty"`
 	Pages int `json:"pages,omitempty"`
+	// Retries counts the throttling retries the collector performed for the
+	// domain beyond what the SDK retried itself.
+	Retries int `json:"retries,omitempty"`
 	// Error carries the API error for partial, access_denied and error.
 	Error string `json:"error,omitempty"`
 	// Reason explains skipped, unsupported and empty records.

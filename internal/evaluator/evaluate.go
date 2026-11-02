@@ -78,7 +78,7 @@ func evaluateMove(m move) (*Result, error) {
 	}
 	e.src = side{name: "source", snap: m.from, ix: m.fromIx, orgID: m.from.Organization.ID, path: m.fromIx.PathTo(acct.ID), fresh: map[string]bool{}}
 	e.dst = side{name: "target", snap: m.to, ix: m.toIx, orgID: m.to.Organization.ID, path: m.targetPath, fresh: m.fresh}
-	if e.src.path == nil || len(e.dst.path) < 2 {
+	if len(e.src.path) == 0 || len(e.dst.path) < 2 {
 		return nil, fmt.Errorf("could not resolve the account's path in one of the snapshots")
 	}
 	targetOUID := e.dst.path[len(e.dst.path)-2].ID

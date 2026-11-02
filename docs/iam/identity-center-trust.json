@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OrgshiftOperator",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "<operator-principal-arn>"
+        ]
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

@@ -99,7 +99,7 @@ AWS RAM shares as seen from the owning organization.
 | --- | --- |
 | `arn`, `name`, `owner_account_id`, `status` | As returned by RAM. |
 | `allow_external_principals` | Whether the share can reach accounts outside the organization. |
-| `retain_sharing_on_account_leave_organization` | RAM's `RetainSharingOnAccountLeaveOrganization`: a share addressed to an account ID keeps reaching it after it leaves the organization (as an invitation). Hand-entered; the collector does not read it yet (see docs/aws-behaviour.md). Defaults to false, the safe reading. |
+| `retain_sharing_on_account_leave_organization` | RAM's `RetainSharingOnAccountLeaveOrganization`: a share addressed to an account ID keeps reaching it after it leaves the organization (as an invitation). Read by the collector from the share's configuration; false when RAM reports none, the safe reading (see docs/aws-behaviour.md). |
 | `principals` | Account IDs, organization ARNs (`arn:aws:organizations::123456789012:organization/o-…`), OU ARNs (`arn:aws:organizations::123456789012:ou/o-…/ou-…`), IAM ARNs or service principals. The scope (organization, OU, account) is derived from the shape of each value. |
 | `resources` | Array of `{arn, type}` where `type` uses RAM notation: `ec2:TransitGateway`, `ec2:Subnet`, `route53resolver:ResolverRule`, `ec2:IpamPool`, `ec2:PrefixList`, and others. What losing a share of each type means is modelled per type in docs/aws-behaviour.md. |
 
@@ -136,8 +136,9 @@ Each record:
 | `collected_at` | RFC 3339. |
 | `operations` | The API operations called. |
 | `items`, `pages` | Observations recorded and pages read. |
+| `retries` | Throttling retries the collector performed for the domain beyond the SDK's own. |
 | `error` | The API error (with its code) for `partial`, `access_denied` and `error`. Required for those statuses. |
-| `reason` | Why a domain is `skipped`, `unsupported` or `empty` (for example "policy type not enabled at the root", or the wrong-region hint). |
+| `reason` | Why a domain is `skipped`, `unsupported` or `empty` (for example "policy type not enabled at the root", or the wrong-region hint). A record restored from a checkpoint by a resumed collection says so here. |
 
 Which domains a simulation requires depends on the move: a same-organization
 move needs the tree, the enabled policy types, the moving account's regions,
@@ -243,7 +244,7 @@ Resource Groups Tagging API. Used to check tag policy compliance.
 
 `orgshift collect` fills the organization, root, OUs, accounts (including
 tags, join date and enabled regions), policies with targets, resource shares
-(without the retain flag), delegated administrators, trusted-access
+(with the retain-on-leave flag), delegated administrators, trusted-access
 services, the Control Tower block (landing zone with auto-enrollment,
 registered OUs, enrolled accounts and enabled controls; not Account Factory
 provenance), the Identity Center block (instance, permission sets with their

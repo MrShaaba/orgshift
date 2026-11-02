@@ -124,7 +124,7 @@ uncertainty.
 
 ## Stack
 
-Go 1.23, a single binary. `aws-sdk-go-v2` for the read-only collector,
+Go 1.24, a single binary. `aws-sdk-go-v2` for the read-only collector,
 `html/template` and HTMX for the UI (static files embedded with `embed`, no
 Node build step), `go test` with golden-file tests on fixture organizations
 and fuzz targets for the policy parser, the matcher, the snapshot loader and
@@ -212,28 +212,57 @@ account.
 
 ## Using it on a real organization
 
-1. Collect a snapshot of each organization with read-only credentials:
+The onboarding flow is one configuration file, the IAM roles generated from
+it, a preflight and then the collection; [docs/onboarding.md](docs/onboarding.md)
+has every option.
+
+1. Describe the access:
 
    ```sh
-   ./orgshift collect --profile source-mgmt --name "Source Organization" --out snapshots/source.json
-   ./orgshift collect --profile target-mgmt --name "Destination Organization" --out snapshots/target.json
+   ./orgshift config example > orgshift.yaml     # edit: accounts, profiles or SSO sessions, regions, roles
+   ./orgshift config check --config orgshift.yaml
    ```
 
-   The minimal IAM policy and the list of operations are in
-   [docs/permissions.md](docs/permissions.md). RAM only shows shares owned by
-   the calling account, so pass `--ram-profiles network` for accounts that own
-   the shares you care about. If the organization runs Control Tower, set
-   `--region` to the landing zone's home region so the registered OUs,
-   enrolled accounts and enabled controls are collected; the collector
-   notices when it is asked in the wrong region (trusted access shows the
-   service is in use but nothing answers) and records an error instead of an
-   empty block. The same goes for IAM Identity Center. Every domain the
-   collector could not read ends up in the snapshot's `coverage` block, and
-   the command prints the gaps. Optional data sources that cost money
-   (CloudTrail Lake, Config advanced queries) are behind opt-in flags that
-   are off by default and refused until they are implemented.
+2. Create the read-only roles. `orgshift iam-templates --config orgshift.yaml
+   --out iam/` writes one role per collector responsibility (org management,
+   Control Tower, Identity Center, member inspection, network) with its
+   trust policy, the account it goes in, the delegated-administrator
+   alternative and a justification for every `Resource: "*"`; the
+   placeholder version is in [docs/iam](docs/iam/README.md). Every action
+   comes from the operation catalog, which classifies each operation
+   orgshift calls as a free read, a billable read behind an opt-in, or a
+   session operation, and whose tests refuse any write
+   ([docs/permissions.md](docs/permissions.md)).
 
-2. Tell orgshift what the account does. Add `usage.<account-id>.actions`,
+3. Check the permissions before collecting:
+
+   ```sh
+   ./orgshift preflight --config orgshift.yaml
+   ```
+
+   Every credential is checked with `sts:GetCallerIdentity` against the
+   account the configuration names; then the cheapest read of each
+   collection domain is tried and reported as available, denied, error or
+   unknown, in the coverage matrix layout, with the action and identity to
+   grant for every denial. Exit code 0 means ready.
+
+4. Collect a snapshot of each organization:
+
+   ```sh
+   ./orgshift collect --config orgshift.yaml --side source --out snapshots/source.json
+   ./orgshift collect --config orgshift.yaml --side destination --out snapshots/destination.json
+   ```
+
+   The collector refuses to run when a credential belongs to another
+   account than configured. Per-item calls run a few at a time, throttling
+   is retried with backoff, and a checkpoint next to the output lets a rerun
+   restore the completed steps and read only what was denied or cut short.
+   Every domain the collector could not read ends up in the snapshot's
+   `coverage` block, and the command prints the gaps. Optional data sources
+   that cost money (CloudTrail Lake, Config advanced queries) are behind
+   opt-ins that are off by default and refused until they are implemented.
+
+5. Tell orgshift what the account does. Add `usage.<account-id>.actions`,
    `inbound_access` and `tagged_resources` to the source snapshot (the format
    is in [docs/snapshot.md](docs/snapshot.md)), or import an IAM last-accessed
    export:
@@ -241,20 +270,20 @@ account.
    ```sh
    aws iam generate-service-last-accessed-details --arn arn:aws:iam::111111111115:role/App --granularity ACTION_LEVEL
    aws iam get-service-last-accessed-details --job-id … > last-accessed.json
-   ./orgshift simulate --from snapshots/source.json --to snapshots/target.json \
+   ./orgshift simulate --from snapshots/source.json --to snapshots/destination.json \
      --account 111111111115 --target-ou ou-xxxx-yyyy --last-accessed last-accessed.json
    ```
 
    The snapshot file is never modified; the import is merged in memory for
    that run.
 
-3. Read the verdict and the coverage matrix, work through the runbook
+6. Read the verdict and the coverage matrix, work through the runbook
    (collect what is missing, fix what it lists before the move, re-create
    what does not travel), collect again, repeat until GO. The runbook's
    commands are for you to run; orgshift only reads.
 
-`snapshots/`, `*.snapshot.json` and `.env` are ignored by git so real data
-does not end up in the repository.
+`snapshots/`, `*.snapshot.json`, `*.checkpoint.json`, `orgshift.yaml` and
+`.env` are ignored by git so real data does not end up in the repository.
 
 ## Assumptions worth knowing
 
@@ -290,7 +319,11 @@ does not end up in the repository.
 ## Repository layout
 
 ```
-cmd/orgshift          CLI: fixtures, simulate, serve, collect
+cmd/orgshift          CLI: fixtures, simulate, serve, config, iam-templates, preflight, collect
+internal/config       onboarding configuration (YAML or JSON): access per side, regions, collection options
+internal/awsaccess    credentials from profiles, Identity Center sessions and assume-role chains; identity check
+internal/iamtemplates IAM role templates per collector responsibility, generated from the operation catalog
+internal/preflight    permission preflight: the cheapest read per domain, reported as a coverage matrix
 internal/snapshot     versioned snapshot schema, coverage model, loader, validation
 internal/policy       IAM policy parsing and tri-state statement matching (fuzzed)
 internal/evaluator    effective policies, RCP and RAM models, coverage requirements, tag policies, cross-org checks, verdict
@@ -299,15 +332,16 @@ internal/runbook      migration runbook built from a result: collect, fix, re-cr
 internal/report       JSON, Markdown and text rendering, runbook Markdown
 internal/usage        actions-in-use files and IAM last-accessed import
 internal/web          html/template + HTMX UI, embedded static files
-internal/collector    read-only AWS collector behind an operation allowlist, recording coverage
-docs/                 snapshot schema, permissions, runbook, AWS behaviour references, screenshot
+internal/collector    read-only AWS collector behind an operation catalog, with bounded concurrency, retries, checkpoints and coverage
+docs/                 onboarding, snapshot schema, permissions, IAM templates, runbook, AWS behaviour references, screenshot
 ```
 
 ## Development
 
 ```sh
-go vet ./... && go run honnef.co/go/tools/cmd/staticcheck@2024.1.1 ./... && go test ./...
+go vet ./... && go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./... && go test ./...
 go test ./internal/evaluator ./internal/runbook ./internal/report -update   # refresh golden files after reviewing a change
+go test ./internal/iamtemplates -update                                       # regenerate docs/iam from the operation catalog
 go test ./internal/policy -run '^$' -fuzz FuzzParseAndApply -fuzztime 60s      # fuzz the policy parser and matcher
 go test ./internal/evaluator -run '^$' -fuzz FuzzEvaluateWithPolicyDocument -fuzztime 60s
 ```

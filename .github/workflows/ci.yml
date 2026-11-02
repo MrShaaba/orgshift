@@ -22,7 +22,7 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@2024.1.1 ./...
+        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
       - name: go test
         run: go test ./...
       - name: go build
@@ -49,6 +49,19 @@ jobs:
           grep -q '"status": "access_denied"' /tmp/partial.json
           grep -q '"complete": false' /tmp/partial.json
           grep -q '"id": "rcp-applicability"' /tmp/partial.json
+      - name: onboarding smoke test (offline)
+        run: |
+          ./orgshift config example > /tmp/orgshift.yaml
+          ./orgshift config check --config /tmp/orgshift.yaml
+          ./orgshift config check --config /tmp/orgshift.yaml --format json | grep -q '"schema_version": 1'
+          ./orgshift iam-templates --out /tmp/iam
+          test -s /tmp/iam/README.md && grep -q '"sts:AssumeRole"' /tmp/iam/org-management-permissions.json
+          ./orgshift iam-templates --config /tmp/orgshift.yaml --out /tmp/iam-cfg
+          grep -q 'arn:aws:iam::111111111111:role/PlatformOperators' /tmp/iam-cfg/org-management-trust.json
+          # collect and preflight refuse to run without knowing which account the credentials must belong to; no AWS call is made
+          if ./orgshift collect --profile nope --out /tmp/never.json; then exit 1; fi
+          if ./orgshift preflight; then exit 1; fi
+          test ! -e /tmp/never.json
       - name: fuzz smoke test
         run: |
           go test ./internal/policy -run '^$' -fuzz FuzzParseAndApply -fuzztime 20s

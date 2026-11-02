@@ -63,6 +63,42 @@ type coverageRequirement struct {
 	accountScoped bool
 }
 
+// DomainDescription says what a collection domain decides and which verdict
+// board check depends on it. The preflight uses it to label its matrix with
+// the same words as the evaluation.
+type DomainDescription struct {
+	Domain string `json:"domain"`
+	Why    string `json:"why"`
+	Check  string `json:"check,omitempty"`
+}
+
+// domainDescriptions is the single list of domains, in matrix order.
+var domainDescriptions = []DomainDescription{
+	{snapshot.DomainOrganization, "the organization identity that decides whether this is a cross-organization move", coverageCheckID},
+	{snapshot.DomainTree, "the OU hierarchy, the account's position and the policy attachment targets", coverageCheckID},
+	{snapshot.DomainPoliciesSCP, "the SCP chains evaluated against the actions in use", "scp"},
+	{snapshot.DomainPoliciesRCP, "the RCP chains evaluated against inbound access and the account's own actions", "rcp"},
+	{snapshot.DomainPoliciesTag, "the effective tag policy at the target and the one it replaces", "tags"},
+	{snapshot.DomainPoliciesBackup, "backup policies are shown in the diff only", ""},
+	{snapshot.DomainEnabledRegions, "the regions an action is evaluated in when it names none", "scp"},
+	{snapshot.DomainAccountTags, "account tags are shown for context only", ""},
+	{snapshot.DomainResourceShares, "RAM shares that stop or start reaching the account", "ram"},
+	{snapshot.DomainStackSets, "service-managed StackSets that target the account's OUs", "org-services"},
+	{snapshot.DomainDelegatedAdmins, "delegated administration, which blocks leaving the organization", "org-services"},
+	{snapshot.DomainTrustedAccess, "trusted access the target needs for the integrations in use", "org-services"},
+	{snapshot.DomainOrgTrails, "organization trails that stop or start covering the account", "org-services"},
+	{snapshot.DomainConfigAggregator, "organization Config aggregators that stop or start receiving the account", "org-services"},
+	{snapshot.DomainControlTower, "the landing zone, its registered OUs and the controls that apply", "control-tower"},
+	{snapshot.DomainEnrolledAccounts, "which accounts are enrolled rather than merely placed in a registered OU", "control-tower"},
+	{snapshot.DomainIdentityCenter, "the assignments and roles that are removed when the account leaves", "identity-center"},
+}
+
+// DescribeDomains returns every collection domain with what it decides and
+// the check that depends on it, in matrix order.
+func DescribeDomains() []DomainDescription {
+	return append([]DomainDescription(nil), domainDescriptions...)
+}
+
 // coverageRequirements defines which domains this move needs from which
 // side. Policy types count only where they are enabled; cross-organization
 // moves need the organization services and Identity Center on both sides.
@@ -70,25 +106,32 @@ func (e *evaluation) coverageRequirements() []coverageRequirement {
 	cross := e.crossOrg
 	from, to := e.from, e.to
 	enabled := func(s *snapshot.Snapshot, t snapshot.PolicyType) bool { return s.PolicyTypeEnabled(t) }
-	return []coverageRequirement{
-		{domain: snapshot.DomainOrganization, why: "the organization identity that decides whether this is a cross-organization move", check: coverageCheckID, src: true, dst: true},
-		{domain: snapshot.DomainTree, why: "the OU hierarchy, the account's position and the policy attachment targets", check: coverageCheckID, src: true, dst: true},
-		{domain: snapshot.DomainPoliciesSCP, why: "the SCP chains evaluated against the actions in use", check: "scp", src: enabled(from, snapshot.PolicyTypeSCP), dst: enabled(to, snapshot.PolicyTypeSCP)},
-		{domain: snapshot.DomainPoliciesRCP, why: "the RCP chains evaluated against inbound access and the account's own actions", check: "rcp", src: enabled(from, snapshot.PolicyTypeRCP), dst: enabled(to, snapshot.PolicyTypeRCP)},
-		{domain: snapshot.DomainPoliciesTag, why: "the effective tag policy at the target and the one it replaces", check: "tags", src: enabled(from, snapshot.PolicyTypeTag), dst: enabled(to, snapshot.PolicyTypeTag)},
-		{domain: snapshot.DomainPoliciesBackup, why: "backup policies are shown in the diff only", check: ""},
-		{domain: snapshot.DomainEnabledRegions, why: "the regions an action is evaluated in when it names none", check: "scp", src: true, accountScoped: true},
-		{domain: snapshot.DomainAccountTags, why: "account tags are shown for context only", check: "", accountScoped: true},
-		{domain: snapshot.DomainResourceShares, why: "RAM shares that stop or start reaching the account", check: "ram", src: true, dst: true},
-		{domain: snapshot.DomainStackSets, why: "service-managed StackSets that target the account's OUs", check: "org-services", src: true, dst: true},
-		{domain: snapshot.DomainDelegatedAdmins, why: "delegated administration, which blocks leaving the organization", check: "org-services", src: cross},
-		{domain: snapshot.DomainTrustedAccess, why: "trusted access the target needs for the integrations in use", check: "org-services", src: cross, dst: cross},
-		{domain: snapshot.DomainOrgTrails, why: "organization trails that stop or start covering the account", check: "org-services", src: cross, dst: cross},
-		{domain: snapshot.DomainConfigAggregator, why: "organization Config aggregators that stop or start receiving the account", check: "org-services", src: cross, dst: cross},
-		{domain: snapshot.DomainControlTower, why: "the landing zone, its registered OUs and the controls that apply", check: "control-tower", src: true, dst: true},
-		{domain: snapshot.DomainEnrolledAccounts, why: "which accounts are enrolled rather than merely placed in a registered OU", check: "control-tower", src: from.ControlTower != nil},
-		{domain: snapshot.DomainIdentityCenter, why: "the assignments and roles that are removed when the account leaves", check: "identity-center", src: cross, dst: cross},
+	sides := map[string]struct {
+		src, dst, accountScoped bool
+	}{
+		snapshot.DomainOrganization:     {src: true, dst: true},
+		snapshot.DomainTree:             {src: true, dst: true},
+		snapshot.DomainPoliciesSCP:      {src: enabled(from, snapshot.PolicyTypeSCP), dst: enabled(to, snapshot.PolicyTypeSCP)},
+		snapshot.DomainPoliciesRCP:      {src: enabled(from, snapshot.PolicyTypeRCP), dst: enabled(to, snapshot.PolicyTypeRCP)},
+		snapshot.DomainPoliciesTag:      {src: enabled(from, snapshot.PolicyTypeTag), dst: enabled(to, snapshot.PolicyTypeTag)},
+		snapshot.DomainEnabledRegions:   {src: true, accountScoped: true},
+		snapshot.DomainAccountTags:      {accountScoped: true},
+		snapshot.DomainResourceShares:   {src: true, dst: true},
+		snapshot.DomainStackSets:        {src: true, dst: true},
+		snapshot.DomainDelegatedAdmins:  {src: cross},
+		snapshot.DomainTrustedAccess:    {src: cross, dst: cross},
+		snapshot.DomainOrgTrails:        {src: cross, dst: cross},
+		snapshot.DomainConfigAggregator: {src: cross, dst: cross},
+		snapshot.DomainControlTower:     {src: true, dst: true},
+		snapshot.DomainEnrolledAccounts: {src: from.ControlTower != nil},
+		snapshot.DomainIdentityCenter:   {src: cross, dst: cross},
 	}
+	var out []coverageRequirement
+	for _, d := range domainDescriptions {
+		s := sides[d.Domain]
+		out = append(out, coverageRequirement{domain: d.Domain, why: d.Why, check: d.Check, src: s.src, dst: s.dst, accountScoped: s.accountScoped})
+	}
+	return out
 }
 
 // coverageCell reads one domain on one snapshot.

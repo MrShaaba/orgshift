@@ -5,9 +5,12 @@
 *.test
 *.out
 
-# snapshots of real organizations never go into the repo
+# snapshots, checkpoints and onboarding configurations of real organizations never go into the repo
 snapshots/
 *.snapshot.json
+*.checkpoint.json
+orgshift.yaml
+orgshift.json
 
 # local environment and credentials
 .env

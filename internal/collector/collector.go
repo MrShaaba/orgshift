@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -30,7 +32,7 @@ import (
 )
 
 // OrganizationsAPI is the subset of the Organizations client the collector
-// uses. Every method is a read-only operation from Allowlist.
+// uses. Every method is a read operation from Catalog.
 type OrganizationsAPI interface {
 	DescribeOrganization(context.Context, *organizations.DescribeOrganizationInput, ...func(*organizations.Options)) (*organizations.DescribeOrganizationOutput, error)
 	ListRoots(context.Context, *organizations.ListRootsInput, ...func(*organizations.Options)) (*organizations.ListRootsOutput, error)
@@ -91,15 +93,30 @@ type IdentityStoreAPI interface {
 	DescribeGroup(context.Context, *identitystore.DescribeGroupInput, ...func(*identitystore.Options)) (*identitystore.DescribeGroupOutput, error)
 }
 
+// DefaultConcurrency bounds the parallel per-item calls (one account's
+// tags, one share's principals) when Options.Concurrency is zero.
+const DefaultConcurrency = 4
+
+// DefaultCheckpointMaxAge is how old a checkpoint may be and still be
+// resumed when Options.CheckpointMaxAge is zero.
+const DefaultCheckpointMaxAge = 24 * time.Hour
+
 // Options configure a collection run.
 type Options struct {
 	// Name is the friendly organization name stored in the snapshot.
 	Name string
-	// Region is the region the clients call. It is recorded on the regional
-	// coverage records and as the Identity Center region, which the
-	// AWSReservedSSO_* role path carries.
+	// Region is the region the Organizations, Account and RAM clients call.
+	// It is recorded on the regional coverage records.
 	Region string
-	// Version is the collector build, recorded in the coverage block.
+	// ControlTowerRegion is the landing zone's home region, where the
+	// Control Tower client calls. Defaults to Region.
+	ControlTowerRegion string
+	// IdentityCenterRegion is the instance's region, where the Identity
+	// Center clients call; the AWSReservedSSO_* role path carries it.
+	// Defaults to Region.
+	IdentityCenterRegion string
+	// Version is the collector build, recorded in the coverage block and
+	// the checkpoint.
 	Version string
 	// Organizations is the client for the management or delegated-admin
 	// account. Required.
@@ -132,6 +149,25 @@ type Options struct {
 	// domain ("--skip-ram", say). Domains without a reason are recorded as
 	// skipped with a generic note.
 	SkipReasons map[string]string
+	// Concurrency bounds the parallel per-item calls within a domain. Zero
+	// means DefaultConcurrency; one makes the collector sequential.
+	Concurrency int
+	// Retry bounds the collector's retry loop around every call; zero
+	// fields take DefaultRetry.
+	Retry RetryOptions
+	// Sleep waits between retries. Tests inject one; nil sleeps for real.
+	Sleep Sleeper
+	// Checkpoint is the path of the checkpoint file. Empty disables
+	// checkpointing. When the file exists and is usable the run resumes
+	// from it; the file is written after every completed step and removed
+	// when every domain was read completely, unless KeepCheckpoint is set.
+	Checkpoint string
+	// CheckpointMaxAge refuses older checkpoints. Zero means
+	// DefaultCheckpointMaxAge.
+	CheckpointMaxAge time.Duration
+	// KeepCheckpoint leaves the checkpoint file in place after a complete
+	// run.
+	KeepCheckpoint bool
 	// Logger receives progress and warnings. Optional.
 	Logger *log.Logger
 	// Now overrides the timestamp, for tests.
@@ -144,6 +180,9 @@ type Options struct {
 // snapshot's coverage block (access denied, partial, error, skipped,
 // unsupported) and collection carries on, so the snapshot says exactly what
 // it could not see instead of presenting an empty list as fact.
+//
+// With a checkpoint path, every completed step is saved as it finishes and
+// a rerun restores the completed steps instead of reading them again.
 func Collect(ctx context.Context, opts Options) (*snapshot.Snapshot, error) {
 	if opts.Organizations == nil {
 		return nil, fmt.Errorf("an Organizations client is required")
@@ -154,47 +193,49 @@ func Collect(ctx context.Context, opts Options) (*snapshot.Snapshot, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	c := &run{opts: opts, ctx: ctx, snap: &snapshot.Snapshot{SchemaVersion: snapshot.SchemaVersion, Source: "collector"}}
-	c.snap.GeneratedAt = opts.Now().UTC().Format(time.RFC3339)
-	c.snap.Organization.Name = opts.Name
-	c.snap.ResourceShares = []snapshot.ResourceShare{}
-	c.snap.DelegatedAdministrators = []snapshot.DelegatedAdministrator{}
-	c.snap.TrustedAccessServices = []string{}
-	c.snap.OrganizationTrails = []snapshot.OrganizationTrail{}
-	c.snap.ConfigAggregators = []snapshot.ConfigAggregator{}
-	c.snap.StackSets = []snapshot.StackSet{}
-	for _, s := range []struct {
-		name string
-		fn   func() error
-	}{{"organization", c.organization}, {"roots and tree", c.tree}} {
-		opts.Logger.Printf("collecting %s", s.name)
-		if err := s.fn(); err != nil {
-			return nil, fmt.Errorf("%s: %w", s.name, err)
+	if opts.Concurrency <= 0 {
+		opts.Concurrency = DefaultConcurrency
+	}
+	if opts.ControlTowerRegion == "" {
+		opts.ControlTowerRegion = opts.Region
+	}
+	if opts.IdentityCenterRegion == "" {
+		opts.IdentityCenterRegion = opts.Region
+	}
+	if opts.CheckpointMaxAge <= 0 {
+		opts.CheckpointMaxAge = DefaultCheckpointMaxAge
+	}
+	opts.Retry = opts.Retry.withDefaults()
+	r := &run{opts: opts, ctx: ctx, retries: map[string]int{}, completed: map[string]bool{}}
+	r.snap = r.emptySnapshot()
+	r.opts.Logger.Printf("collecting organization")
+	if err := r.organization(); err != nil {
+		return nil, fmt.Errorf("organization: %w", err)
+	}
+	r.resume()
+	for _, s := range r.steps() {
+		if r.completed[s.name] {
+			r.opts.Logger.Printf("%s: restored from the checkpoint", s.title)
+			continue
+		}
+		s.reset()
+		r.dropRecords(s.domains...)
+		r.opts.Logger.Printf("collecting %s", s.title)
+		if err := s.run(); err != nil {
+			return nil, fmt.Errorf("%s: %w", s.title, err)
+		}
+		if s.checkpoint && r.stepComplete(s.domains) {
+			r.completed[s.name] = true
+			r.saveCheckpoint()
 		}
 	}
-	for _, s := range []struct {
-		name string
-		fn   func()
-	}{
-		{"account tags", c.accountTags},
-		{"policies", c.policies},
-		{"delegated administrators", c.delegated},
-		{"trusted access", c.trustedAccess},
-		{"resource shares", c.shares},
-		{"enabled regions", c.regions},
-		{"control tower", c.controlTower},
-		{"identity center", c.identityCenter},
-		{"organization trails, Config aggregators and StackSets", c.notCollected},
-	} {
-		opts.Logger.Printf("collecting %s", s.name)
-		s.fn()
-	}
-	c.snap.Usage = map[string]*snapshot.AccountUsage{}
-	c.snap.Coverage = &snapshot.Coverage{CollectorVersion: opts.Version, Domains: c.cov}
-	if err := c.snap.Validate(); err != nil {
+	r.snap.Usage = map[string]*snapshot.AccountUsage{}
+	r.snap.Coverage = &snapshot.Coverage{CollectorVersion: opts.Version, Domains: r.cov}
+	if err := r.snap.Validate(); err != nil {
 		return nil, fmt.Errorf("collected snapshot failed validation: %w", err)
 	}
-	return c.snap, nil
+	r.finishCheckpoint()
+	return r.snap, nil
 }
 
 type logDiscard struct{}
@@ -202,20 +243,305 @@ type logDiscard struct{}
 func (logDiscard) Write(p []byte) (int, error) { return len(p), nil }
 
 type run struct {
-	opts     Options
-	ctx      context.Context
-	snap     *snapshot.Snapshot
-	cov      []snapshot.DomainCoverage
+	opts Options
+	ctx  context.Context
+	snap *snapshot.Snapshot
+
+	mu  sync.Mutex
+	cov []snapshot.DomainCoverage
+	// retries counts throttling retries per domain until the next record.
+	retries  map[string]int
 	controls map[string]*controlcatalog.GetControlOutput
 	// principals caches identity store lookups by "TYPE:id".
 	principals map[string]string
+	// completed marks the steps restored from a checkpoint or finished in
+	// this run; resumed is the checkpoint the run restored, if any.
+	completed map[string]bool
+	resumed   *Checkpoint
 }
 
-// record appends a coverage record, stamping it with the collection time.
+func (r *run) emptySnapshot() *snapshot.Snapshot {
+	s := &snapshot.Snapshot{SchemaVersion: snapshot.SchemaVersion, Source: "collector"}
+	s.GeneratedAt = r.opts.Now().UTC().Format(time.RFC3339)
+	s.Organization.Name = r.opts.Name
+	s.ResourceShares = []snapshot.ResourceShare{}
+	s.DelegatedAdministrators = []snapshot.DelegatedAdministrator{}
+	s.TrustedAccessServices = []string{}
+	s.OrganizationTrails = []snapshot.OrganizationTrail{}
+	s.ConfigAggregators = []snapshot.ConfigAggregator{}
+	s.StackSets = []snapshot.StackSet{}
+	return s
+}
+
+// step is one checkpointable unit of collection.
+type step struct {
+	name, title string
+	// domains are the coverage domains the step records; they decide
+	// whether the step is complete and are dropped before it reruns.
+	domains []string
+	// reset clears the step's output so a rerun after a partial checkpoint
+	// does not duplicate it.
+	reset func()
+	run   func() error
+	// checkpoint says whether a completed step is saved and restored.
+	checkpoint bool
+}
+
+func (r *run) steps() []step {
+	s := r.snap
+	ok := func(fn func()) func() error { return func() error { fn(); return nil } }
+	steps := []step{
+		{name: "tree", title: "roots and tree", domains: []string{snapshot.DomainTree}, checkpoint: true,
+			reset: func() { s.Root = snapshot.Root{}; s.OUs = nil; s.Accounts = nil }, run: r.tree},
+		{name: "account_tags", title: "account tags", domains: []string{snapshot.DomainAccountTags}, checkpoint: true,
+			reset: func() {
+				for i := range s.Accounts {
+					s.Accounts[i].Tags = nil
+				}
+			}, run: ok(r.accountTags)},
+	}
+	for _, t := range snapshot.AllPolicyTypes {
+		t := t
+		domain := snapshot.PolicyDomain(t)
+		steps = append(steps, step{name: domain, title: strings.ToLower(t.Short()) + " policies", domains: []string{domain}, checkpoint: true,
+			reset: func() { r.dropPolicyType(t) }, run: ok(func() { r.policyType(t) })})
+	}
+	steps = append(steps,
+		step{name: "delegated_administrators", title: "delegated administrators", domains: []string{snapshot.DomainDelegatedAdmins}, checkpoint: true,
+			reset: func() { s.DelegatedAdministrators = []snapshot.DelegatedAdministrator{} }, run: ok(r.delegated)},
+		step{name: "trusted_access", title: "trusted access", domains: []string{snapshot.DomainTrustedAccess}, checkpoint: true,
+			reset: func() { s.TrustedAccessServices = []string{} }, run: ok(r.trustedAccess)},
+		step{name: "resource_shares", title: "resource shares", domains: []string{snapshot.DomainResourceShares}, checkpoint: true,
+			reset: func() { s.ResourceShares = []snapshot.ResourceShare{} }, run: ok(r.shares)},
+		step{name: "enabled_regions", title: "enabled regions", domains: []string{snapshot.DomainEnabledRegions}, checkpoint: true,
+			reset: func() {
+				for i := range s.Accounts {
+					s.Accounts[i].EnabledRegions = nil
+				}
+			}, run: ok(r.regions)},
+		step{name: "control_tower", title: "control tower", domains: []string{snapshot.DomainControlTower, snapshot.DomainEnrolledAccounts}, checkpoint: true,
+			reset: func() { s.ControlTower = nil }, run: ok(r.controlTower)},
+		step{name: "identity_center", title: "identity center", domains: []string{snapshot.DomainIdentityCenter}, checkpoint: true,
+			reset: func() { s.IdentityCenter = nil }, run: ok(r.identityCenter)},
+		step{name: "not_collected", title: "organization trails, Config aggregators and StackSets", domains: []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets},
+			reset: func() {}, run: ok(r.notCollected)},
+	)
+	return steps
+}
+
+// stepComplete reports whether every record of the step's domains says the
+// lists can be trusted.
+func (r *run) stepComplete(domains []string) bool {
+	found := false
+	for _, d := range r.cov {
+		for _, want := range domains {
+			if d.Domain == want {
+				found = true
+				if !d.Status.Complete() {
+					return false
+				}
+			}
+		}
+	}
+	return found
+}
+
+// dropRecords removes the coverage records of the given domains.
+func (r *run) dropRecords(domains ...string) {
+	var kept []snapshot.DomainCoverage
+	for _, d := range r.cov {
+		drop := false
+		for _, want := range domains {
+			if d.Domain == want {
+				drop = true
+			}
+		}
+		if !drop {
+			kept = append(kept, d)
+		}
+	}
+	r.cov = kept
+}
+
+func (r *run) dropPolicyType(t snapshot.PolicyType) {
+	var kept []snapshot.Policy
+	for _, p := range r.snap.Policies {
+		if p.Type != t {
+			kept = append(kept, p)
+		}
+	}
+	r.snap.Policies = kept
+}
+
+// resume restores the completed steps of a usable checkpoint.
+func (r *run) resume() {
+	path := r.opts.Checkpoint
+	if path == "" {
+		return
+	}
+	cp, err := LoadCheckpoint(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return
+	case err != nil:
+		r.opts.Logger.Printf("checkpoint ignored: %v", err)
+		return
+	}
+	if err := cp.usable(r.opts.Version, r.opts.Region, r.opts.CheckpointMaxAge, r.opts.Now()); err != nil {
+		r.opts.Logger.Printf("checkpoint %s ignored: %v", path, err)
+		return
+	}
+	if cp.OrganizationID != r.snap.Organization.ID {
+		r.opts.Logger.Printf("checkpoint %s ignored: written for organization %s, this run reads %s", path, cp.OrganizationID, r.snap.Organization.ID)
+		return
+	}
+	fresh := r.snap
+	restored := cp.Snapshot
+	savedCoverage := restored.Coverage
+	restored.SchemaVersion = snapshot.SchemaVersion
+	restored.Source = "collector"
+	restored.GeneratedAt = fresh.GeneratedAt
+	restored.Organization = fresh.Organization
+	restored.Coverage = nil
+	restored.Usage = nil
+	r.snap = restored
+	var completedDomains []string
+	for _, s := range r.steps() {
+		if s.checkpoint && cp.completed(s.name) {
+			r.completed[s.name] = true
+			completedDomains = append(completedDomains, s.domains...)
+		}
+	}
+	if savedCoverage != nil {
+		for _, d := range savedCoverage.Domains {
+			if !containsString(completedDomains, d.Domain) {
+				continue
+			}
+			note := "restored from the checkpoint written at " + cp.WrittenAt
+			if d.Reason == "" {
+				d.Reason = note
+			} else {
+				d.Reason += "; " + note
+			}
+			r.cov = append(r.cov, d)
+		}
+	}
+	r.resumed = cp
+	names := make([]string, 0, len(r.completed))
+	for n := range r.completed {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	r.opts.Logger.Printf("resuming from checkpoint %s written at %s: %d step(s) restored (%s)", path, cp.WrittenAt, len(names), strings.Join(names, ", "))
+}
+
+// saveCheckpoint writes the run state after a completed step. A failure to
+// write is logged, not fatal.
+func (r *run) saveCheckpoint() {
+	if r.opts.Checkpoint == "" {
+		return
+	}
+	names := make([]string, 0, len(r.completed))
+	for n := range r.completed {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	r.snap.Coverage = &snapshot.Coverage{CollectorVersion: r.opts.Version, Domains: r.cov}
+	cp := Checkpoint{SchemaVersion: CheckpointSchemaVersion, CollectorVersion: r.opts.Version, WrittenAt: r.opts.Now().UTC().Format(time.RFC3339),
+		OrganizationID: r.snap.Organization.ID, Region: r.opts.Region, Completed: names, Snapshot: r.snap}
+	if err := cp.Save(r.opts.Checkpoint); err != nil {
+		r.opts.Logger.Printf("warning: checkpoint not written: %v", err)
+	}
+	r.snap.Coverage = nil
+}
+
+// finishCheckpoint removes the checkpoint when no domain failed, or says
+// that it is kept for the next run. Skipped and unsupported domains are
+// deliberate, not failures, so they do not keep it.
+func (r *run) finishCheckpoint() {
+	if r.opts.Checkpoint == "" {
+		return
+	}
+	for _, d := range r.cov {
+		switch d.Status {
+		case snapshot.CoveragePartial, snapshot.CoverageAccessDenied, snapshot.CoverageError:
+			r.opts.Logger.Printf("checkpoint kept at %s: %s; a rerun restores the completed steps and reads this one again", r.opts.Checkpoint, d.Label())
+			return
+		}
+	}
+	if r.opts.KeepCheckpoint {
+		return
+	}
+	if err := os.Remove(r.opts.Checkpoint); err != nil && !errors.Is(err, os.ErrNotExist) {
+		r.opts.Logger.Printf("warning: checkpoint not removed: %v", err)
+	}
+}
+
+// call runs one API call through the retry loop and counts the retries for
+// the domain's coverage record.
+func (r *run) call(domain, op string, fn func() error) error {
+	n, err := Retry(r.ctx, r.opts.Retry, r.opts.Sleep, fn, func(attempt int, delay time.Duration, err error) {
+		r.opts.Logger.Printf("%s: attempt %d throttled (%s); retrying in %s", op, attempt, errorCode(err), delay.Round(time.Millisecond))
+	})
+	if n > 0 {
+		r.mu.Lock()
+		r.retries[domain] += n
+		r.mu.Unlock()
+	}
+	return err
+}
+
+// errorCode renders an error by its code when it has one.
+func errorCode(err error) string {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode()
+	}
+	return err.Error()
+}
+
+// parallel runs fn for every index with at most Concurrency goroutines and
+// waits for all of them. fn must only write to its own slot of a result
+// slice; appends to the snapshot happen afterwards, in index order.
+func (r *run) parallel(n int, fn func(i int)) {
+	workers := r.opts.Concurrency
+	if workers > n {
+		workers = n
+	}
+	if workers <= 1 {
+		for i := 0; i < n; i++ {
+			fn(i)
+		}
+		return
+	}
+	var wg sync.WaitGroup
+	idx := make(chan int)
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range idx {
+				fn(i)
+			}
+		}()
+	}
+	for i := 0; i < n; i++ {
+		idx <- i
+	}
+	close(idx)
+	wg.Wait()
+}
+
+// record appends a coverage record, stamping it with the collection time
+// and the retries performed for its domain so far.
 func (r *run) record(d snapshot.DomainCoverage) {
 	if d.CollectedAt == "" {
 		d.CollectedAt = r.snap.GeneratedAt
 	}
+	r.mu.Lock()
+	d.Retries = r.retries[d.Domain]
+	delete(r.retries, d.Domain)
+	r.mu.Unlock()
 	if d.Status != snapshot.CoverageObserved && d.Status != snapshot.CoverageEmpty {
 		r.opts.Logger.Printf("coverage: %s", d.Label())
 	}
@@ -251,6 +577,11 @@ func (r *run) skipped(domain string) snapshot.DomainCoverage {
 	return snapshot.DomainCoverage{Domain: domain, Status: snapshot.CoverageSkipped, Reason: reason}
 }
 
+// ClassifyError maps an API error to a coverage status (access_denied,
+// unsupported or error) and a message that keeps the error code. The
+// preflight uses the same classification as the collector.
+func ClassifyError(err error) (snapshot.CoverageStatus, string) { return classify(err) }
+
 // classify maps an API error to a coverage status and a message that keeps
 // the error code.
 func classify(err error) (snapshot.CoverageStatus, string) {
@@ -276,11 +607,11 @@ func classify(err error) (snapshot.CoverageStatus, string) {
 	return snapshot.CoverageError, msg
 }
 
-// paginate drives a paginator through closures and reports how many pages
-// were read before an error.
-func paginate(hasMore func() bool, next func() error) (pages int, err error) {
+// paginate drives a paginator through closures, retrying each page on
+// throttling, and reports how many pages were read before an error.
+func (r *run) paginate(domain, op string, hasMore func() bool, next func() error) (pages int, err error) {
 	for hasMore() {
-		if err := next(); err != nil {
+		if err := r.call(domain, op, next); err != nil {
 			return pages, err
 		}
 		pages++
@@ -289,9 +620,14 @@ func paginate(hasMore func() bool, next func() error) (pages int, err error) {
 }
 
 func (r *run) organization() error {
-	out, err := r.opts.Organizations.DescribeOrganization(r.ctx, &organizations.DescribeOrganizationInput{})
+	const op = "organizations:DescribeOrganization"
+	var out *organizations.DescribeOrganizationOutput
+	err := r.call(snapshot.DomainOrganization, op, func() (err error) {
+		out, err = r.opts.Organizations.DescribeOrganization(r.ctx, &organizations.DescribeOrganizationInput{})
+		return err
+	})
 	if err != nil {
-		r.record(r.failed(snapshot.DomainOrganization, err, 0, 0, "organizations:DescribeOrganization"))
+		r.record(r.failed(snapshot.DomainOrganization, err, 0, 0, op))
 		return err
 	}
 	o := out.Organization
@@ -299,7 +635,7 @@ func (r *run) organization() error {
 	r.snap.Organization.ARN = aws.ToString(o.Arn)
 	r.snap.Organization.ManagementAccountID = aws.ToString(o.MasterAccountId)
 	r.snap.Organization.FeatureSet = string(o.FeatureSet)
-	r.record(r.observed(snapshot.DomainOrganization, 1, 1, "organizations:DescribeOrganization"))
+	r.record(r.observed(snapshot.DomainOrganization, 1, 1, op))
 	return nil
 }
 
@@ -307,7 +643,11 @@ const treeOps = "organizations:ListRoots, organizations:ListOrganizationalUnitsF
 
 func (r *run) tree() error {
 	ops := strings.Split(treeOps, ", ")
-	roots, err := r.opts.Organizations.ListRoots(r.ctx, &organizations.ListRootsInput{})
+	var roots *organizations.ListRootsOutput
+	err := r.call(snapshot.DomainTree, ops[0], func() (err error) {
+		roots, err = r.opts.Organizations.ListRoots(r.ctx, &organizations.ListRootsInput{})
+		return err
+	})
 	if err != nil {
 		r.record(r.failed(snapshot.DomainTree, err, 0, 0, ops...))
 		return err
@@ -336,7 +676,7 @@ func (r *run) tree() error {
 func (r *run) walk(parentID string, pages *int) error {
 	ouPager := organizations.NewListOrganizationalUnitsForParentPaginator(r.opts.Organizations, &organizations.ListOrganizationalUnitsForParentInput{ParentId: aws.String(parentID)})
 	var children []string
-	n, err := paginate(ouPager.HasMorePages, func() error {
+	n, err := r.paginate(snapshot.DomainTree, "organizations:ListOrganizationalUnitsForParent", ouPager.HasMorePages, func() error {
 		page, err := ouPager.NextPage(r.ctx)
 		if err != nil {
 			return err
@@ -352,7 +692,7 @@ func (r *run) walk(parentID string, pages *int) error {
 		return err
 	}
 	acctPager := organizations.NewListAccountsForParentPaginator(r.opts.Organizations, &organizations.ListAccountsForParentInput{ParentId: aws.String(parentID)})
-	n, err = paginate(acctPager.HasMorePages, func() error {
+	n, err = r.paginate(snapshot.DomainTree, "organizations:ListAccountsForParent", acctPager.HasMorePages, func() error {
 		page, err := acctPager.NextPage(r.ctx)
 		if err != nil {
 			return err
@@ -381,18 +721,24 @@ func (r *run) walk(parentID string, pages *int) error {
 	return nil
 }
 
-// accountTags reads the tags of every account. One failing account makes
-// the domain partial; the others keep their tags.
+// perAccount is the outcome of one per-account call.
+type perAccount struct {
+	pages int
+	err   error
+	tags  map[string]string
+	list  []string
+}
+
+// accountTags reads the tags of every account, several accounts at a time.
+// One failing account makes the domain partial; the others keep their tags.
 func (r *run) accountTags() {
 	const op = "organizations:ListTagsForResource"
-	var failures []string
-	var firstErr error
-	pages := 0
-	for i := range r.snap.Accounts {
-		a := &r.snap.Accounts[i]
+	results := make([]perAccount, len(r.snap.Accounts))
+	r.parallel(len(r.snap.Accounts), func(i int) {
+		a := r.snap.Accounts[i]
 		pager := organizations.NewListTagsForResourcePaginator(r.opts.Organizations, &organizations.ListTagsForResourceInput{ResourceId: aws.String(a.ID)})
 		tags := map[string]string{}
-		n, err := paginate(pager.HasMorePages, func() error {
+		n, err := r.paginate(snapshot.DomainAccountTags, op, pager.HasMorePages, func() error {
 			page, err := pager.NextPage(r.ctx)
 			if err != nil {
 				return err
@@ -402,16 +748,22 @@ func (r *run) accountTags() {
 			}
 			return nil
 		})
-		pages += n
-		if err != nil {
-			failures = append(failures, a.ID)
+		results[i] = perAccount{pages: n, err: err, tags: tags}
+	})
+	var failures []string
+	var firstErr error
+	pages := 0
+	for i, res := range results {
+		pages += res.pages
+		if res.err != nil {
+			failures = append(failures, r.snap.Accounts[i].ID)
 			if firstErr == nil {
-				firstErr = err
+				firstErr = res.err
 			}
 			continue
 		}
-		if len(tags) > 0 {
-			a.Tags = tags
+		if len(res.tags) > 0 {
+			r.snap.Accounts[i].Tags = res.tags
 		}
 	}
 	if firstErr != nil {
@@ -426,83 +778,105 @@ func (r *run) accountTags() {
 	r.record(r.observed(snapshot.DomainAccountTags, len(r.snap.Accounts), pages, op))
 }
 
-func (r *run) policies() {
+// policyType reads every policy of one type: the summaries first, then the
+// documents and targets several policies at a time.
+func (r *run) policyType(t snapshot.PolicyType) {
 	ops := []string{"organizations:ListPolicies", "organizations:DescribePolicy", "organizations:ListTargetsForPolicy"}
-	for _, t := range snapshot.AllPolicyTypes {
-		domain := snapshot.PolicyDomain(t)
-		if !r.snap.PolicyTypeEnabled(t) {
-			r.record(snapshot.DomainCoverage{Domain: domain, Status: snapshot.CoverageEmpty, Reason: "policy type not enabled at the root"})
-			continue
+	domain := snapshot.PolicyDomain(t)
+	if !r.snap.PolicyTypeEnabled(t) {
+		r.record(snapshot.DomainCoverage{Domain: domain, Status: snapshot.CoverageEmpty, Reason: "policy type not enabled at the root"})
+		return
+	}
+	var summaries []orgtypes.PolicySummary
+	pager := organizations.NewListPoliciesPaginator(r.opts.Organizations, &organizations.ListPoliciesInput{Filter: orgtypes.PolicyType(t)})
+	pages, err := r.paginate(domain, ops[0], pager.HasMorePages, func() error {
+		page, err := pager.NextPage(r.ctx)
+		if err != nil {
+			return err
 		}
-		items, pages := 0, 0
-		pager := organizations.NewListPoliciesPaginator(r.opts.Organizations, &organizations.ListPoliciesInput{Filter: orgtypes.PolicyType(t)})
-		n, err := paginate(pager.HasMorePages, func() error {
-			page, err := pager.NextPage(r.ctx)
+		summaries = append(summaries, page.Policies...)
+		return nil
+	})
+	if err != nil {
+		r.record(r.failed(domain, err, pages, 0, ops...))
+		return
+	}
+	type policyResult struct {
+		policy snapshot.Policy
+		pages  int
+		err    error
+	}
+	results := make([]policyResult, len(summaries))
+	r.parallel(len(summaries), func(i int) {
+		summary := summaries[i]
+		id := aws.ToString(summary.Id)
+		var desc *organizations.DescribePolicyOutput
+		err := r.call(domain, ops[1], func() (err error) {
+			desc, err = r.opts.Organizations.DescribePolicy(r.ctx, &organizations.DescribePolicyInput{PolicyId: aws.String(id)})
+			return err
+		})
+		if err != nil {
+			results[i] = policyResult{err: fmt.Errorf("describe %s: %w", id, err)}
+			return
+		}
+		p := snapshot.Policy{
+			ID: id, ARN: aws.ToString(summary.Arn), Name: aws.ToString(summary.Name), Description: aws.ToString(summary.Description),
+			Type: t, AWSManaged: summary.AwsManaged, Document: []byte(aws.ToString(desc.Policy.Content)), Targets: []string{},
+		}
+		targets := organizations.NewListTargetsForPolicyPaginator(r.opts.Organizations, &organizations.ListTargetsForPolicyInput{PolicyId: aws.String(id)})
+		tn, err := r.paginate(domain, ops[2], targets.HasMorePages, func() error {
+			tp, err := targets.NextPage(r.ctx)
 			if err != nil {
 				return err
 			}
-			for _, summary := range page.Policies {
-				id := aws.ToString(summary.Id)
-				desc, err := r.opts.Organizations.DescribePolicy(r.ctx, &organizations.DescribePolicyInput{PolicyId: aws.String(id)})
-				if err != nil {
-					return fmt.Errorf("describe %s: %w", id, err)
-				}
-				p := snapshot.Policy{
-					ID: id, ARN: aws.ToString(summary.Arn), Name: aws.ToString(summary.Name), Description: aws.ToString(summary.Description),
-					Type: t, AWSManaged: summary.AwsManaged, Document: []byte(aws.ToString(desc.Policy.Content)),
-				}
-				targets := organizations.NewListTargetsForPolicyPaginator(r.opts.Organizations, &organizations.ListTargetsForPolicyInput{PolicyId: aws.String(id)})
-				tn, err := paginate(targets.HasMorePages, func() error {
-					tp, err := targets.NextPage(r.ctx)
-					if err != nil {
-						return err
-					}
-					for _, tgt := range tp.Targets {
-						p.Targets = append(p.Targets, aws.ToString(tgt.TargetId))
-					}
-					return nil
-				})
-				pages += tn
-				if err != nil {
-					return fmt.Errorf("targets of %s: %w", id, err)
-				}
-				sort.Strings(p.Targets)
-				if p.Targets == nil {
-					p.Targets = []string{}
-				}
-				r.snap.Policies = append(r.snap.Policies, p)
-				items++
+			for _, tgt := range tp.Targets {
+				p.Targets = append(p.Targets, aws.ToString(tgt.TargetId))
 			}
 			return nil
 		})
-		pages += n
 		if err != nil {
-			// Drop the half-read type so an incomplete attachment list does
-			// not pass for the whole picture; the record says what happened.
-			var kept []snapshot.Policy
-			for _, p := range r.snap.Policies {
-				if p.Type != t {
-					kept = append(kept, p)
-				}
+			results[i] = policyResult{pages: tn, err: fmt.Errorf("targets of %s: %w", id, err)}
+			return
+		}
+		sort.Strings(p.Targets)
+		results[i] = policyResult{policy: p, pages: tn}
+	})
+	items := 0
+	var firstErr error
+	for _, res := range results {
+		pages += res.pages
+		if res.err != nil {
+			if firstErr == nil {
+				firstErr = res.err
 			}
-			r.snap.Policies = kept
-			d := r.failed(domain, err, pages, items, ops...)
-			d.Items = 0
-			if items > 0 {
-				d.Error = fmt.Sprintf("%d policies read before the failure were dropped: %s", items, d.Error)
-			}
-			r.record(d)
 			continue
 		}
-		r.record(r.observed(domain, items, pages, ops...))
+		items++
 	}
+	if firstErr != nil {
+		// Keep nothing of the half-read type so an incomplete attachment
+		// list does not pass for the whole picture; the record says what
+		// happened.
+		d := r.failed(domain, firstErr, pages, items, ops...)
+		d.Items = 0
+		if items > 0 {
+			d.Error = fmt.Sprintf("%d policies read before the failure were dropped: %s", items, d.Error)
+		}
+		r.record(d)
+		return
+	}
+	for _, res := range results {
+		r.snap.Policies = append(r.snap.Policies, res.policy)
+	}
+	r.record(r.observed(domain, items, pages, ops...))
 }
 
 func (r *run) delegated() {
 	ops := []string{"organizations:ListDelegatedAdministrators", "organizations:ListDelegatedServicesForAccount"}
+	domain := snapshot.DomainDelegatedAdmins
 	items, pages := 0, 0
 	pager := organizations.NewListDelegatedAdministratorsPaginator(r.opts.Organizations, &organizations.ListDelegatedAdministratorsInput{})
-	n, err := paginate(pager.HasMorePages, func() error {
+	n, err := r.paginate(domain, ops[0], pager.HasMorePages, func() error {
 		page, err := pager.NextPage(r.ctx)
 		if err != nil {
 			return err
@@ -510,7 +884,7 @@ func (r *run) delegated() {
 		for _, admin := range page.DelegatedAdministrators {
 			id := aws.ToString(admin.Id)
 			svcPager := organizations.NewListDelegatedServicesForAccountPaginator(r.opts.Organizations, &organizations.ListDelegatedServicesForAccountInput{AccountId: aws.String(id)})
-			sn, err := paginate(svcPager.HasMorePages, func() error {
+			sn, err := r.paginate(domain, ops[1], svcPager.HasMorePages, func() error {
 				sp, err := svcPager.NextPage(r.ctx)
 				if err != nil {
 					return err
@@ -534,16 +908,16 @@ func (r *run) delegated() {
 	})
 	pages += n
 	if err != nil {
-		r.record(r.failed(snapshot.DomainDelegatedAdmins, err, pages, items, ops...))
+		r.record(r.failed(domain, err, pages, items, ops...))
 		return
 	}
-	r.record(r.observed(snapshot.DomainDelegatedAdmins, items, pages, ops...))
+	r.record(r.observed(domain, items, pages, ops...))
 }
 
 func (r *run) trustedAccess() {
 	const op = "organizations:ListAWSServiceAccessForOrganization"
 	pager := organizations.NewListAWSServiceAccessForOrganizationPaginator(r.opts.Organizations, &organizations.ListAWSServiceAccessForOrganizationInput{})
-	pages, err := paginate(pager.HasMorePages, func() error {
+	pages, err := r.paginate(snapshot.DomainTrustedAccess, op, pager.HasMorePages, func() error {
 		page, err := pager.NextPage(r.ctx)
 		if err != nil {
 			return err
@@ -571,11 +945,14 @@ func (r *run) trusted(servicePrincipal string) bool {
 }
 
 // shares lists the resource shares owned by each RAM client's account. RAM
-// only shows shares owned by the caller, so each client is one record.
+// only shows shares owned by the caller, so each client is one record. The
+// summaries are listed first; principals and resources are then read for
+// several shares at a time.
 func (r *run) shares() {
 	ops := []string{"ram:GetResourceShares", "ram:ListPrincipals", "ram:ListResources"}
+	domain := snapshot.DomainResourceShares
 	if len(r.opts.RAM) == 0 {
-		d := r.skipped(snapshot.DomainResourceShares)
+		d := r.skipped(domain)
 		d.Region = r.opts.Region
 		r.record(d)
 		return
@@ -585,10 +962,10 @@ func (r *run) shares() {
 		if i < len(r.opts.RAMLabels) {
 			label = r.opts.RAMLabels[i]
 		}
-		items, pages := 0, 0
 		owner := ""
+		var summaries []ramtypes.ResourceShare
 		pager := ram.NewGetResourceSharesPaginator(client, &ram.GetResourceSharesInput{ResourceOwner: ramtypes.ResourceOwnerSelf})
-		n, err := paginate(pager.HasMorePages, func() error {
+		pages, err := r.paginate(domain, ops[0], pager.HasMorePages, func() error {
 			page, err := pager.NextPage(r.ctx)
 			if err != nil {
 				return err
@@ -600,18 +977,35 @@ func (r *run) shares() {
 				if sh.Status == ramtypes.ResourceShareStatusDeleted || sh.Status == ramtypes.ResourceShareStatusDeleting {
 					continue
 				}
+				summaries = append(summaries, sh)
+			}
+			return nil
+		})
+		items := 0
+		if err == nil {
+			type shareResult struct {
+				share snapshot.ResourceShare
+				pages int
+				err   error
+			}
+			results := make([]shareResult, len(summaries))
+			r.parallel(len(summaries), func(i int) {
+				sh := summaries[i]
 				arn := aws.ToString(sh.ResourceShareArn)
-				// RetainSharingOnAccountLeaveOrganization is not exposed on
-				// ResourceShare by the RAM SDK module this build can use (the
-				// one that has it requires Go 1.24), so the field stays false
-				// unless entered by hand; false is the documented default.
 				s := snapshot.ResourceShare{
 					ARN: arn, Name: aws.ToString(sh.Name), OwnerAccountID: aws.ToString(sh.OwningAccountId), Status: string(sh.Status),
 					AllowExternalPrincipals: aws.ToBool(sh.AllowExternalPrincipals),
 					Principals:              []string{}, Resources: []snapshot.SharedResource{},
 				}
+				// RetainSharingOnAccountLeaveOrganization is set at creation
+				// and reported in the share's configuration. Absent, false is
+				// the documented default: the share stops when the account
+				// leaves the organization.
+				if cfg := sh.ResourceShareConfiguration; cfg != nil {
+					s.RetainSharingOnAccountLeave = aws.ToBool(cfg.RetainSharingOnAccountLeaveOrganization)
+				}
 				pp := ram.NewListPrincipalsPaginator(client, &ram.ListPrincipalsInput{ResourceOwner: ramtypes.ResourceOwnerSelf, ResourceShareArns: []string{arn}})
-				pn, err := paginate(pp.HasMorePages, func() error {
+				pn, err := r.paginate(domain, ops[1], pp.HasMorePages, func() error {
 					page, err := pp.NextPage(r.ctx)
 					if err != nil {
 						return err
@@ -621,12 +1015,12 @@ func (r *run) shares() {
 					}
 					return nil
 				})
-				pages += pn
 				if err != nil {
-					return fmt.Errorf("principals of %s: %w", arn, err)
+					results[i] = shareResult{pages: pn, err: fmt.Errorf("principals of %s: %w", arn, err)}
+					return
 				}
 				rp := ram.NewListResourcesPaginator(client, &ram.ListResourcesInput{ResourceOwner: ramtypes.ResourceOwnerSelf, ResourceShareArns: []string{arn}})
-				rn, err := paginate(rp.HasMorePages, func() error {
+				rn, err := r.paginate(domain, ops[2], rp.HasMorePages, func() error {
 					page, err := rp.NextPage(r.ctx)
 					if err != nil {
 						return err
@@ -636,21 +1030,29 @@ func (r *run) shares() {
 					}
 					return nil
 				})
-				pages += rn
 				if err != nil {
-					return fmt.Errorf("resources of %s: %w", arn, err)
+					results[i] = shareResult{pages: pn + rn, err: fmt.Errorf("resources of %s: %w", arn, err)}
+					return
 				}
-				r.snap.ResourceShares = append(r.snap.ResourceShares, s)
+				results[i] = shareResult{share: s, pages: pn + rn}
+			})
+			for _, res := range results {
+				pages += res.pages
+				if res.err != nil {
+					if err == nil {
+						err = res.err
+					}
+					continue
+				}
+				r.snap.ResourceShares = append(r.snap.ResourceShares, res.share)
 				items++
 			}
-			return nil
-		})
-		pages += n
+		}
 		var d snapshot.DomainCoverage
 		if err != nil {
-			d = r.failed(snapshot.DomainResourceShares, err, pages, items, ops...)
+			d = r.failed(domain, err, pages, items, ops...)
 		} else {
-			d = r.observed(snapshot.DomainResourceShares, items, pages, ops...)
+			d = r.observed(domain, items, pages, ops...)
 		}
 		d.Region = r.opts.Region
 		if owner != "" && accountIDLike(owner) {
@@ -663,17 +1065,18 @@ func (r *run) shares() {
 	}
 }
 
+// regions lists the enabled regions of every account, several accounts at
+// a time.
 func (r *run) regions() {
 	const op = "account:ListRegions"
+	domain := snapshot.DomainEnabledRegions
 	if r.opts.Account == nil {
-		r.record(r.skipped(snapshot.DomainEnabledRegions))
+		r.record(r.skipped(domain))
 		return
 	}
-	var failures []string
-	var firstErr error
-	pages := 0
-	for i := range r.snap.Accounts {
-		a := &r.snap.Accounts[i]
+	results := make([]perAccount, len(r.snap.Accounts))
+	r.parallel(len(r.snap.Accounts), func(i int) {
+		a := r.snap.Accounts[i]
 		pager := account.NewListRegionsPaginator(r.opts.Account, &account.ListRegionsInput{
 			AccountId: aws.String(a.ID),
 			RegionOptStatusContains: []accounttypes.RegionOptStatus{
@@ -681,7 +1084,7 @@ func (r *run) regions() {
 			},
 		})
 		var regions []string
-		n, err := paginate(pager.HasMorePages, func() error {
+		n, err := r.paginate(domain, op, pager.HasMorePages, func() error {
 			page, err := pager.NextPage(r.ctx)
 			if err != nil {
 				return err
@@ -691,21 +1094,27 @@ func (r *run) regions() {
 			}
 			return nil
 		})
-		pages += n
-		if err != nil {
-			failures = append(failures, a.ID)
+		sort.Strings(regions)
+		results[i] = perAccount{pages: n, err: err, list: regions}
+	})
+	var failures []string
+	var firstErr error
+	pages := 0
+	for i, res := range results {
+		pages += res.pages
+		if res.err != nil {
+			failures = append(failures, r.snap.Accounts[i].ID)
 			if firstErr == nil {
-				firstErr = err
+				firstErr = res.err
 			}
 			// A per-account record so the evaluator knows this account's
 			// region list is unknown rather than empty.
-			d := r.failed(snapshot.DomainEnabledRegions, err, 0, 0, op)
-			d.AccountID = a.ID
+			d := r.failed(domain, res.err, 0, 0, op)
+			d.AccountID = r.snap.Accounts[i].ID
 			r.record(d)
 			continue
 		}
-		sort.Strings(regions)
-		a.EnabledRegions = regions
+		r.snap.Accounts[i].EnabledRegions = res.list
 	}
 	if firstErr != nil {
 		r.opts.Logger.Printf("warning: enabled regions failed for %d account(s) (needs account:ListRegions and trusted access for account.amazonaws.com): %v", len(failures), firstErr)
@@ -713,7 +1122,7 @@ func (r *run) regions() {
 			return
 		}
 	}
-	d := r.observed(snapshot.DomainEnabledRegions, len(r.snap.Accounts)-len(failures), pages, op)
+	d := r.observed(domain, len(r.snap.Accounts)-len(failures), pages, op)
 	if len(failures) > 0 {
 		d.Reason = fmt.Sprintf("%d account(s) failed and have their own records", len(failures))
 	}
@@ -732,17 +1141,23 @@ func (r *run) notCollected() {
 // target is an account) and the controls enabled on each registered OU.
 func (r *run) controlTower() {
 	client := r.opts.ControlTower
+	region := r.opts.ControlTowerRegion
 	ops := []string{"controltower:ListLandingZones", "controltower:GetLandingZone", "controltower:ListEnabledBaselines", "controltower:ListEnabledControls", "controlcatalog:GetControl"}
-	regional := func(d snapshot.DomainCoverage) snapshot.DomainCoverage { d.Region = r.opts.Region; return d }
+	domain := snapshot.DomainControlTower
+	regional := func(d snapshot.DomainCoverage) snapshot.DomainCoverage { d.Region = region; return d }
 	if client == nil {
-		r.record(regional(r.skipped(snapshot.DomainControlTower)))
+		r.record(regional(r.skipped(domain)))
 		r.record(regional(r.skipped(snapshot.DomainEnrolledAccounts)))
 		return
 	}
-	zones, err := client.ListLandingZones(r.ctx, &controltower.ListLandingZonesInput{})
+	var zones *controltower.ListLandingZonesOutput
+	err := r.call(domain, ops[0], func() (err error) {
+		zones, err = client.ListLandingZones(r.ctx, &controltower.ListLandingZonesInput{})
+		return err
+	})
 	if err != nil {
-		d := r.failed(snapshot.DomainControlTower, err, 0, 0, ops[0])
-		d.Error += "; the landing zone APIs answer only in the home region, pass --region accordingly"
+		d := r.failed(domain, err, 0, 0, ops[0])
+		d.Error += "; the landing zone APIs answer only in the home region, set control_tower.home_region (or --region) accordingly"
 		r.record(regional(d))
 		r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainEnrolledAccounts, Status: snapshot.CoverageError, Error: "not read: the landing zone lookup failed"}))
 		return
@@ -751,20 +1166,24 @@ func (r *run) controlTower() {
 		if r.trusted("controltower.amazonaws.com") {
 			// An empty answer in the wrong region looks like "no Control
 			// Tower"; trusted access says it is in use, so do not believe it.
-			msg := fmt.Sprintf("no landing zone answered in %s although trusted access for controltower.amazonaws.com is enabled; the landing zone APIs answer only in the home region, re-run with --region <home region>", r.opts.Region)
-			r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainControlTower, Status: snapshot.CoverageError, Error: msg, Operations: ops[:1]}))
-			r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainEnrolledAccounts, Status: snapshot.CoverageError, Error: "not read: the landing zone was not found in " + r.opts.Region}))
+			msg := fmt.Sprintf("no landing zone answered in %s although trusted access for controltower.amazonaws.com is enabled; the landing zone APIs answer only in the home region, re-run with control_tower.home_region (or --region) set to it", region)
+			r.record(regional(snapshot.DomainCoverage{Domain: domain, Status: snapshot.CoverageError, Error: msg, Operations: ops[:1]}))
+			r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainEnrolledAccounts, Status: snapshot.CoverageError, Error: "not read: the landing zone was not found in " + region}))
 			return
 		}
-		r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainControlTower, Status: snapshot.CoverageEmpty, Operations: ops[:1], Reason: "no landing zone in " + r.opts.Region + " and no trusted access for controltower.amazonaws.com"}))
+		r.record(regional(snapshot.DomainCoverage{Domain: domain, Status: snapshot.CoverageEmpty, Operations: ops[:1], Reason: "no landing zone in " + region + " and no trusted access for controltower.amazonaws.com"}))
 		r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainEnrolledAccounts, Status: snapshot.CoverageEmpty, Reason: "no landing zone"}))
 		return
 	}
 	arn := aws.ToString(zones.LandingZones[0].Arn)
 	ct := &snapshot.ControlTower{LandingZoneARN: arn, HomeRegion: arnRegion(arn), RegisteredOUs: []snapshot.RegisteredOU{}, EnabledControls: []snapshot.EnabledControl{}}
-	lz, err := client.GetLandingZone(r.ctx, &controltower.GetLandingZoneInput{LandingZoneIdentifier: aws.String(arn)})
+	var lz *controltower.GetLandingZoneOutput
+	err = r.call(domain, ops[1], func() (err error) {
+		lz, err = client.GetLandingZone(r.ctx, &controltower.GetLandingZoneInput{LandingZoneIdentifier: aws.String(arn)})
+		return err
+	})
 	if err != nil {
-		d := r.failed(snapshot.DomainControlTower, err, 1, 0, ops[:2]...)
+		d := r.failed(domain, err, 1, 0, ops[:2]...)
 		r.record(regional(d))
 		r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainEnrolledAccounts, Status: snapshot.CoverageError, Error: "not read: the landing zone could not be described"}))
 		return
@@ -821,7 +1240,7 @@ func (r *run) controlTower() {
 	var childBaselines []cttypes.EnabledBaselineSummary
 	pages := 2
 	baselines := controltower.NewListEnabledBaselinesPaginator(client, &controltower.ListEnabledBaselinesInput{IncludeChildren: true})
-	n, err := paginate(baselines.HasMorePages, func() error {
+	n, err := r.paginate(domain, ops[2], baselines.HasMorePages, func() error {
 		page, err := baselines.NextPage(r.ctx)
 		if err != nil {
 			return err
@@ -858,7 +1277,7 @@ func (r *run) controlTower() {
 	pages += n
 	if err != nil {
 		r.snap.ControlTower = ct
-		d := r.failed(snapshot.DomainControlTower, err, pages, 1+len(ct.RegisteredOUs), ops[:3]...)
+		d := r.failed(domain, err, pages, 1+len(ct.RegisteredOUs), ops[:3]...)
 		d.Error = "enabled baselines: " + d.Error
 		r.record(regional(d))
 		r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainEnrolledAccounts, Status: snapshot.CoveragePartial, Error: "ListEnabledBaselines failed before every page was read: " + err.Error()}))
@@ -904,7 +1323,7 @@ func (r *run) controlTower() {
 			continue
 		}
 		controls := controltower.NewListEnabledControlsPaginator(client, &controltower.ListEnabledControlsInput{TargetIdentifier: aws.String(ouARN)})
-		cn, err := paginate(controls.HasMorePages, func() error {
+		cn, err := r.paginate(domain, ops[3], controls.HasMorePages, func() error {
 			page, err := controls.NextPage(r.ctx)
 			if err != nil {
 				return err
@@ -934,11 +1353,11 @@ func (r *run) controlTower() {
 	pages += controlPages
 	r.snap.ControlTower = ct
 	if controlErr != nil {
-		d := r.failed(snapshot.DomainControlTower, controlErr, pages, 1+len(ct.RegisteredOUs)+len(ct.EnabledControls), ops...)
+		d := r.failed(domain, controlErr, pages, 1+len(ct.RegisteredOUs)+len(ct.EnabledControls), ops...)
 		r.record(regional(d))
 		return
 	}
-	r.record(regional(r.observed(snapshot.DomainControlTower, 1+len(ct.RegisteredOUs)+len(ct.EnabledControls), pages, ops...)))
+	r.record(regional(r.observed(domain, 1+len(ct.RegisteredOUs)+len(ct.EnabledControls), pages, ops...)))
 }
 
 // accountOfTarget returns the account ID of a baseline target that is an
@@ -963,18 +1382,24 @@ func (r *run) describeControl(ec *snapshot.EnabledControl) {
 	if r.opts.ControlCatalog == nil {
 		return
 	}
+	r.mu.Lock()
 	if r.controls == nil {
 		r.controls = map[string]*controlcatalog.GetControlOutput{}
 	}
 	out, cached := r.controls[ec.ControlIdentifier]
+	r.mu.Unlock()
 	if !cached {
-		var err error
-		out, err = r.opts.ControlCatalog.GetControl(r.ctx, &controlcatalog.GetControlInput{ControlArn: aws.String(ec.ControlIdentifier)})
+		err := r.call(snapshot.DomainControlTower, "controlcatalog:GetControl", func() (err error) {
+			out, err = r.opts.ControlCatalog.GetControl(r.ctx, &controlcatalog.GetControlInput{ControlArn: aws.String(ec.ControlIdentifier)})
+			return err
+		})
 		if err != nil {
 			r.opts.Logger.Printf("warning: control %s: %v (needs controlcatalog:GetControl)", ec.ControlIdentifier, err)
 			out = nil
 		}
+		r.mu.Lock()
 		r.controls[ec.ControlIdentifier] = out
+		r.mu.Unlock()
 	}
 	if out == nil {
 		return
@@ -988,35 +1413,41 @@ func (r *run) describeControl(ec *snapshot.EnabledControl) {
 
 // identityCenter reads the Identity Center instance, every permission set
 // with its policies, the accounts each one is provisioned in and the
-// assignments on those accounts.
+// assignments on those accounts, several permission sets at a time.
 func (r *run) identityCenter() {
 	client := r.opts.SSOAdmin
+	region := r.opts.IdentityCenterRegion
+	domain := snapshot.DomainIdentityCenter
 	ops := []string{"sso:ListInstances", "sso:ListPermissionSets", "sso:DescribePermissionSet", "sso:ListManagedPoliciesInPermissionSet", "sso:ListCustomerManagedPolicyReferencesInPermissionSet",
 		"sso:GetInlinePolicyForPermissionSet", "sso:GetPermissionsBoundaryForPermissionSet", "sso:ListAccountsForProvisionedPermissionSet", "sso:ListAccountAssignments", "identitystore:DescribeUser", "identitystore:DescribeGroup"}
-	regional := func(d snapshot.DomainCoverage) snapshot.DomainCoverage { d.Region = r.opts.Region; return d }
+	regional := func(d snapshot.DomainCoverage) snapshot.DomainCoverage { d.Region = region; return d }
 	if client == nil {
-		r.record(regional(r.skipped(snapshot.DomainIdentityCenter)))
+		r.record(regional(r.skipped(domain)))
 		return
 	}
-	instances, err := client.ListInstances(r.ctx, &ssoadmin.ListInstancesInput{})
+	var instances *ssoadmin.ListInstancesOutput
+	err := r.call(domain, ops[0], func() (err error) {
+		instances, err = client.ListInstances(r.ctx, &ssoadmin.ListInstancesInput{})
+		return err
+	})
 	if err != nil {
-		d := r.failed(snapshot.DomainIdentityCenter, err, 0, 0, ops[0])
-		d.Error += "; the instance APIs answer only in the instance's region, pass --region accordingly"
+		d := r.failed(domain, err, 0, 0, ops[0])
+		d.Error += "; the instance APIs answer only in the instance's region, set identity_center.region (or --region) accordingly"
 		r.record(regional(d))
 		return
 	}
 	if len(instances.Instances) == 0 {
 		if r.trusted("sso.amazonaws.com") {
-			msg := fmt.Sprintf("no Identity Center instance answered in %s although trusted access for sso.amazonaws.com is enabled; the instance APIs answer only in the instance's region, re-run with --region <instance region>", r.opts.Region)
-			r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainIdentityCenter, Status: snapshot.CoverageError, Error: msg, Operations: ops[:1]}))
+			msg := fmt.Sprintf("no Identity Center instance answered in %s although trusted access for sso.amazonaws.com is enabled; the instance APIs answer only in the instance's region, re-run with identity_center.region (or --region) set to it", region)
+			r.record(regional(snapshot.DomainCoverage{Domain: domain, Status: snapshot.CoverageError, Error: msg, Operations: ops[:1]}))
 			return
 		}
-		r.record(regional(snapshot.DomainCoverage{Domain: snapshot.DomainIdentityCenter, Status: snapshot.CoverageEmpty, Operations: ops[:1], Reason: "no instance in " + r.opts.Region + " and no trusted access for sso.amazonaws.com"}))
+		r.record(regional(snapshot.DomainCoverage{Domain: domain, Status: snapshot.CoverageEmpty, Operations: ops[:1], Reason: "no instance in " + region + " and no trusted access for sso.amazonaws.com"}))
 		return
 	}
 	inst := instances.Instances[0]
 	ic := &snapshot.IdentityCenter{
-		InstanceARN: aws.ToString(inst.InstanceArn), IdentityStoreID: aws.ToString(inst.IdentityStoreId), Region: r.opts.Region,
+		InstanceARN: aws.ToString(inst.InstanceArn), IdentityStoreID: aws.ToString(inst.IdentityStoreId), Region: region,
 		OwnerAccountID: aws.ToString(inst.OwnerAccountId), Name: aws.ToString(inst.Name),
 		PermissionSets: []snapshot.PermissionSet{}, Assignments: []snapshot.AccountAssignment{},
 	}
@@ -1025,78 +1456,114 @@ func (r *run) identityCenter() {
 		known[a.ID] = true
 	}
 	instanceARN := aws.String(ic.InstanceARN)
-	pages := 1
+	var setARNs []string
 	sets := ssoadmin.NewListPermissionSetsPaginator(client, &ssoadmin.ListPermissionSetsInput{InstanceArn: instanceARN})
-	n, err := paginate(sets.HasMorePages, func() error {
+	pages, err := r.paginate(domain, ops[1], sets.HasMorePages, func() error {
 		page, err := sets.NextPage(r.ctx)
 		if err != nil {
 			return err
 		}
-		for _, arn := range page.PermissionSets {
-			ps, err := r.permissionSet(instanceARN, arn)
+		setARNs = append(setARNs, page.PermissionSets...)
+		return nil
+	})
+	pages++ // ListInstances
+	if err != nil {
+		r.snap.IdentityCenter = ic
+		r.record(regional(r.failed(domain, err, pages, 1, ops...)))
+		return
+	}
+	type setResult struct {
+		set         snapshot.PermissionSet
+		assignments []snapshot.AccountAssignment
+		pages       int
+		err         error
+	}
+	results := make([]setResult, len(setARNs))
+	r.parallel(len(setARNs), func(i int) {
+		arn := setARNs[i]
+		ps, err := r.permissionSet(instanceARN, arn)
+		if err != nil {
+			results[i] = setResult{err: err}
+			return
+		}
+		res := setResult{}
+		accounts := ssoadmin.NewListAccountsForProvisionedPermissionSetPaginator(client, &ssoadmin.ListAccountsForProvisionedPermissionSetInput{InstanceArn: instanceARN, PermissionSetArn: aws.String(arn)})
+		an, err := r.paginate(domain, ops[7], accounts.HasMorePages, func() error {
+			ap, err := accounts.NextPage(r.ctx)
 			if err != nil {
 				return err
 			}
-			accounts := ssoadmin.NewListAccountsForProvisionedPermissionSetPaginator(client, &ssoadmin.ListAccountsForProvisionedPermissionSetInput{InstanceArn: instanceARN, PermissionSetArn: aws.String(arn)})
-			an, err := paginate(accounts.HasMorePages, func() error {
-				ap, err := accounts.NextPage(r.ctx)
-				if err != nil {
-					return err
+			for _, acct := range ap.AccountIds {
+				if !known[acct] {
+					r.opts.Logger.Printf("warning: permission set %s is provisioned in %s, which is not in the organization tree; skipped", ps.Name, acct)
+					continue
 				}
-				for _, acct := range ap.AccountIds {
-					if !known[acct] {
-						r.opts.Logger.Printf("warning: permission set %s is provisioned in %s, which is not in the organization tree; skipped", ps.Name, acct)
-						continue
-					}
-					ps.ProvisionedAccounts = append(ps.ProvisionedAccounts, acct)
-					assignments := ssoadmin.NewListAccountAssignmentsPaginator(client, &ssoadmin.ListAccountAssignmentsInput{InstanceArn: instanceARN, AccountId: aws.String(acct), PermissionSetArn: aws.String(arn)})
-					asn, err := paginate(assignments.HasMorePages, func() error {
-						asp, err := assignments.NextPage(r.ctx)
-						if err != nil {
-							return err
-						}
-						for _, a := range asp.AccountAssignments {
-							kind := string(a.PrincipalType)
-							id := aws.ToString(a.PrincipalId)
-							ic.Assignments = append(ic.Assignments, snapshot.AccountAssignment{
-								AccountID: acct, PermissionSetARN: arn, PrincipalType: kind, PrincipalID: id,
-								PrincipalName: r.principalName(ic.IdentityStoreID, kind, id),
-							})
-						}
-						return nil
-					})
-					pages += asn
+				ps.ProvisionedAccounts = append(ps.ProvisionedAccounts, acct)
+				assignments := ssoadmin.NewListAccountAssignmentsPaginator(client, &ssoadmin.ListAccountAssignmentsInput{InstanceArn: instanceARN, AccountId: aws.String(acct), PermissionSetArn: aws.String(arn)})
+				asn, err := r.paginate(domain, ops[8], assignments.HasMorePages, func() error {
+					asp, err := assignments.NextPage(r.ctx)
 					if err != nil {
-						return fmt.Errorf("assignments of %s in %s: %w", ps.Name, acct, err)
+						return err
 					}
+					for _, a := range asp.AccountAssignments {
+						kind := string(a.PrincipalType)
+						id := aws.ToString(a.PrincipalId)
+						res.assignments = append(res.assignments, snapshot.AccountAssignment{
+							AccountID: acct, PermissionSetARN: arn, PrincipalType: kind, PrincipalID: id,
+							PrincipalName: r.principalName(ic.IdentityStoreID, kind, id),
+						})
+					}
+					return nil
+				})
+				res.pages += asn
+				if err != nil {
+					return fmt.Errorf("assignments of %s in %s: %w", ps.Name, acct, err)
 				}
-				return nil
-			})
-			pages += an
-			if err != nil {
-				return fmt.Errorf("accounts provisioned with %s: %w", ps.Name, err)
 			}
-			sort.Strings(ps.ProvisionedAccounts)
-			ic.PermissionSets = append(ic.PermissionSets, ps)
+			return nil
+		})
+		res.pages += an
+		if err != nil {
+			res.err = fmt.Errorf("accounts provisioned with %s: %w", ps.Name, err)
+			results[i] = res
+			return
 		}
-		return nil
+		sort.Strings(ps.ProvisionedAccounts)
+		res.set = ps
+		results[i] = res
 	})
-	pages += n
+	var firstErr error
+	for _, res := range results {
+		pages += res.pages
+		if res.err != nil {
+			if firstErr == nil {
+				firstErr = res.err
+			}
+			continue
+		}
+		ic.PermissionSets = append(ic.PermissionSets, res.set)
+		ic.Assignments = append(ic.Assignments, res.assignments...)
+	}
 	r.snap.IdentityCenter = ic
 	items := 1 + len(ic.PermissionSets) + len(ic.Assignments)
-	if err != nil {
-		r.record(regional(r.failed(snapshot.DomainIdentityCenter, err, pages, items, ops...)))
+	if firstErr != nil {
+		r.record(regional(r.failed(domain, firstErr, pages, items, ops...)))
 		return
 	}
-	r.record(regional(r.observed(snapshot.DomainIdentityCenter, items, pages, ops...)))
+	r.record(regional(r.observed(domain, items, pages, ops...)))
 }
 
 // permissionSet describes one permission set: name, session, policies and
 // boundary.
 func (r *run) permissionSet(instanceARN *string, arn string) (snapshot.PermissionSet, error) {
 	client := r.opts.SSOAdmin
+	domain := snapshot.DomainIdentityCenter
 	i, p := instanceARN, aws.String(arn)
-	desc, err := client.DescribePermissionSet(r.ctx, &ssoadmin.DescribePermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+	var desc *ssoadmin.DescribePermissionSetOutput
+	err := r.call(domain, "sso:DescribePermissionSet", func() (err error) {
+		desc, err = client.DescribePermissionSet(r.ctx, &ssoadmin.DescribePermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+		return err
+	})
 	if err != nil {
 		return snapshot.PermissionSet{}, fmt.Errorf("describe permission set %s: %w", arn, err)
 	}
@@ -1105,7 +1572,7 @@ func (r *run) permissionSet(instanceARN *string, arn string) (snapshot.Permissio
 		ps.Name, ps.Description, ps.SessionDuration = aws.ToString(d.Name), aws.ToString(d.Description), aws.ToString(d.SessionDuration)
 	}
 	managed := ssoadmin.NewListManagedPoliciesInPermissionSetPaginator(client, &ssoadmin.ListManagedPoliciesInPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
-	if _, err := paginate(managed.HasMorePages, func() error {
+	if _, err := r.paginate(domain, "sso:ListManagedPoliciesInPermissionSet", managed.HasMorePages, func() error {
 		page, err := managed.NextPage(r.ctx)
 		if err != nil {
 			return err
@@ -1118,7 +1585,7 @@ func (r *run) permissionSet(instanceARN *string, arn string) (snapshot.Permissio
 		return ps, fmt.Errorf("managed policies of %s: %w", ps.Name, err)
 	}
 	customer := ssoadmin.NewListCustomerManagedPolicyReferencesInPermissionSetPaginator(client, &ssoadmin.ListCustomerManagedPolicyReferencesInPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
-	if _, err := paginate(customer.HasMorePages, func() error {
+	if _, err := r.paginate(domain, "sso:ListCustomerManagedPolicyReferencesInPermissionSet", customer.HasMorePages, func() error {
 		page, err := customer.NextPage(r.ctx)
 		if err != nil {
 			return err
@@ -1130,14 +1597,22 @@ func (r *run) permissionSet(instanceARN *string, arn string) (snapshot.Permissio
 	}); err != nil {
 		return ps, fmt.Errorf("customer managed policies of %s: %w", ps.Name, err)
 	}
-	inline, err := client.GetInlinePolicyForPermissionSet(r.ctx, &ssoadmin.GetInlinePolicyForPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+	var inline *ssoadmin.GetInlinePolicyForPermissionSetOutput
+	err = r.call(domain, "sso:GetInlinePolicyForPermissionSet", func() (err error) {
+		inline, err = client.GetInlinePolicyForPermissionSet(r.ctx, &ssoadmin.GetInlinePolicyForPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+		return err
+	})
 	if err != nil {
 		return ps, fmt.Errorf("inline policy of %s: %w", ps.Name, err)
 	}
 	if doc := aws.ToString(inline.InlinePolicy); doc != "" {
 		ps.InlinePolicy = json.RawMessage(doc)
 	}
-	boundary, err := client.GetPermissionsBoundaryForPermissionSet(r.ctx, &ssoadmin.GetPermissionsBoundaryForPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+	var boundary *ssoadmin.GetPermissionsBoundaryForPermissionSetOutput
+	err = r.call(domain, "sso:GetPermissionsBoundaryForPermissionSet", func() (err error) {
+		boundary, err = client.GetPermissionsBoundaryForPermissionSet(r.ctx, &ssoadmin.GetPermissionsBoundaryForPermissionSetInput{InstanceArn: i, PermissionSetArn: p})
+		return err
+	})
 	var notFound *ssotypes.ResourceNotFoundException
 	switch {
 	case errors.As(err, &notFound):
@@ -1168,19 +1643,24 @@ func (r *run) principalName(storeID, kind, id string) string {
 	if r.opts.IdentityStore == nil || storeID == "" || id == "" {
 		return ""
 	}
+	key := kind + ":" + id
+	r.mu.Lock()
 	if r.principals == nil {
 		r.principals = map[string]string{}
 	}
-	key := kind + ":" + id
-	if name, cached := r.principals[key]; cached {
+	name, cached := r.principals[key]
+	r.mu.Unlock()
+	if cached {
 		return name
 	}
-	name := ""
 	var err error
 	switch kind {
 	case snapshot.PrincipalUser:
 		var out *identitystore.DescribeUserOutput
-		out, err = r.opts.IdentityStore.DescribeUser(r.ctx, &identitystore.DescribeUserInput{IdentityStoreId: aws.String(storeID), UserId: aws.String(id)})
+		err = r.call(snapshot.DomainIdentityCenter, "identitystore:DescribeUser", func() (err error) {
+			out, err = r.opts.IdentityStore.DescribeUser(r.ctx, &identitystore.DescribeUserInput{IdentityStoreId: aws.String(storeID), UserId: aws.String(id)})
+			return err
+		})
 		if err == nil {
 			name = aws.ToString(out.UserName)
 			if name == "" {
@@ -1189,7 +1669,10 @@ func (r *run) principalName(storeID, kind, id string) string {
 		}
 	case snapshot.PrincipalGroup:
 		var out *identitystore.DescribeGroupOutput
-		out, err = r.opts.IdentityStore.DescribeGroup(r.ctx, &identitystore.DescribeGroupInput{IdentityStoreId: aws.String(storeID), GroupId: aws.String(id)})
+		err = r.call(snapshot.DomainIdentityCenter, "identitystore:DescribeGroup", func() (err error) {
+			out, err = r.opts.IdentityStore.DescribeGroup(r.ctx, &identitystore.DescribeGroupInput{IdentityStoreId: aws.String(storeID), GroupId: aws.String(id)})
+			return err
+		})
 		if err == nil {
 			name = aws.ToString(out.DisplayName)
 		}
@@ -1197,7 +1680,9 @@ func (r *run) principalName(storeID, kind, id string) string {
 	if err != nil {
 		r.opts.Logger.Printf("warning: %s %s could not be resolved: %v (needs identitystore:DescribeUser and DescribeGroup)", strings.ToLower(kind), id, err)
 	}
+	r.mu.Lock()
 	r.principals[key] = name
+	r.mu.Unlock()
 	return name
 }
 
@@ -1214,6 +1699,15 @@ func firstN(list []string, n int) []string {
 		return list
 	}
 	return list[:n]
+}
+
+func containsString(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // Summary describes what a snapshot contains, for the CLI.

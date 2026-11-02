@@ -1,0 +1,30 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "IdentityCenterRead",
+      "Effect": "Allow",
+      "Action": [
+        "sso:DescribePermissionSet",
+        "sso:GetInlinePolicyForPermissionSet",
+        "sso:GetPermissionsBoundaryForPermissionSet",
+        "sso:ListAccountAssignments",
+        "sso:ListAccountsForProvisionedPermissionSet",
+        "sso:ListCustomerManagedPolicyReferencesInPermissionSet",
+        "sso:ListInstances",
+        "sso:ListManagedPoliciesInPermissionSet",
+        "sso:ListPermissionSets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IdentityStoreNames",
+      "Effect": "Allow",
+      "Action": [
+        "identitystore:DescribeGroup",
+        "identitystore:DescribeUser"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

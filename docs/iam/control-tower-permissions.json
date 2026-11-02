@@ -1,0 +1,24 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ControlTowerRead",
+      "Effect": "Allow",
+      "Action": [
+        "controltower:GetLandingZone",
+        "controltower:ListEnabledBaselines",
+        "controltower:ListEnabledControls",
+        "controltower:ListLandingZones"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ControlCatalogRead",
+      "Effect": "Allow",
+      "Action": [
+        "controlcatalog:GetControl"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

@@ -18,7 +18,10 @@ Usage:
   orgshift simulate --from A.json [--to B.json] --account ID --target-ou OU [flags]
   orgshift simulate --from A.json [--to B.json] --ou OU --target-ou PARENT [flags]
   orgshift serve [--from A.json --to B.json] [--fixtures] [--listen 127.0.0.1:8080]
-  orgshift collect --profile NAME --out FILE [flags]
+  orgshift config example | config check --config orgshift.yaml
+  orgshift iam-templates [--config orgshift.yaml] [--out docs/iam]
+  orgshift preflight --config orgshift.yaml [--side both] [--format text|json|markdown]
+  orgshift collect --config orgshift.yaml [--side source] --out FILE [flags]
   orgshift version
 
 Run "orgshift <command> -h" for the flags of each command.
@@ -42,6 +45,12 @@ func main() {
 		err = runServe(os.Args[2:])
 	case "collect":
 		err = runCollect(os.Args[2:])
+	case "preflight":
+		err = runPreflight(os.Args[2:])
+	case "iam-templates":
+		err = runIAMTemplates(os.Args[2:])
+	case "config":
+		err = runConfig(os.Args[2:])
 	case "-h", "--help", "help":
 		printUsage()
 	default:

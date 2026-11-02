@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OrgshiftCollector",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::<management-account-id>:role/OrgshiftOrgRead"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

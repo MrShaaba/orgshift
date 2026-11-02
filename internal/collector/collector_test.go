@@ -81,7 +81,8 @@ type fakeRAM struct{}
 
 func (fakeRAM) GetResourceShares(context.Context, *ram.GetResourceSharesInput, ...func(*ram.Options)) (*ram.GetResourceSharesOutput, error) {
 	return &ram.GetResourceSharesOutput{ResourceShares: []ramtypes.ResourceShare{
-		{ResourceShareArn: aws.String("arn:aws:ram:us-east-1:111111111111:resource-share/abc"), Name: aws.String("net"), OwningAccountId: aws.String("111111111111"), Status: ramtypes.ResourceShareStatusActive},
+		{ResourceShareArn: aws.String("arn:aws:ram:us-east-1:111111111111:resource-share/abc"), Name: aws.String("net"), OwningAccountId: aws.String("111111111111"), Status: ramtypes.ResourceShareStatusActive,
+			AllowExternalPrincipals: aws.Bool(true), ResourceShareConfiguration: &ramtypes.ResourceShareConfiguration{RetainSharingOnAccountLeaveOrganization: aws.Bool(true)}},
 		{ResourceShareArn: aws.String("arn:aws:ram:us-east-1:111111111111:resource-share/old"), Name: aws.String("old"), OwningAccountId: aws.String("111111111111"), Status: ramtypes.ResourceShareStatusDeleted},
 	}}, nil
 }
@@ -299,6 +300,9 @@ func TestCollectBuildsAValidSnapshot(t *testing.T) {
 	}
 	if len(snap.ResourceShares) != 1 || snap.ResourceShares[0].Resources[0].Type != "ec2:TransitGateway" {
 		t.Errorf("deleted shares must be skipped and resources listed: %+v", snap.ResourceShares)
+	}
+	if sh := snap.ResourceShares[0]; !sh.RetainSharingOnAccountLeave || !sh.AllowExternalPrincipals {
+		t.Errorf("RetainSharingOnAccountLeaveOrganization is read from the share configuration: %+v", sh)
 	}
 	if len(snap.DelegatedAdministrators) != 1 || snap.DelegatedAdministrators[0].DelegationDate != "2025-01-02T03:04:05Z" {
 		t.Errorf("delegated admins wrong: %+v", snap.DelegatedAdministrators)

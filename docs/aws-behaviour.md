@@ -62,10 +62,14 @@ does not decide:
 | prefix lists, IPAM pools, multicast domains, Resolver firewall rule groups and query log configs, local gateway route tables, core networks, Verified Access groups, traffic mirror targets, security groups | Not verified against the service documentation. | REVIEW, saying so |
 | everything else | Not modelled. | REVIEW |
 
-The collector does not read `RetainSharingOnAccountLeaveOrganization`: the
-RAM SDK module that exposes it on `ResourceShare` requires Go 1.24, which
-this build does not use yet. The field is in the snapshot schema for hand
-entry and defaults to false, which is the safe reading (the share is lost).
+The collector reads `RetainSharingOnAccountLeaveOrganization` from each
+share's `resourceShareConfiguration` (RAM API `ResourceShare`,
+[reference](https://docs.aws.amazon.com/ram/latest/APIReference/API_ResourceShare.html),
+checked 2026-11-02) since the move to Go 1.24 and RAM SDK module v1.45.
+When the API returns no configuration the field stays false, which is the
+documented default and the safe reading (the share is lost). The preflight
+shows the first share's value so an unexpected "not reported" is visible
+before collection.
 
 ## AWS Control Tower
 

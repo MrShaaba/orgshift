@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OrgshiftReadFromDelegatedAccount",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::<delegated-administrator-account-id>:role/OrgshiftOrgRead"
+      },
+      "Action": [
+        "organizations:DescribeOrganization",
+        "organizations:ListRoots",
+        "organizations:ListOrganizationalUnitsForParent",
+        "organizations:ListAccountsForParent",
+        "organizations:ListPolicies",
+        "organizations:DescribePolicy",
+        "organizations:ListTargetsForPolicy",
+        "organizations:ListTagsForResource"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

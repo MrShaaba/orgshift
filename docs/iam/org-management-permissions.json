@@ -1,0 +1,57 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OrganizationsRead",
+      "Effect": "Allow",
+      "Action": [
+        "organizations:DescribeOrganization",
+        "organizations:DescribePolicy",
+        "organizations:ListAWSServiceAccessForOrganization",
+        "organizations:ListAccountsForParent",
+        "organizations:ListDelegatedAdministrators",
+        "organizations:ListDelegatedServicesForAccount",
+        "organizations:ListOrganizationalUnitsForParent",
+        "organizations:ListPolicies",
+        "organizations:ListRoots",
+        "organizations:ListTagsForResource",
+        "organizations:ListTargetsForPolicy"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AccountRegionsRead",
+      "Effect": "Allow",
+      "Action": [
+        "account:ListRegions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OwnResourceSharesRead",
+      "Effect": "Allow",
+      "Action": [
+        "ram:GetResourceShares",
+        "ram:ListPrincipals",
+        "ram:ListResources"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AssumeCollectorRoles",
+      "Effect": "Allow",
+      "Action": [
+        "sts:AssumeRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/OrgshiftMemberRead",
+        "arn:aws:iam::<network-account-id>:role/OrgshiftNetworkRead"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceOrgID": "${aws:PrincipalOrgID}"
+        }
+      }
+    }
+  ]
+}

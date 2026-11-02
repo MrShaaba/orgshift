@@ -234,11 +234,22 @@ Markdown), the two organization trees side by side with the policy chain
 highlighted and the account drawn at its future position, the "what changes"
 diff of effective policies, and export buttons.
 
+![The verdict board for the payments account moving into Fernhill Group: NO-GO, with each blocking action, the policy behind it and the regions affected](docs/screenshot-verdict-board.png)
+
 Switch "What moves" to "a whole OU" to move an OU instead: the result opens
 with the per-account rollup table, the OU's own findings (what travels with
 it, what has to be recreated), the subtree drawn at its new position and the
 inherited-policy diff at the OU, followed by a collapsible verdict board per
 account.
+
+The third panel stages a migration from a scenario file: the timeline of
+stages with a verdict for each, the current and proposed hierarchy side by
+side (proposed OUs marked), and every stage's layers, findings and full
+transition board.
+
+![A staged migration: seven stages from Larkspur Holdings into Fernhill Group, the first blocking stage named, and the current and proposed hierarchies](docs/screenshot-stages.png)
+
+![Stage by stage: which of the five layers each stage changes, its findings and the checks the operator confirms](docs/screenshot-stage-detail.png)
 
 ## Using it on a real organization
 

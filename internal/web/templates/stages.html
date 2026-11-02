@@ -1,0 +1,110 @@
+{{$r := .Report}}{{$s := $r.Subject}}
+<section class="panel verdict {{statusClass $r.Verdict}}">
+  <div class="verdict-head">
+    <div class="verdict-pill {{statusClass $r.Verdict}}">{{$r.Verdict}}</div>
+    <div>
+      <h2>{{$r.Name}} <span class="pill subject">staged · {{$r.Strategy}}</span></h2>
+      <p class="summary">{{$r.Summary}}</p>
+      {{if $r.Description}}<p class="muted small">{{$r.Description}}</p>{{end}}
+      {{range $r.Notes}}<p class="muted small">Note: {{.}}</p>{{end}}
+    </div>
+    <div class="export">
+      <a class="button secondary" href="/stages.json?{{.ExportQuery}}">Export JSON</a>
+      <a class="button secondary" href="/stages.md?{{.ExportQuery}}">Export Markdown</a>
+      <a class="button secondary" href="/stages?{{.ExportQuery}}">Link to this result</a>
+    </div>
+  </div>
+  <div class="grid2 subject">
+    <div><h4>Account</h4><div>{{$s.AccountName}} <code>{{$s.AccountID}}</code></div><div class="path">{{$s.SourceOrg.Name}} · {{parentPath $s.CurrentPath}}</div></div>
+    <div><h4>Final position</h4><div>{{$s.DestinationOrg.Name}} <code>{{$s.DestinationOrg.ID}}</code>{{if $s.CrossOrg}} <span class="pill warn">different organization</span>{{end}}</div><div class="path">{{parentPath $s.FinalPath}}</div></div>
+  </div>
+  <ol class="timeline">
+    {{range $r.Stages}}<li class="{{statusClass .Verdict}}"><a href="#stage-{{.Index}}"><span class="pill {{statusClass .Verdict}}">{{.Verdict}}</span> <span class="tl-no">{{.Index}}</span> {{.Title}}</a></li>{{end}}
+  </ol>
+</section>
+
+<section class="panel">
+  <h2>Current versus proposed hierarchy</h2>
+  <div class="grid2 trees">
+    <div>
+      <h3>Current · {{.SourceName}}</h3>
+      <ul class="tree">{{template "tree_node" .CurrentTree}}</ul>
+    </div>
+    <div>
+      <h3>After the last stage · {{.TargetName}}</h3>
+      <ul class="tree">{{template "tree_node" .FinalTree}}</ul>
+    </div>
+  </div>
+  <p class="muted small">Nodes marked <span class="pill proposed">proposed</span> do not exist in the snapshots; the scenario creates them before the stage that uses them. Highlighted nodes form the policy chain to the account.</p>
+  {{if or $r.Proposed.OUs $r.Proposed.Policies $r.Proposed.ResourceShares}}
+  <h4>Proposed objects</h4>
+  <ul class="compact">
+    {{range $r.Proposed.OUs}}<li>OU <strong>{{.Name}}</strong> <code>{{.ID}}</code> under <code>{{.ParentID}}</code>{{if .Policies}}, policies {{join .Policies ", "}}{{end}}{{if .Register}}, registered with Control Tower{{end}}</li>{{end}}
+    {{range $r.Proposed.Policies}}<li>{{.Type.Short}} <strong>{{.Name}}</strong> <code>{{.ID}}</code></li>{{end}}
+    {{range $r.Proposed.ResourceShares}}<li>resource share <strong>{{.}}</strong></li>{{end}}
+  </ul>
+  {{end}}
+  {{if $r.CriticalOperations}}
+  <h4>Declared critical operations ({{len $r.CriticalOperations}})</h4>
+  <ul class="compact">{{range $r.CriticalOperations}}<li><code>{{.Action}}</code>{{if .Regions}} <span class="muted small">{{join .Regions ", "}}</span>{{end}} <span class="muted small">— {{.Reason}}</span></li>{{end}}</ul>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2>Stage by stage</h2>
+  <p class="muted small">Each stage is a proposed state. The five layers are reported separately; a change in one is never read as a change in another. The transition into each stage is evaluated with the full verdict board.</p>
+  {{range $r.Stages}}
+  <article class="stage {{statusClass .Verdict}}" id="stage-{{.Index}}">
+    <header>
+      <span class="pill {{statusClass .Verdict}}">{{.Verdict}}</span>
+      <h3><span class="tl-no">{{.Index}}</span> {{.Title}}</h3>
+      <span class="muted small">{{.Summary}}</span>
+    </header>
+    {{if .Description}}<p class="muted">{{.Description}}</p>{{end}}
+    <div class="layers">
+      {{range .Layers}}<span class="layer-chip {{if .Changed}}changed{{end}}" title="{{.Summary}}"><strong>{{.Layer}}</strong> {{.Summary}}</span>{{end}}
+    </div>
+    <p class="state small">State: {{.State.Organization.Name}} <code>{{.State.Organization.ID}}</code> · {{pathLabel .State.Path}}
+      {{if .State.Enrolled}} · <span class="pill ct">enrolled</span>{{end}}{{if .State.Governed}} · <span class="pill ct">registered OU</span>{{end}}
+      {{if .State.ProposedOnPath}} · <span class="pill proposed">proposed on path: {{join .State.ProposedOnPath ", "}}</span>{{end}}
+      {{if .State.Shares}} · proposed shares present: {{join .State.Shares ", "}}{{end}}
+      {{if .State.Relocated}} · <span class="pill warn">workloads relocated</span>{{end}}</p>
+    {{if .Findings}}
+    <h4>Stage findings</h4>
+    {{range .Findings}}{{template "finding" .}}{{end}}
+    {{end}}
+    {{if .Verify}}
+    <h4>Operator verification at this stage</h4>
+    <ul class="compact verify">{{range .Verify}}<li>☐ {{.}}</li>{{end}}</ul>
+    {{end}}
+    {{if .Transition}}
+    <details class="transition">
+      <summary><span class="pill {{statusClass .Transition.Verdict}}">{{.Transition.Verdict}}</span> Transition into this stage: verdict board, coverage {{.Transition.Coverage.Line}}</summary>
+      <p class="muted small">{{.Transition.Summary}}</p>
+      {{template "verdict_board" .Transition}}
+    </details>
+    {{end}}
+  </article>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2>Strategies compared</h2>
+  <div class="grid2">
+  {{range $r.Strategies}}
+    <div class="strategy {{if .Selected}}selected{{end}}">
+      <h3>{{.Title}}{{if .Selected}} <span class="pill subject">selected</span>{{end}}</h3>
+      <h4>Prerequisites</h4><ul class="compact">{{range .Prerequisites}}<li>{{.}}</li>{{end}}</ul>
+      <h4>Risks</h4><ul class="compact">{{range .Risks}}<li>{{.}}</li>{{end}}</ul>
+      <h4>Remaining unknowns</h4><ul class="compact">{{range .Unknowns}}<li>{{.}}</li>{{end}}</ul>
+      <h4>Reversal limitations</h4><ul class="compact">{{range .Reversal}}<li>{{.}}</li>{{end}}</ul>
+    </div>
+  {{end}}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Limitations of the offline evaluation</h2>
+  <ul class="compact">{{range $r.Limitations}}<li>{{.}}</li>{{end}}</ul>
+  <p class="muted small">Models used:{{range $r.Models}} <span title="{{.Note}}">{{.ID}} <code>{{.Version}}</code> (<a href="{{.Reference}}">reference</a>)</span>{{end}}</p>
+</section>

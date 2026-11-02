@@ -257,7 +257,7 @@ func gapFinding(req coverageRequirement, sideLabel string, cell CoverageCell, s 
 	if len(lines) > 0 {
 		ev.Note = strings.Join(lines, "\n")
 	}
-	f := Finding{Status: StatusReview, Evidence: []Evidence{ev}}
+	f := Finding{Status: StatusReview, Category: CategoryMissingEvidence, Evidence: []Evidence{ev}}
 	fix := " Collect the snapshot again with this version of orgshift once the cause is fixed, or add the entries by hand and record them under coverage.domains; for a hand-written snapshot, set coverage.asserted_complete once every list is confirmed."
 	switch cell.Status {
 	case snapshot.CoverageUnknown:

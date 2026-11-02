@@ -71,14 +71,14 @@ func rcpApplies(action string) (bool, string) {
 func (e *evaluation) rcpModelFindings(c *Check, notGoverned, exempt []string) {
 	if len(notGoverned) > 0 {
 		sort.Strings(notGoverned)
-		c.add(Finding{Status: StatusInfo, Title: fmt.Sprintf("%d action(s) use services RCPs do not govern and were not evaluated against RCPs", len(notGoverned)),
+		c.add(Finding{Status: StatusInfo, Category: CategoryUnsupported, Title: fmt.Sprintf("%d action(s) use services RCPs do not govern and were not evaluated against RCPs", len(notGoverned)),
 			Detail: "RCPs apply to a fixed list of services (applicability model " + RCPModelVersion + ", " + fmt.Sprint(len(rcpServices)) + " services). These actions are not restricted by RCPs at either position, so nothing changes for them: " +
 				strings.Join(notGoverned, ", ") + ". Services added to RCPs after the model date are not covered; the model is updated with the tool.",
 			References: []string{RCPModelReference}})
 	}
 	if len(exempt) > 0 {
 		sort.Strings(exempt)
-		c.add(Finding{Status: StatusInfo, Title: fmt.Sprintf("%d action(s) are exempt from RCPs: %s", len(exempt), strings.Join(exempt, ", ")),
+		c.add(Finding{Status: StatusInfo, Category: CategoryUnsupported, Title: fmt.Sprintf("%d action(s) are exempt from RCPs: %s", len(exempt), strings.Join(exempt, ", ")),
 			Detail:     "The reference page lists these permissions as not impacted by RCPs, so they were not evaluated.",
 			References: []string{RCPModelReference}})
 	}

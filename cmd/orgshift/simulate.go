@@ -10,6 +10,7 @@ import (
 	"github.com/MrShaaba/orgshift/internal/evaluator"
 	"github.com/MrShaaba/orgshift/internal/report"
 	"github.com/MrShaaba/orgshift/internal/runbook"
+	"github.com/MrShaaba/orgshift/internal/scenario"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 	"github.com/MrShaaba/orgshift/internal/usage"
 )
@@ -19,6 +20,17 @@ import (
 type errVerdict struct{ code int }
 
 func (e errVerdict) Error() string { return fmt.Sprintf("verdict exit code %d", e.code) }
+
+// verdictExit maps a verdict to the process exit code (0 GO, 2 REVIEW, 3 NO-GO).
+func verdictExit(v evaluator.Status) error {
+	switch v {
+	case evaluator.StatusReview:
+		return errVerdict{2}
+	case evaluator.StatusNoGo:
+		return errVerdict{3}
+	}
+	return nil
+}
 
 func runSimulate(args []string) error {
 	fs := flag.NewFlagSet("simulate", flag.ContinueOnError)
@@ -32,6 +44,7 @@ func runSimulate(args []string) error {
 	actions := fs.String("actions", "", "JSON file with actions in use; merged into the snapshot's list for the account")
 	lastAccessed := fs.String("last-accessed", "", "IAM last-accessed export (get-service-last-accessed-details JSON) to import as actions in use")
 	replace := fs.Bool("replace-actions", false, "replace the snapshot's actions in use instead of merging")
+	critical := fs.String("critical-operations", "", "YAML or JSON file of critical operations the account must keep performing (a list of {action, regions, reason}); evaluated next to the observed usage and reported as declared")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: orgshift simulate --from A.json [--to B.json] (--account ID | --ou OU) --target-ou OU [flags]")
 		fs.PrintDefaults()
@@ -44,8 +57,18 @@ func runSimulate(args []string) error {
 		fs.Usage()
 		return errors.New("--from, --target-ou and exactly one of --account or --ou are required")
 	}
-	if *ou != "" && (*actions != "" || *lastAccessed != "") {
-		return errors.New("--actions and --last-accessed apply to a single account; use --account")
+	if *ou != "" && (*actions != "" || *lastAccessed != "" || *critical != "") {
+		return errors.New("--actions, --last-accessed and --critical-operations apply to a single account; use --account")
+	}
+	var declared []snapshot.ActionInUse
+	if *critical != "" {
+		ops, err := scenario.LoadCriticalOperations(*critical)
+		if err != nil {
+			return err
+		}
+		for _, op := range ops {
+			declared = append(declared, op.ActionInUse())
+		}
 	}
 	src, err := snapshot.Load(*from)
 	if err != nil {
@@ -93,7 +116,7 @@ func runSimulate(args []string) error {
 			return fmt.Errorf("unknown format %q", *format)
 		}
 	} else {
-		res, err := evaluator.Evaluate(evaluator.Input{From: src, To: dst, AccountID: *account, TargetOUID: *targetOU})
+		res, err := evaluator.Evaluate(evaluator.Input{From: src, To: dst, AccountID: *account, TargetOUID: *targetOU, Declared: declared})
 		if err != nil {
 			return err
 		}
@@ -125,13 +148,7 @@ func runSimulate(args []string) error {
 	} else {
 		os.Stdout.Write(body)
 	}
-	switch verdict {
-	case evaluator.StatusReview:
-		return errVerdict{2}
-	case evaluator.StatusNoGo:
-		return errVerdict{3}
-	}
-	return nil
+	return verdictExit(verdict)
 }
 
 // applyUsageFlags merges --actions and --last-accessed into the snapshot.

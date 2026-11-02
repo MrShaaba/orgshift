@@ -11,12 +11,15 @@ import (
 
 // Documentation the cross-organization findings were verified against.
 const (
-	refRemoveAccount   = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
-	refRAMSharing      = "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html"
-	refTGWUnshare      = "https://docs.aws.amazon.com/vpc/latest/tgw/transit-gateway-share.html#transit-gateway-unshare"
-	refSubnetUnshare   = "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-sharing-share-subnet-working-with.html#vpc-sharing-stop-share-subnet"
-	refResolverSharing = "https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver-rules-managing.html#resolver-rules-managing-sharing"
-	refShareable       = "https://docs.aws.amazon.com/ram/latest/userguide/shareable.html"
+	refRemoveAccount      = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
+	refInvitations        = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
+	refDeleteOrganization = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html"
+	refDecommission       = "https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html"
+	refRAMSharing         = "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html"
+	refTGWUnshare         = "https://docs.aws.amazon.com/vpc/latest/tgw/transit-gateway-share.html#transit-gateway-unshare"
+	refSubnetUnshare      = "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-sharing-share-subnet-working-with.html#vpc-sharing-stop-share-subnet"
+	refResolverSharing    = "https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver-rules-managing.html#resolver-rules-managing-sharing"
+	refShareable          = "https://docs.aws.amazon.com/ram/latest/userguide/shareable.html"
 )
 
 // The RAM behaviour model: what happens to a consumer when a share stops
@@ -492,9 +495,15 @@ func (e *evaluation) evaluateOrgServices(c *Check) {
 			Detail: "The account will be enrolled by that administrator's configuration once it joins."})
 	}
 	if e.account.ID == e.from.Organization.ManagementAccountID {
-		c.add(Finding{Status: StatusNoGo, Title: "Account is the management account of the source organization",
-			Detail:     "A management account cannot leave its organization. The organization would have to be deleted first.",
-			References: []string{refRemoveAccount}})
+		c.add(Finding{Status: StatusNoGo, Category: CategoryDeclaredImpact, Title: "Account is the management account of the source organization",
+			Detail:     fmt.Sprintf("Organizations has no operation that removes or moves a management account: RemoveAccountFromOrganization and LeaveOrganization apply to member accounts only, and the management account leaves only when the organization is deleted. Deleting %s requires removing every member account first (each needs the standalone-account information; created accounts wait four days; closed accounts block deletion for up to 90 days), deletes every SCP, RCP, tag, backup and other organization policy irrecoverably, and ends the organization's integrations (IAM Identity Center, for one). The former management account then is standalone and can accept an invitation as a member. Transfer procedure model %s.", e.from.Organization.ID, TransferModelVersion),
+			References: []string{refDeleteOrganization, refRemoveAccount}})
+		if e.from.ControlTower != nil {
+			c.add(Finding{Status: StatusNoGo, Category: CategoryDeclaredImpact, Title: "The source organization runs Control Tower from this management account",
+				Detail:     fmt.Sprintf("The landing zone %s is operated from the management account. Before the organization can be deleted the landing zone has to be decommissioned, which removes the resources Control Tower created in the management, audit and log archive accounts and cannot be undone; S3 buckets and CloudWatch log groups remain to be deleted by hand. Deleting Control Tower resources by hand is not decommissioning and leaves a state from which no new landing zone can be set up.", e.from.ControlTower.LandingZoneARN),
+				Evidence:   []Evidence{landingZoneEvidence("source", e.from.ControlTower)},
+				References: []string{refDecommission}})
+		}
 	}
 	e.accountAgeFinding(c)
 	if len(e.account.Tags) > 0 {
@@ -512,9 +521,9 @@ func (e *evaluation) evaluateOrgServices(c *Check) {
 			Detail:     "Because the account was created in the organization, Organizations created an IAM role (usually OrganizationAccountAccessRole) that the source management account can assume. Leaving does not delete it; delete it by hand if that access should end, and expect the target management account to need a role of its own.",
 			References: []string{refRemoveAccount}})
 	}
-	c.add(Finding{Status: StatusReview, Title: "Standalone account prerequisites and invitation",
-		Detail:     "Before it can leave, the account needs its own contact information (verified), a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements.",
-		References: []string{refRemoveAccount}})
+	c.add(Finding{Status: StatusReview, Category: CategoryPotentialImpact, Title: "Standalone account prerequisites and invitation",
+		Detail:     fmt.Sprintf("Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account %s and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model %s.", e.to.Organization.ManagementAccountID, TransferModelVersion),
+		References: []string{refRemoveAccount, refInvitations}})
 	sortFindings(c.Findings)
 	c.Summary = fmt.Sprintf("Cross-organization move: %d item(s) to settle before the account leaves.", countStatus(c.Findings, StatusReview)+countStatus(c.Findings, StatusNoGo))
 }

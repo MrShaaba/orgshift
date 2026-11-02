@@ -56,6 +56,21 @@ offline and reports:
   aggregation, StackSets, trusted access gaps, the standalone-account
   prerequisites, and the account tags and management role AWS deletes or
   keeps.
+- **Staged migrations**: a scenario overlay (`orgshift stages`) describes
+  the migration as proposed states across five layers kept separate
+  (membership, OU placement, Control Tower governance, network, workload),
+  with proposed OUs, policies and shares that exist only in the overlay.
+  Every transition is evaluated with the full verdict board, the stage's own
+  findings cover the standalone window, what a proposed OU inherits,
+  enrollment prerequisites and management-account constraints from the
+  official transfer procedure, and the transfer strategy is compared with
+  creating destination accounts and migrating the workloads. See
+  [docs/stages.md](docs/stages.md).
+- **Impact categories**: every finding says whether it is a known
+  restriction, an impact on a declared or observed operation, a potential
+  impact needing context, an unsupported evaluation or missing evidence,
+  with a confidence; user-declared critical operations are evaluated next
+  to the observed usage and marked as declared.
 - **Verdict**: NO-GO for a known blocking condition (an action in use
   becomes denied, a share whose loss is documented to stop traffic or a
   declared operation, a delegated administrator, a shared Control Tower
@@ -181,6 +196,21 @@ go build -o orgshift ./cmd/orgshift
   --to fixtures/fernhill-group.json \
   --account 111111111115 --target-ou ou-fern-pay1 \
   --format runbook --out payments-runbook.md
+
+# the same move as seven proposed stages: prerequisites, entry at the root,
+# a transitional Legacy OU, validation, Control Tower enrollment, tightening;
+# the scenario overlay names the fixture snapshots next to it
+./orgshift stages --scenario fixtures/scenario-payments-to-fernhill.yaml
+./orgshift stages --scenario fixtures/scenario-payments-to-fernhill.yaml --format markdown --out payments-stages.md
+
+# a same-organization staged move: the Fernhill sandbox account into a
+# proposed Transitional OU, registration and enrollment, then tightening
+./orgshift stages --scenario fixtures/scenario-fernhill-sandbox-staged.yaml
+
+# declare operations the account must keep performing on a single move
+./orgshift scenario example > plan.yaml
+./orgshift simulate --from fixtures/larkspur-holdings.json --to fixtures/fernhill-group.json \
+  --account 111111111115 --target-ou ou-fern-pay1 --critical-operations plan.yaml
 ```
 
 `simulate` exits 0 for GO, 2 for REVIEW and 3 for NO-GO, so it can gate a
@@ -277,7 +307,16 @@ has every option.
    The snapshot file is never modified; the import is merged in memory for
    that run.
 
-6. Read the verdict and the coverage matrix, work through the runbook
+6. Propose the stages. Write a scenario overlay (`orgshift scenario example`,
+   [docs/stages.md](docs/stages.md)) with the proposed OUs, policies and
+   shares, the critical operations the account must keep performing and the
+   stages across the five layers, then evaluate every stage:
+
+   ```sh
+   ./orgshift stages --scenario plan.yaml --from snapshots/source.json --to snapshots/destination.json --format markdown --out plan.md
+   ```
+
+7. Read the verdicts and the coverage matrix, work through the runbook
    (collect what is missing, fix what it lists before the move, re-create
    what does not travel), collect again, repeat until GO. The runbook's
    commands are for you to run; orgshift only reads.
@@ -319,7 +358,8 @@ has every option.
 ## Repository layout
 
 ```
-cmd/orgshift          CLI: fixtures, simulate, serve, config, iam-templates, preflight, collect
+cmd/orgshift          CLI: fixtures, simulate, stages, scenario, serve, config, iam-templates, preflight, collect
+internal/scenario     scenario overlay: stages across five layers, derived states, staged evaluation, strategy comparison
 internal/config       onboarding configuration (YAML or JSON): access per side, regions, collection options
 internal/awsaccess    credentials from profiles, Identity Center sessions and assume-role chains; identity check
 internal/iamtemplates IAM role templates per collector responsibility, generated from the operation catalog
@@ -333,14 +373,14 @@ internal/report       JSON, Markdown and text rendering, runbook Markdown
 internal/usage        actions-in-use files and IAM last-accessed import
 internal/web          html/template + HTMX UI, embedded static files
 internal/collector    read-only AWS collector behind an operation catalog, with bounded concurrency, retries, checkpoints and coverage
-docs/                 onboarding, snapshot schema, permissions, IAM templates, runbook, AWS behaviour references, screenshot
+docs/                 onboarding, stages, snapshot schema, permissions, IAM templates, runbook, AWS behaviour references, screenshot
 ```
 
 ## Development
 
 ```sh
 go vet ./... && go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./... && go test ./...
-go test ./internal/evaluator ./internal/runbook ./internal/report -update   # refresh golden files after reviewing a change
+go test ./internal/evaluator ./internal/runbook ./internal/report ./internal/scenario -update   # refresh golden files after reviewing a change
 go test ./internal/iamtemplates -update                                       # regenerate docs/iam from the operation catalog
 go test ./internal/policy -run '^$' -fuzz FuzzParseAndApply -fuzztime 60s      # fuzz the policy parser and matcher
 go test ./internal/evaluator -run '^$' -fuzz FuzzEvaluateWithPolicyDocument -fuzztime 60s

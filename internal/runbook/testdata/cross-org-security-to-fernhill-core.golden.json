@@ -56,7 +56,10 @@
       "ap-southeast-1",
       "eu-west-1",
       "us-east-1"
-    ]
+    ],
+    "declared_operations": 0,
+    "source_org_path": "o-larkspur0001/r-lark/ou-lark-sec/",
+    "target_org_path": "o-fernhill0001/r-fern/ou-fern-core/"
   },
   "verdict": "NO-GO",
   "summary": "44 steps: 10 before the move (4 blocking), 7 to re-create, 4 for the move itself, 16 checks afterwards and 7 to roll back.",
@@ -69,7 +72,7 @@
         {
           "id": "before-1",
           "title": "No actions in use were provided for this account",
-          "detail": "Add usage.actions to the source snapshot, pass --actions, or import an IAM last-accessed export. Without them nothing can be checked against the policies.",
+          "detail": "Add usage.actions to the source snapshot, pass --actions or --critical-operations, or import an IAM last-accessed export. Without them nothing can be checked against the policies.",
           "status": "REVIEW",
           "kind": "input",
           "check": "scp",
@@ -81,7 +84,7 @@
         {
           "id": "before-2",
           "title": "No actions in use were provided for this account",
-          "detail": "Add usage.actions to the source snapshot, pass --actions, or import an IAM last-accessed export. Without them nothing can be checked against the policies.",
+          "detail": "Add usage.actions to the source snapshot, pass --actions or --critical-operations, or import an IAM last-accessed export. Without them nothing can be checked against the policies.",
           "status": "REVIEW",
           "kind": "input",
           "check": "rcp",
@@ -192,7 +195,7 @@
         {
           "id": "before-8",
           "title": "Make the account able to stand alone",
-          "detail": "Before it can leave, the account needs its own contact information (verified), a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
+          "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
           "status": "REVIEW",
           "kind": "prerequisite",
           "where": "account larkspur-security (111111111113), signed in as root or an administrator",

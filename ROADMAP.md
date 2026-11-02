@@ -11,8 +11,10 @@ the summary says what to try.
 - **M2 (done, 2026-11-02):** Section 3, onboarding configuration, IAM
   templates and the permission preflight, plus bounded concurrency,
   retries, resumable collection and the move to Go 1.24.
-- **M3:** Sections 6 and 7 for the same-organization and cross-organization
-  paths, with end-to-end fixtures and the CLI and UI.
+- **M3 (done, 2026-11-02):** Sections 6 and 7 for the same-organization and
+  cross-organization paths: the scenario overlay and staged evaluation, the
+  five layers, the transfer-procedure model, the impact categories and
+  declared critical operations, end-to-end fixtures, CLI and UI.
 - **M4 and later:** Section 5 beyond Organizations, Control Tower and
   Identity Center; then Section 8; then the rest.
 
@@ -72,8 +74,62 @@ Completeness (Section 4):
   gap.
 - A third fixture, Larkspur Holdings (partial collection), shows all of it.
 
-Left for later milestones: the scenario overlay file that keeps proposed
-changes apart from the immutable snapshot (M3, with the stage model).
+### M3 outcome
+
+Staged simulation (Section 6):
+
+- A scenario overlay (`internal/scenario`, YAML or JSON, `orgshift scenario
+  example` and `scenario check`) describes a migration as stages across
+  five layers kept separate: organization membership, OU placement, Control
+  Tower governance, network connectivity (RAM shares) and workload
+  relocation. Proposed OUs, policies and shares live only in the overlay;
+  the snapshots are never modified and every report lists proposed objects
+  apart from collected ones.
+- `orgshift stages` derives the state after every stage (a validated copy of
+  the organization's snapshot with the proposed objects and the account
+  placed), evaluates the transition into each stage with the full verdict
+  board, adds the stage's own findings (the standalone window and the
+  invitation, what a proposed OU inherits and that an inherited explicit
+  deny cannot be overridden, enrollment prerequisites and declarations,
+  shares created or withdrawn, validation points, workload relocation), and
+  compares the transfer strategy with creating destination accounts and
+  migrating the workloads (prerequisites, risks, unknowns, reversal limits).
+- Management-account constraints and the transfer procedure come from the
+  official pages, versioned as the `transfer-procedure` model (2026-11-02):
+  standalone-account information, the four-day rule, delegated
+  administration, invitations (one organization at a time, 15 days,
+  policies apply at once), deleting the organization to free a management
+  account, decommissioning a landing zone first, and the Control Tower
+  enrollment prerequisites.
+- Two scenario fixtures ship with `orgshift fixtures` and the UI: Payments
+  production into Fernhill through a transitional Legacy OU and enrollment
+  (cross-organization), and the Fernhill sandbox account into a proposed
+  Transitional OU under Business Units, registration, enrollment and
+  tightening (same organization). Golden tests cover both.
+- The UI's "Stage a migration" panel takes a scenario file or a fixture
+  scenario, shows the timeline, the current versus proposed hierarchy with
+  proposed nodes marked, each stage's layers, state, findings and transition
+  board, and the strategy comparison; JSON and Markdown exports.
+
+Policy and impact evaluation (Section 7):
+
+- Every finding carries an impact category (known restriction, declared
+  impact, potential impact, unsupported evaluation, missing evidence,
+  informational), a confidence and, for findings about an operation, its
+  source (observed or declared); the result counts the categories
+  (`result_schema_version` 3).
+- User-declared critical operations (`critical_operations` in the scenario,
+  `simulate --critical-operations`) are evaluated next to the observed usage.
+- `aws:PrincipalOrgPaths` and `aws:ResourceOrgPaths` are evaluated with the
+  organization paths before and after the move; the result records both.
+- Standing limitations are repeated on every result: an SCP or RCP allow is
+  not an IAM grant, which policy elements are not evaluated, what tag
+  policies do and do not do, what the RAM model covers.
+
+Left for later milestones: workload inventory and deployment provenance
+behind the recreate strategy and the workload layer (M4); network-path
+reasoning behind the validation stage (Section 8); stable finding
+identifiers and redaction (Section 9).
 
 ### M2 outcome
 

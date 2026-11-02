@@ -60,7 +60,10 @@
     "regions_assumed": [
       "eu-central-1",
       "eu-west-1"
-    ]
+    ],
+    "declared_operations": 0,
+    "source_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-fern-ret/",
+    "target_org_path": "o-fernhill0001/r-fern/ou-fern-sand/"
   },
   "verdict": "REVIEW",
   "summary": "8 steps: 1 before the move (0 blocking), 1 to re-create, 1 for the move itself, 3 checks afterwards and 2 to roll back.",

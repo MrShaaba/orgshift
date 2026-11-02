@@ -224,8 +224,9 @@ type outcomePair struct {
 	src, dst decision
 }
 
-// compare turns a source/target pair into a finding status and title.
-func compare(p outcomePair, what string) (Status, string, string) {
+// compare turns a source/target pair into a finding status, title, detail
+// and impact category.
+func compare(p outcomePair, what string) (Status, string, string, string) {
 	switch p.dst.kind {
 	case denied, implicitDenied:
 		cause := p.dst.reason
@@ -234,20 +235,39 @@ func compare(p outcomePair, what string) (Status, string, string) {
 		}
 		switch p.src.kind {
 		case allowed:
-			return StatusNoGo, what + " becomes denied after the move", "Allowed today; after the move it is " + cause + "."
+			return StatusNoGo, what + " becomes denied after the move", "Allowed today; after the move it is " + cause + ".", CategoryDeclaredImpact
 		case unknown:
-			return StatusNoGo, what + " is denied after the move", "Cannot be fully evaluated today (" + p.src.cause() + "); after the move it is " + cause + "."
+			return StatusNoGo, what + " is denied after the move", "Cannot be fully evaluated today (" + p.src.cause() + "); after the move it is " + cause + ".", CategoryDeclaredImpact
 		default:
-			return StatusInfo, what + " is already denied today", "Denied today (" + p.src.cause() + ") and still denied after the move (" + cause + "). The actions-in-use list may be stale."
+			return StatusInfo, what + " is already denied today", "Denied today (" + p.src.cause() + ") and still denied after the move (" + cause + "). The actions-in-use list may be stale.", CategoryKnownRestriction
 		}
 	case unknown:
-		return StatusReview, what + " needs review after the move", "Cannot decide offline: " + p.dst.cause() + "."
+		category := CategoryPotentialImpact
+		if unsupportedReason(p.dst.reason) {
+			category = CategoryUnsupported
+		}
+		return StatusReview, what + " needs review after the move", "Cannot decide offline: " + p.dst.cause() + ".", category
 	default:
 		if p.src.kind == denied || p.src.kind == implicitDenied {
-			return StatusInfo, what + " becomes allowed after the move", "Denied today (" + p.src.cause() + ") and allowed after the move."
+			return StatusInfo, what + " becomes allowed after the move", "Denied today (" + p.src.cause() + ") and allowed after the move.", CategoryInformational
 		}
-		return StatusGo, "", ""
+		return StatusGo, "", "", ""
 	}
+}
+
+// unsupportedReason reports whether an unknown decision comes from a limit
+// of the evaluator (an operator or construct it does not model) rather than
+// from context the snapshot lacks.
+func unsupportedReason(reason string) bool {
+	return strings.Contains(reason, "not supported by the offline evaluator") || strings.Contains(reason, "policy variable") || strings.Contains(reason, "could not be parsed")
+}
+
+// sourceOf returns the finding source for an action in use.
+func sourceOf(a snapshot.ActionInUse) string {
+	if a.Source == SourceDeclared {
+		return SourceDeclared
+	}
+	return SourceObserved
 }
 
 // chainsFor picks the chains and the context sides for one of the account's
@@ -309,10 +329,10 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 		c.add(Finding{Status: StatusInfo, Title: t.Short() + "s are not enabled in the target organization",
 			Detail: "The policy type is not enabled at the target root, so nothing of this type restricts the account after the move."})
 	}
-	usage := e.from.UsageFor(e.accountID)
+	usage := e.usage
 	if len(usage.Actions) == 0 {
-		c.add(Finding{Status: StatusReview, Title: "No actions in use were provided for this account",
-			Detail: "Add usage.actions to the source snapshot, pass --actions, or import an IAM last-accessed export. Without them nothing can be checked against the policies."})
+		c.add(Finding{Status: StatusReview, Category: CategoryMissingEvidence, Title: "No actions in use were provided for this account",
+			Detail: "Add usage.actions to the source snapshot, pass --actions or --critical-operations, or import an IAM last-accessed export. Without them nothing can be checked against the policies."})
 		c.Summary = "No actions in use to evaluate against the " + t.Short() + " chain."
 		return
 	}
@@ -335,11 +355,11 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 		if !ok {
 			if !skipped[note] {
 				skipped[note] = true
-				status := StatusReview
+				status, category := StatusReview, CategoryUnsupported
 				if strings.Contains(note, "management account") {
-					status = StatusInfo
+					status, category = StatusInfo, CategoryKnownRestriction
 				}
-				c.add(Finding{Status: status, Title: "RCP evaluation skipped for " + a.Action + " on a resource owned by another account", Detail: note + ".",
+				c.add(Finding{Status: status, Category: category, Source: sourceOf(a), Title: "RCP evaluation skipped for " + a.Action + " on a resource owned by another account", Detail: note + ".",
 					Action: a.Action, Resource: a.Resource, References: []string{RCPModelReference}})
 			}
 			continue
@@ -370,12 +390,15 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 		}
 		for _, key := range order {
 			g := groups[key]
-			status, title, detail := compare(g.pair, a.Action)
+			status, title, detail, category := compare(g.pair, a.Action)
 			if status == StatusGo {
 				continue
 			}
 			flagged++
-			f := Finding{Status: status, Title: title, Detail: detail, Action: a.Action, Resource: a.Resource}
+			f := Finding{Status: status, Category: category, Source: sourceOf(a), Title: title, Detail: detail, Action: a.Action, Resource: a.Resource}
+			if a.Source == SourceDeclared {
+				f.Detail += " This operation was declared critical by the operator rather than observed."
+			}
 			if routed.owner != "" {
 				f.Detail += fmt.Sprintf(" The resource belongs to account %s, so the RCPs of that account's organization apply; what changes is that the caller's organization becomes %s.", routed.owner, e.dst.orgID)
 			}
@@ -420,7 +443,7 @@ func (e *evaluation) evaluateInbound(c *Check) {
 	t := snapshot.PolicyTypeRCP
 	src, dst := e.chain(&e.src, t), e.chain(&e.dst, t)
 	enabledSrc, enabledDst := e.from.PolicyTypeEnabled(t), e.to.PolicyTypeEnabled(t)
-	usage := e.from.UsageFor(e.accountID)
+	usage := e.usage
 	total, flagged := 0, 0
 	var notGoverned []string
 	for _, in := range usage.InboundAccess {
@@ -459,12 +482,12 @@ func (e *evaluation) evaluateInbound(c *Check) {
 			for _, key := range order {
 				g := groups[key]
 				what := fmt.Sprintf("%s by %s", action, in.Principal)
-				status, title, detail := compare(g.pair, what)
+				status, title, detail, category := compare(g.pair, what)
 				if status == StatusGo {
 					continue
 				}
 				flagged++
-				f := Finding{Status: status, Title: title, Detail: detail, Action: action, Resource: in.Resource, Principal: in.Principal}
+				f := Finding{Status: status, Category: category, Source: SourceObserved, Title: title, Detail: detail, Action: action, Resource: in.Resource, Principal: in.Principal}
 				if !(len(g.regions) == 1 && g.regions[0] == "") && !globalServices[serviceOf(action)] {
 					f.Regions = g.regions
 				}

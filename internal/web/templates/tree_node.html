@@ -1,10 +1,11 @@
 {{define "tree_node"}}
-<li class="node {{.Node.Kind}} {{if .OnPath}}on-path{{end}} {{if .IsSubject}}subject{{end}} {{if .Ghost}}ghost{{end}}">
+<li class="node {{.Node.Kind}} {{if .OnPath}}on-path{{end}} {{if .IsSubject}}subject{{end}} {{if .Ghost}}ghost{{end}} {{if .Proposed}}proposed{{end}}">
   <div class="node-row">
     <span class="node-name">{{if eq .Node.Kind "root"}}⌂{{else if eq .Node.Kind "ou"}}▸{{else}}●{{end}} {{.Node.Name}}</span>
     <code class="node-id">{{.Node.ID}}</code>
     {{if and .Ghost .IsSubject}}<span class="pill ghost">after the move</span>{{end}}
     {{if and .IsSubject (not .Ghost)}}<span class="pill subject">moving</span>{{end}}
+    {{if .Proposed}}<span class="pill proposed">proposed</span>{{end}}
     <span class="badges">{{range .Badges}}<span class="badge {{lower .Type}}" title="{{.Names}}">{{if .Label}}{{.Label}}{{else}}{{.Type}} {{.Count}}{{end}}</span>{{end}}</span>
   </div>
   {{if or .Children .Accounts}}

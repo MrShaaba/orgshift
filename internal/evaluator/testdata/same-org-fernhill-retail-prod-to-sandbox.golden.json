@@ -1,6 +1,6 @@
 {
   "tool": "orgshift",
-  "result_schema_version": 2,
+  "result_schema_version": 3,
   "subject": {
     "account_id": "222222222225",
     "account_name": "fernhill-retail-prod",
@@ -60,7 +60,10 @@
     "regions_assumed": [
       "eu-central-1",
       "eu-west-1"
-    ]
+    ],
+    "declared_operations": 0,
+    "source_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-fern-ret/",
+    "target_org_path": "o-fernhill0001/r-fern/ou-fern-sand/"
   },
   "verdict": "REVIEW",
   "summary": "Moving fernhill-retail-prod (222222222225) from Root / Business Units / Retail to Root / Sandbox: REVIEW. Nothing blocks the move outright, but 2 finding(s) could not be decided offline or need a decision.",
@@ -313,6 +316,8 @@
       "findings": [
         {
           "status": "INFO",
+          "category": "unsupported-evaluation",
+          "confidence": "medium",
           "title": "5 action(s) use services RCPs do not govern and were not evaluated against RCPs",
           "detail": "RCPs apply to a fixed list of services (applicability model 2026-11-01, 62 services). These actions are not restricted by RCPs at either position, so nothing changes for them: cloudwatch:PutMetricData, ec2:CreateVolume, ec2:RunInstances, lambda:InvokeFunction, rds:CreateDBInstance. Services added to RCPs after the model date are not covered; the model is updated with the tool.",
           "references": [
@@ -329,6 +334,8 @@
       "findings": [
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "The effective tag policy is the same before and after the move",
           "detail": "The merged tag rules on the source path and on the target path are identical, so the move changes no tag compliance.",
           "evidence": [
@@ -390,6 +397,8 @@
       "findings": [
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "StackSet fernhill-baseline stops targeting the account; stack instances are deleted from the account",
           "detail": "Service-managed StackSets deploy by OU. Baseline IAM roles and GuardDuty membership. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
           "evidence": [
@@ -411,6 +420,8 @@
       "findings": [
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "Moving out of the registered OU Retail unenrolls the account from Control Tower",
           "detail": "Control Tower governs accounts through their OU, and Sandbox (ou-fern-sand) is not registered with Control Tower. After the move the account is no longer enrolled: the 3 preventive guardrail SCP(s) of the old OU chain stop applying (see the SCP diff) and 4 detective control(s) stop reporting. The landing zone has auto-enrollment off: moved with Organizations, the account keeps the baseline resources, shows inheritance drift and stays that way until it is unenrolled properly. Unenroll it from Account Factory first if leaving governance is the intent; otherwise register the target OU and move the account with Control Tower's update-account flow.",
           "evidence": [
@@ -440,6 +451,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "3 preventive control(s) stop applying: AWS-GR_CLOUDTRAIL_ENABLED, AWS-GR_CONFIG_ENABLED, AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS",
           "detail": "Enabled on the source OU chain and not on the target's. Preventive controls stop applying to the account after the move.",
           "evidence": [
@@ -465,6 +478,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "4 detective control(s) stop applying: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_COMMON_PORTS, AWS-GR_RESTRICTED_SSH",
           "detail": "Enabled on the source OU chain and not on the target's. Detective controls stop applying to the account after the move. The Config rules they deployed are removed when the account is unenrolled or moved through Control Tower (or by auto-enrollment); moved by hand without it, they linger unmanaged.",
           "evidence": [
@@ -496,6 +511,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "Account was vended by Account Factory; move it by updating provisioned product fernhill-retail-prod",
           "detail": "Account Factory records the OU as a parameter of the provisioned product. Changing the OU through the product (Service Catalog, update provisioned product, or the Control Tower console) performs the move and re-applies the baseline; moving it in Organizations directly leaves the product behind, and the landing zone in drift unless auto-enrollment is on.",
           "evidence": [
@@ -509,6 +526,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "Sandbox is not a registered OU; the account stays outside Control Tower governance there",
           "detail": "The landing zone of o-fernhill0001 governs only its registered OUs. No Control Tower controls apply to the account at Root / Sandbox, and Account Factory cannot enroll it until that OU is registered.",
           "evidence": [
@@ -2291,6 +2310,24 @@
       "version": "2026-11-01",
       "reference": "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
       "note": "access through a share ends when the account leaves the organization or the OU the share is addressed to, unless the share was created with RetainSharingOnAccountLeaveOrganization for the account itself; what happens to traffic already flowing is modelled per resource type (transit gateways and subnets keep existing attachments and resources working, Resolver rules stop answering, others unverified)"
+    },
+    {
+      "id": "transfer-procedure",
+      "version": "2026-11-02",
+      "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
+      "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
     }
+  ],
+  "categories": {
+    "informational": 5,
+    "potential-impact": 2,
+    "unsupported-evaluation": 1
+  },
+  "limitations": [
+    "An SCP or RCP that allows an action is not a grant: IAM identity policies, resource policies, permissions boundaries and session policies decide the request and are not evaluated here. The governance-policy evaluation says what the organization forbids, not what the account can do.",
+    "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
+    "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
+    "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
+    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
   ]
 }

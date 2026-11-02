@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/MrShaaba/orgshift/internal/evaluator"
 	"github.com/MrShaaba/orgshift/internal/report"
+	"github.com/MrShaaba/orgshift/internal/scenario"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
 
@@ -82,6 +84,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /export.md", s.handleExport)
 	mux.HandleFunc("GET /runbook.md", s.handleExport)
 	mux.HandleFunc("GET /runbook.json", s.handleExport)
+	mux.HandleFunc("POST /scenarios", s.handleScenarioUpload)
+	mux.HandleFunc("GET /stages", s.handleStages)
+	mux.HandleFunc("POST /stages", s.handleStages)
+	mux.HandleFunc("GET /stages.json", s.handleStagesExport)
+	mux.HandleFunc("GET /stages.md", s.handleStagesExport)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	return s.logging(mux)
 }
@@ -96,11 +103,24 @@ func (s *Server) logging(next http.Handler) http.Handler {
 
 type pageData struct {
 	Snapshots []snapshotOption
+	Scenarios []scenarioOption
 	Form      formValues
+	StageForm stageFormValues
 	Result    *resultView
 	OUResult  *ouResultView
+	Stages    *stagesView
 	Error     string
 	Flash     string
+}
+
+type scenarioOption struct {
+	Name    string
+	Account string
+	Stages  int
+}
+
+type stageFormValues struct {
+	Scenario, From, To string
 }
 
 type snapshotOption struct {
@@ -125,6 +145,31 @@ func (s *Server) options() []snapshotOption {
 	return out
 }
 
+func (s *Server) scenarioOptions() []scenarioOption {
+	var out []scenarioOption
+	for _, n := range s.store.ScenarioNames() {
+		sc, _ := s.store.Scenario(n)
+		out = append(out, scenarioOption{Name: n, Account: sc.AccountID, Stages: len(sc.Stages)})
+	}
+	return out
+}
+
+// page builds the index page data with the loaded snapshots and scenarios.
+func (s *Server) page() pageData {
+	data := pageData{Snapshots: s.options(), Scenarios: s.scenarioOptions(), Form: formValues{Kind: "account"}}
+	names := s.store.Names()
+	if len(names) > 0 {
+		data.Form.From = names[0]
+		data.Form.To = names[len(names)-1]
+		data.StageForm.From = names[0]
+		data.StageForm.To = names[len(names)-1]
+	}
+	if scs := s.store.ScenarioNames(); len(scs) > 0 {
+		data.StageForm.Scenario = scs[0]
+	}
+	return data
+}
+
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, name, data); err != nil {
@@ -133,18 +178,124 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	data := pageData{Snapshots: s.options(), Flash: r.URL.Query().Get("flash"), Error: r.URL.Query().Get("error"), Form: formValues{Kind: "account"}}
-	names := s.store.Names()
-	if len(names) > 0 {
-		data.Form.From = names[0]
-		data.Form.To = names[len(names)-1]
-	}
+	data := s.page()
+	data.Flash, data.Error = r.URL.Query().Get("flash"), r.URL.Query().Get("error")
 	s.render(w, "index.html", data)
 }
 
 func (s *Server) handleFixtures(w http.ResponseWriter, r *http.Request) {
 	s.store.LoadFixtures()
-	http.Redirect(w, r, "/?flash="+url.QueryEscape("Loaded the Larkspur Holdings and Fernhill Group fixtures."), http.StatusSeeOther)
+	http.Redirect(w, r, "/?flash="+url.QueryEscape("Loaded the Larkspur Holdings and Fernhill Group fixtures and two staged scenarios."), http.StatusSeeOther)
+}
+
+// handleScenarioUpload loads a scenario overlay file into the store.
+func (s *Server) handleScenarioUpload(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
+	if err := r.ParseMultipartForm(maxUpload); err != nil {
+		http.Redirect(w, r, "/?error="+url.QueryEscape("upload failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	f, hdr, err := r.FormFile("scenario")
+	if err != nil {
+		http.Redirect(w, r, "/?error="+url.QueryEscape("choose a scenario file"), http.StatusSeeOther)
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		http.Redirect(w, r, "/?error="+url.QueryEscape(hdr.Filename+": "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	sc, err := scenario.Parse(data)
+	if err != nil {
+		http.Redirect(w, r, "/?error="+url.QueryEscape(hdr.Filename+": "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	name := s.store.AddScenario(sc.Name, sc)
+	http.Redirect(w, r, "/?flash="+url.QueryEscape("Loaded scenario "+name+"."), http.StatusSeeOther)
+}
+
+// stages runs a scenario for a request's parameters.
+func (s *Server) stages(r *http.Request) (*stagesView, stageFormValues, error) {
+	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err != nil {
+			return nil, stageFormValues{}, err
+		}
+	}
+	fv := stageFormValues{Scenario: r.FormValue("scenario"), From: r.FormValue("from"), To: r.FormValue("to")}
+	sc, ok := s.store.Scenario(fv.Scenario)
+	if !ok {
+		return nil, fv, fmt.Errorf("scenario %q is not loaded", fv.Scenario)
+	}
+	from, ok := s.store.Get(fv.From)
+	if !ok {
+		return nil, fv, fmt.Errorf("source snapshot %q is not loaded", fv.From)
+	}
+	toName := fv.To
+	if toName == "" {
+		toName = fv.From
+	}
+	to, ok := s.store.Get(toName)
+	if !ok {
+		return nil, fv, fmt.Errorf("destination snapshot %q is not loaded", toName)
+	}
+	var dst *snapshot.Snapshot
+	if to.Organization.ID != from.Organization.ID {
+		dst = to
+	}
+	rep, err := scenario.Run(scenario.Input{Scenario: sc, Source: from, Destination: dst, Version: "ui"})
+	if err != nil {
+		return nil, fv, err
+	}
+	q := url.Values{"scenario": {fv.Scenario}, "from": {fv.From}, "to": {toName}}
+	return newStagesView(rep, fv.Scenario, fv.From, toName, from, q.Encode()), fv, nil
+}
+
+func (s *Server) handleStages(w http.ResponseWriter, r *http.Request) {
+	view, fv, err := s.stages(r)
+	htmx := r.Header.Get("HX-Request") == "true"
+	if err != nil {
+		if htmx {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			s.render(w, "error.html", err.Error())
+			return
+		}
+		data := s.page()
+		data.StageForm, data.Error = fv, err.Error()
+		s.render(w, "index.html", data)
+		return
+	}
+	if htmx {
+		w.Header().Set("HX-Push-Url", "/stages?"+string(view.ExportQuery))
+		s.render(w, "stages.html", view)
+		return
+	}
+	data := s.page()
+	data.StageForm, data.Stages = fv, view
+	s.render(w, "index.html", data)
+}
+
+func (s *Server) handleStagesExport(w http.ResponseWriter, r *http.Request) {
+	view, _, err := s.stages(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	base := fmt.Sprintf("orgshift-stages-%s", view.Report.Subject.AccountID)
+	if strings.HasSuffix(r.URL.Path, ".json") {
+		data, err := report.StagesJSON(view.Report)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+base+`.json"`)
+		w.Write(data)
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+base+`.md"`)
+	fmt.Fprint(w, report.StagesMarkdown(view.Report))
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -338,7 +489,9 @@ func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 			s.render(w, "error.html", err.Error())
 			return
 		}
-		s.render(w, "index.html", pageData{Snapshots: s.options(), Form: fv, Error: err.Error()})
+		data := s.page()
+		data.Form, data.Error = fv, err.Error()
+		s.render(w, "index.html", data)
 		return
 	}
 	if htmx {
@@ -350,7 +503,9 @@ func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.render(w, "index.html", pageData{Snapshots: s.options(), Form: fv, Result: sim.Account, OUResult: sim.OU})
+	data := s.page()
+	data.Form, data.Result, data.OUResult = fv, sim.Account, sim.OU
+	s.render(w, "index.html", data)
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {

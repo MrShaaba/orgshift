@@ -2,10 +2,11 @@
 
 {{define "finding"}}
 <details class="finding {{statusClass .Status}}">
-  <summary><span class="dot {{statusClass .Status}}"></span><span class="ftitle">{{.Title}}</span>{{if .Regions}}<span class="regions">{{join .Regions ", "}}</span>{{end}}</summary>
+  <summary><span class="dot {{statusClass .Status}}"></span><span class="ftitle">{{.Title}}</span>{{if .Category}}<span class="pill cat" title="impact category, confidence {{.Confidence}}">{{.Category}}</span>{{end}}{{if eq .Source "declared"}}<span class="pill declared" title="a critical operation declared by the operator">declared</span>{{end}}{{if .Regions}}<span class="regions">{{join .Regions ", "}}</span>{{end}}</summary>
   <div class="fbody">
     <p>{{.Detail}}</p>
     <dl class="meta">
+      {{if .Category}}<dt>Category</dt><dd>{{.Category}}{{if .Confidence}} (confidence {{.Confidence}}){{end}}{{if .Source}}, {{.Source}}{{end}}</dd>{{end}}
       {{if .Action}}<dt>Action</dt><dd><code>{{.Action}}</code></dd>{{end}}
       {{if .Principal}}<dt>Principal</dt><dd><code>{{.Principal}}</code></dd>{{end}}
       {{if .Resource}}<dt>Resource</dt><dd><code>{{.Resource}}</code></dd>{{end}}

@@ -262,7 +262,10 @@
         "regions_assumed": [
           "eu-west-1",
           "us-east-1"
-        ]
+        ],
+        "declared_operations": 0,
+        "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
+        "target_org_path": "o-larkspur0001/r-lark/ou-lark-prod/"
       },
       "verdict": "REVIEW",
       "summary": "5 steps: 0 before the move (0 blocking), 2 to re-create, 1 for the move itself, 1 checks afterwards and 1 to roll back.",
@@ -463,7 +466,10 @@
           "ap-southeast-1",
           "eu-west-1",
           "us-east-1"
-        ]
+        ],
+        "declared_operations": 0,
+        "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
+        "target_org_path": "o-larkspur0001/r-lark/ou-lark-prod/"
       },
       "verdict": "REVIEW",
       "summary": "5 steps: 0 before the move (0 blocking), 2 to re-create, 1 for the move itself, 1 checks afterwards and 1 to roll back.",

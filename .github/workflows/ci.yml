@@ -49,6 +49,20 @@ jobs:
           grep -q '"status": "access_denied"' /tmp/partial.json
           grep -q '"complete": false' /tmp/partial.json
           grep -q '"id": "rcp-applicability"' /tmp/partial.json
+      - name: staged scenario smoke test
+        run: |
+          ./orgshift scenario example > /tmp/plan.yaml
+          ./orgshift scenario check --scenario /tmp/plan.yaml
+          ./orgshift stages --scenario /tmp/fx/scenario-payments-to-fernhill.yaml --format json --out /tmp/stages.json || test $? -eq 3
+          grep -q '"stages_schema_version": 1' /tmp/stages.json
+          grep -q '"id": "legacy"' /tmp/stages.json
+          grep -q '"category": "declared-impact"' /tmp/stages.json
+          grep -q '"source": "declared"' /tmp/stages.json
+          grep -q 'Between leaving the source and accepting the invitation' /tmp/stages.json
+          ./orgshift stages --scenario /tmp/fx/scenario-fernhill-sandbox-staged.yaml --format markdown --out /tmp/stages.md || test $? -eq 3
+          grep -q '^## Strategies compared' /tmp/stages.md
+          ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --to /tmp/fx/fernhill-group.json --account 111111111115 --target-ou ou-fern-pay1 --critical-operations /tmp/plan.yaml --format json --out /tmp/declared.json || test $? -eq 3
+          grep -q '"declared_operations": 2' /tmp/declared.json
       - name: onboarding smoke test (offline)
         run: |
           ./orgshift config example > /tmp/orgshift.yaml

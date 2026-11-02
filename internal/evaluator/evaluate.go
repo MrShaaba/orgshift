@@ -3,6 +3,7 @@ package evaluator
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
@@ -14,6 +15,11 @@ type Input struct {
 	To         *snapshot.Snapshot
 	AccountID  string
 	TargetOUID string
+	// Declared are critical operations the operator declares on top of the
+	// observed usage: future deployments, recovery, scaling and rarely used
+	// operations that history alone does not show. They are evaluated like
+	// observed actions and their findings carry source "declared".
+	Declared []snapshot.ActionInUse
 }
 
 type evaluation struct {
@@ -23,6 +29,8 @@ type evaluation struct {
 	crossOrg  bool
 	src, dst  side
 	docs      map[string]parsedDoc
+	// usage is the account's usage merged with the declared operations.
+	usage *snapshot.AccountUsage
 }
 
 // move is the resolved description of one account move: where the account
@@ -34,11 +42,24 @@ type move struct {
 	account    *snapshot.Account
 	targetPath []snapshot.Node // root ... parent, account
 	fresh      map[string]bool
+	declared   []snapshot.ActionInUse
 }
 
 // Models lists the versioned AWS behaviour models every evaluation uses.
 func Models() []ModelRef {
-	return []ModelRef{RCPModel(), RAMModel()}
+	return []ModelRef{RCPModel(), RAMModel(), TransferModel()}
+}
+
+// Limitations are the standing limits of the offline evaluation. They are
+// repeated on every result so a GO is never read as more than it is.
+func Limitations() []string {
+	return []string{
+		"An SCP or RCP that allows an action is not a grant: IAM identity policies, resource policies, permissions boundaries and session policies decide the request and are not evaluated here. The governance-policy evaluation says what the organization forbids, not what the account can do.",
+		"Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
+		"Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
+		"RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
+		"Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+	}
 }
 
 // Evaluate runs every check for one account and returns the verdict.
@@ -61,7 +82,7 @@ func Evaluate(in Input) (*Result, error) {
 	}
 	m := move{from: in.From, to: to, fromIx: fromIx, toIx: toIx, account: acct,
 		targetPath: toIx.PathUnder(in.TargetOUID, snapshot.Node{ID: acct.ID, Name: acct.Name, Kind: snapshot.KindAccount}),
-		fresh:      map[string]bool{}}
+		fresh:      map[string]bool{}, declared: in.Declared}
 	if in.From.Organization.ID != to.Organization.ID {
 		m.fresh[acct.ID] = true
 	}
@@ -83,7 +104,8 @@ func evaluateMove(m move) (*Result, error) {
 	}
 	targetOUID := e.dst.path[len(e.dst.path)-2].ID
 
-	usage := m.from.UsageFor(acct.ID)
+	usage := withDeclared(m.from.UsageFor(acct.ID), m.declared)
+	e.usage = usage
 	res := &Result{
 		Tool: "orgshift", ResultSchemaVersion: ResultSchemaVersion,
 		Subject: Subject{
@@ -93,9 +115,10 @@ func evaluateMove(m move) (*Result, error) {
 			CrossOrg:  e.crossOrg, SourcePath: e.src.path, TargetPath: e.dst.path,
 			SourcePathID: acct.ParentID, TargetOUID: targetOUID,
 			ActionsInUse: len(usage.Actions), InboundAccess: len(usage.InboundAccess), TaggedResources: len(usage.TaggedResources),
-			RegionsAssumed: append([]string(nil), acct.EnabledRegions...),
+			RegionsAssumed: append([]string(nil), acct.EnabledRegions...), DeclaredOperations: len(m.declared),
+			SourceOrgPath: orgPath(e.src.orgID, e.src.path), TargetOrgPath: orgPath(e.dst.orgID, e.dst.path),
 		},
-		Models: Models(),
+		Models: Models(), Limitations: Limitations(),
 	}
 	sort.Strings(res.Subject.RegionsAssumed)
 	if !e.crossOrg && samePath(e.src.path, e.dst.path) {
@@ -134,8 +157,75 @@ func evaluateMove(m move) (*Result, error) {
 	for _, c := range res.Checks {
 		res.Verdict = Worst(res.Verdict, c.Status)
 	}
+	categorize(res)
 	res.Summary = summarize(res)
 	return res, nil
+}
+
+// withDeclared merges the declared critical operations into a copy of the
+// account's usage, marking them so their findings say where they came from.
+func withDeclared(u *snapshot.AccountUsage, declared []snapshot.ActionInUse) *snapshot.AccountUsage {
+	out := &snapshot.AccountUsage{}
+	if u != nil {
+		out.Actions = append(out.Actions, u.Actions...)
+		out.InboundAccess = u.InboundAccess
+		out.TaggedResources = u.TaggedResources
+	}
+	for _, d := range declared {
+		d.Source = SourceDeclared
+		out.Actions = append(out.Actions, d)
+	}
+	return out
+}
+
+// categorize fills the impact category and confidence of every finding
+// that its check did not set, from the status: a NO-GO hits something the
+// account does, a REVIEW needs context, an INFO describes a change. It then
+// counts the categories.
+func categorize(res *Result) {
+	res.Categories = map[string]int{}
+	for i := range res.Checks {
+		c := &res.Checks[i]
+		for j := range c.Findings {
+			f := &c.Findings[j]
+			if f.Category == "" {
+				switch f.Status {
+				case StatusNoGo:
+					f.Category = CategoryDeclaredImpact
+				case StatusReview:
+					f.Category = CategoryPotentialImpact
+				default:
+					f.Category = CategoryInformational
+				}
+			}
+			if f.Confidence == "" {
+				switch f.Category {
+				case CategoryMissingEvidence:
+					f.Confidence = ConfidenceLow
+				case CategoryPotentialImpact, CategoryUnsupported:
+					f.Confidence = ConfidenceMedium
+				default:
+					f.Confidence = ConfidenceHigh
+				}
+			}
+			res.Categories[f.Category]++
+		}
+	}
+}
+
+// orgPath renders the aws:PrincipalOrgPaths value of a position: the
+// organization ID, the root and every OU down to the account's parent,
+// each followed by a slash.
+func orgPath(orgID string, path []snapshot.Node) string {
+	var b strings.Builder
+	b.WriteString(orgID + "/")
+	for _, n := range path {
+		if n.Kind == snapshot.KindAccount {
+			continue
+		}
+		b.WriteString(n.ID + "/")
+	}
+	return b.String()
 }
 
 func samePath(a, b []snapshot.Node) bool {
@@ -182,6 +272,10 @@ func summarize(r *Result) string {
 	case StatusReview:
 		return fmt.Sprintf("%s: REVIEW. Nothing blocks the move outright, but %d finding(s) could not be decided offline or need a decision.%s", move, review, coverage)
 	}
-	return fmt.Sprintf("%s: GO within the assessed scope. No blocker was found among the %d actions, %d inbound requests, the shares, services and controls evaluated, and every required collection domain was inspected. This is not a guarantee of zero downtime or of compatibility with everything the account does; only what the snapshots and the usage list describe was checked.",
-		move, r.Subject.ActionsInUse, r.Subject.InboundAccess)
+	declared := ""
+	if r.Subject.DeclaredOperations > 0 {
+		declared = fmt.Sprintf(" (%d of them declared critical operations)", r.Subject.DeclaredOperations)
+	}
+	return fmt.Sprintf("%s: GO within the assessed scope. No blocker was found among the %d actions%s, %d inbound requests, the shares, services and controls evaluated, and every required collection domain was inspected. This is not a guarantee of zero downtime or of compatibility with everything the account does; only what the snapshots and the usage list describe was checked, and an organization policy that allows an action is not an IAM grant.",
+		move, r.Subject.ActionsInUse, declared, r.Subject.InboundAccess)
 }

@@ -71,6 +71,55 @@ documented default and the safe reading (the share is lost). The preflight
 shows the first share's value so an unexpected "not reported" is visible
 before collection.
 
+## Transfer procedure (Organizations)
+
+Sources: [Removing a member account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html),
+[Managing account invitations](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html),
+[Deleting an organization](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html),
+[Decommission a landing zone](https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html),
+[About enrolling existing accounts](https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html);
+checked 2026-11-02. Versioned as the `transfer-procedure` model
+(`evaluator.TransferModelVersion`), named in the findings that use it.
+
+- A member account can be removed only with the standalone-account
+  information in place (verified contact details, a payment method, a
+  support plan), otherwise `ConstraintViolationException`; with Enterprise
+  Support a billing case can arrange the standalone period. Accounts created
+  by Organizations wait four days; invited accounts do not. The account must
+  not be a delegated administrator. Its tags are deleted, the IAM role
+  Organizations created is kept, cost and usage data stay with the
+  management account, organization agreements no longer cover it.
+- An account belongs to one organization at a time, so it leaves before it
+  accepts an invitation; an invitation must be answered within 15 days;
+  policies attached to the destination root and the OU it lands in apply at
+  once on acceptance; the destination's organization trail covers it
+  automatically and Config, GuardDuty or Security Hub may enable
+  automatically for new members (duplicate charges with account-level
+  trails); Organizations does not create `OrganizationAccountAccessRole`
+  for an invited account.
+- The management account leaves only when the organization is deleted,
+  which requires removing every member first and deletes every organization
+  policy irrecoverably; a Control Tower landing zone operated from it has to
+  be decommissioned first, which cannot be undone and leaves S3 buckets and
+  log groups to delete by hand. The staged evaluation reports both as NO-GO
+  when the moving account is a management account.
+- Control Tower enrolls an existing account from an unregistered OU of the
+  same organization into a registered OU; it needs an
+  `AWSControlTowerExecution` role trusting the management account and no
+  AWS Config recorder or delivery channel of the account's own; enrolling
+  deploys the baseline StackSets, enables Config, adds the detective rules
+  and applies the OU's SCPs; existing VPCs are left alone; an account-level
+  CloudTrail trail duplicates the organization trail's charges. The
+  collector cannot see the role or the Config resources, so the scenario
+  overlay carries declarations (`execution_role_present`,
+  `config_resources_removed`) that the stage findings report as satisfied,
+  unknown or declared unsatisfied.
+- Policy inheritance: a proposed OU, registered or not, inherits every policy
+  attached above it, and a child cannot override an inherited explicit deny
+  ([inheritance](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_inheritance_auth.html)).
+  The staged evaluation derives the proposed OU into the chain, so the
+  evaluator applies the same rule it applies to collected OUs.
+
 ## AWS Control Tower
 
 Sources: [About enrolling existing accounts](https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html),

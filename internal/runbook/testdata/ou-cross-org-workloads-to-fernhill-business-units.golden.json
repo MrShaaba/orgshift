@@ -554,7 +554,10 @@
         "regions_assumed": [
           "eu-west-1",
           "us-east-1"
-        ]
+        ],
+        "declared_operations": 0,
+        "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
+        "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-lark-work/ou-lark-prod/"
       },
       "verdict": "NO-GO",
       "summary": "33 steps: 6 before the move (2 blocking), 10 to re-create, 1 for the move itself, 15 checks afterwards and 1 to roll back.",
@@ -697,7 +700,7 @@
             {
               "id": "before-4",
               "title": "Make the account able to stand alone",
-              "detail": "Before it can leave, the account needs its own contact information (verified), a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
+              "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
               "status": "REVIEW",
               "kind": "prerequisite",
               "where": "account larkspur-data-prod (111111111118), signed in as root or an administrator",
@@ -1439,7 +1442,10 @@
         "regions_assumed": [
           "eu-west-1",
           "us-east-1"
-        ]
+        ],
+        "declared_operations": 0,
+        "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-dev/",
+        "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-lark-work/ou-lark-dev/"
       },
       "verdict": "NO-GO",
       "summary": "29 steps: 6 before the move (1 blocking), 8 to re-create, 1 for the move itself, 13 checks afterwards and 1 to roll back.",
@@ -1522,7 +1528,7 @@
             {
               "id": "before-3",
               "title": "Make the account able to stand alone",
-              "detail": "Before it can leave, the account needs its own contact information (verified), a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
+              "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
               "status": "REVIEW",
               "kind": "prerequisite",
               "where": "account larkspur-payments-dev (111111111116), signed in as root or an administrator",
@@ -2209,7 +2215,10 @@
           "ap-southeast-1",
           "eu-west-1",
           "us-east-1"
-        ]
+        ],
+        "declared_operations": 0,
+        "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
+        "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-lark-work/ou-lark-prod/"
       },
       "verdict": "NO-GO",
       "summary": "40 steps: 11 before the move (3 blocking), 10 to re-create, 1 for the move itself, 17 checks afterwards and 1 to roll back.",
@@ -2438,7 +2447,7 @@
             {
               "id": "before-5",
               "title": "Re-tag before the move: cost-center: ec2:instance resources use the key \"Cost-Center\" instead of \"cost-center\"",
-              "detail": "The target tag policy (Fernhill-Cost-Allocation) fixes the key capitalization. The policy enforces this for ec2:instance: non-compliant tag operations on such resources are rejected after the move. Affected: 3 resource(s), for example arn:aws:ec2:us-east-1:111111111115:instance/i-f10bba738feab223b, arn:aws:ec2:us-east-1:111111111115:instance/i-c532d94e1b98a3356, arn:aws:ec2:us-east-1:111111111115:instance/i-f5e303bf12e951c05. Do it before the move: afterwards the target tag policy rejects non-compliant tag operations on these resource types, so the fix itself is blocked.",
+              "detail": "The target tag policy (Fernhill-Cost-Allocation) fixes the key capitalization. The policy enforces this for ec2:instance: after the move, tag operations that would leave such a resource non-compliant are rejected (enforcement on supported operations); the existing tags themselves are not changed. Affected: 3 resource(s), for example arn:aws:ec2:us-east-1:111111111115:instance/i-f10bba738feab223b, arn:aws:ec2:us-east-1:111111111115:instance/i-c532d94e1b98a3356, arn:aws:ec2:us-east-1:111111111115:instance/i-f5e303bf12e951c05. Do it before the move: afterwards the target tag policy rejects non-compliant tag operations on these resource types, so the fix itself is blocked.",
               "status": "REVIEW",
               "kind": "tags",
               "where": "account larkspur-payments-prod (111111111115)",
@@ -2460,7 +2469,7 @@
             {
               "id": "before-6",
               "title": "Re-tag before the move: cost-center: rds:db resources use the value \"PAY-01\" which is not allowed",
-              "detail": "Allowed values (Fernhill-Cost-Allocation): CC-1001, CC-1002, CC-2001, CC-2002. The policy enforces this for rds:db: non-compliant tag operations on such resources are rejected after the move. Affected: 1 resource(s), for example arn:aws:rds:us-east-1:111111111115:db:payments-ledger. Do it before the move: afterwards the target tag policy rejects non-compliant tag operations on these resource types, so the fix itself is blocked.",
+              "detail": "Allowed values (Fernhill-Cost-Allocation): CC-1001, CC-1002, CC-2001, CC-2002. The policy enforces this for rds:db: after the move, tag operations that would leave such a resource non-compliant are rejected (enforcement on supported operations); the existing tags themselves are not changed. Affected: 1 resource(s), for example arn:aws:rds:us-east-1:111111111115:db:payments-ledger. Do it before the move: afterwards the target tag policy rejects non-compliant tag operations on these resource types, so the fix itself is blocked.",
               "status": "REVIEW",
               "kind": "tags",
               "where": "account larkspur-payments-prod (111111111115)",
@@ -2482,7 +2491,7 @@
             {
               "id": "before-7",
               "title": "Re-tag before the move: cost-center: s3:bucket resources use the value \"CC-3001\" which is not allowed",
-              "detail": "Allowed values (Fernhill-Cost-Allocation): CC-1001, CC-1002, CC-2001, CC-2002. The policy enforces this for s3:bucket: non-compliant tag operations on such resources are rejected after the move. Affected: 1 resource(s), for example arn:aws:s3:::larkspur-payments-settlement-files. Do it before the move: afterwards the target tag policy rejects non-compliant tag operations on these resource types, so the fix itself is blocked.",
+              "detail": "Allowed values (Fernhill-Cost-Allocation): CC-1001, CC-1002, CC-2001, CC-2002. The policy enforces this for s3:bucket: after the move, tag operations that would leave such a resource non-compliant are rejected (enforcement on supported operations); the existing tags themselves are not changed. Affected: 1 resource(s), for example arn:aws:s3:::larkspur-payments-settlement-files. Do it before the move: afterwards the target tag policy rejects non-compliant tag operations on these resource types, so the fix itself is blocked.",
               "status": "REVIEW",
               "kind": "tags",
               "where": "account larkspur-payments-prod (111111111115)",
@@ -2504,7 +2513,7 @@
             {
               "id": "before-8",
               "title": "Make the account able to stand alone",
-              "detail": "Before it can leave, the account needs its own contact information (verified), a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
+              "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
               "status": "REVIEW",
               "kind": "prerequisite",
               "where": "account larkspur-payments-prod (111111111115), signed in as root or an administrator",

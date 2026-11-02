@@ -142,13 +142,13 @@ func (e *evaluation) evaluateTags(c *Check) {
 	}
 	rules, problems := e.effectiveTagPolicy(e.chain(&e.dst, t))
 	for _, p := range problems {
-		c.add(Finding{Status: StatusReview, Title: "Tag policy could not be parsed", Detail: p})
+		c.add(Finding{Status: StatusReview, Category: CategoryUnsupported, Title: "Tag policy could not be parsed", Detail: p})
 	}
 	if len(rules) == 0 {
 		c.Summary = "No tag policy applies at the target."
 		return
 	}
-	usage := e.from.UsageFor(e.accountID)
+	usage := e.usage
 	rulesJSON, _ := json.MarshalIndent(rules, "", "  ")
 	if e.from.PolicyTypeEnabled(t) {
 		srcRules, _ := e.effectiveTagPolicy(e.chain(&e.src, t))
@@ -164,27 +164,32 @@ func (e *evaluation) evaluateTags(c *Check) {
 	for _, r := range rules {
 		keys = append(keys, r.Key)
 	}
-	c.add(Finding{Status: StatusInfo, Title: "Effective tag policy at the target defines " + strings.Join(keys, ", "),
-		Detail:   "Rules below are the merged result of every tag policy on the target path.",
+	c.add(Finding{Status: StatusInfo, Category: CategoryKnownRestriction, Title: "Effective tag policy at the target defines " + strings.Join(keys, ", "),
+		Detail:   "Rules below are the merged result of every tag policy on the target path. A tag policy reports non-compliance for the keys it defines and rejects non-compliant tag operations only for the resource types in enforced_for; it never requires a tag to be present at creation (that takes an SCP condition or a Config rule, which are not part of this check).",
 		Evidence: []Evidence{{Kind: "effective-tag-policy", Side: "target", PolicyType: "TAG", StatementJSON: rulesJSON}}})
 	if len(usage.TaggedResources) == 0 {
-		c.add(Finding{Status: StatusReview, Title: "No tagged resources were provided for this account",
+		c.add(Finding{Status: StatusReview, Category: CategoryMissingEvidence, Title: "No tagged resources were provided for this account",
 			Detail: "Add usage.tagged_resources to the source snapshot (for example from the Resource Groups Tagging API) to check compliance against the target tag policy."})
 		c.Summary = fmt.Sprintf("%d tag keys governed at the target; no resource sample to check.", len(rules))
 		return
 	}
 	type bucket struct {
-		status Status
-		title  string
-		detail string
-		arns   []string
+		status   Status
+		category string
+		title    string
+		detail   string
+		arns     []string
 	}
 	buckets := map[string]*bucket{}
 	var order []string
 	record := func(key, title, detail string, status Status, arn string) {
 		b, ok := buckets[key]
 		if !ok {
-			b = &bucket{status: status, title: title, detail: detail}
+			category := CategoryKnownRestriction
+			if status == StatusReview {
+				category = CategoryDeclaredImpact
+			}
+			b = &bucket{status: status, category: category, title: title, detail: detail}
 			buckets[key] = b
 			order = append(order, key)
 		}
@@ -196,10 +201,10 @@ func (e *evaluation) evaluateTags(c *Check) {
 		for _, res := range usage.TaggedResources {
 			enforced := enforcedFor(r, res.Type)
 			sev := StatusInfo
-			suffix := " The policy only reports this (the resource type is not in enforced_for), so tagging operations are not blocked."
+			suffix := " The policy only reports this (the resource type is not in enforced_for), so tagging operations are not blocked: existing-resource compliance only."
 			if enforced {
 				sev = StatusReview
-				suffix = " The policy enforces this for " + res.Type + ": non-compliant tag operations on such resources are rejected after the move."
+				suffix = " The policy enforces this for " + res.Type + ": after the move, tag operations that would leave such a resource non-compliant are rejected (enforcement on supported operations); the existing tags themselves are not changed."
 			}
 			actualKey, value, found := lookupTag(res.Tags, r.Key)
 			switch {
@@ -220,7 +225,7 @@ func (e *evaluation) evaluateTags(c *Check) {
 	for _, k := range order {
 		b := buckets[k]
 		detail := b.detail + fmt.Sprintf(" Affected: %d resource(s), for example %s.", len(b.arns), strings.Join(firstN(b.arns, 3), ", "))
-		c.add(Finding{Status: b.status, Title: b.title, Detail: detail,
+		c.add(Finding{Status: b.status, Category: b.category, Source: SourceObserved, Title: b.title, Detail: detail,
 			Evidence: []Evidence{{Kind: "tag-compliance", Side: "target", PolicyType: "TAG", Note: strings.Join(b.arns, "\n")}}})
 	}
 	sortFindings(c.Findings)

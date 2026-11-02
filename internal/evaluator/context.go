@@ -74,6 +74,7 @@ func (e *evaluation) ownRequest(s *side, a snapshot.ActionInUse, region string) 
 		ctx.Set("aws:RequestedRegion", policy.Known(region))
 	}
 	ctx.Set("aws:PrincipalOrgID", policy.Known(s.orgID))
+	ctx.Set("aws:PrincipalOrgPaths", policy.Known(orgPath(s.orgID, s.path)))
 	ctx.Set("aws:PrincipalAccount", policy.Known(e.accountID))
 	ctx.Set("aws:PrincipalIsAWSService", policy.Known("false"))
 	principal := a.PrincipalArn
@@ -95,6 +96,10 @@ func (e *evaluation) ownRequest(s *side, a snapshot.ActionInUse, region string) 
 		ctx.Set("aws:ResourceAccount", policy.Known(acct))
 		if acct == e.accountID {
 			ctx.Set("aws:ResourceOrgID", policy.Known(s.orgID))
+			ctx.Set("aws:ResourceOrgPaths", policy.Known(orgPath(s.orgID, s.path)))
+		} else if owner := e.sideOfAccount(acct); owner != nil {
+			ctx.Set("aws:ResourceOrgID", policy.Known(owner.orgID))
+			ctx.Set("aws:ResourceOrgPaths", policy.Known(orgPath(owner.orgID, owner.path)))
 		} else if org, ok := e.orgOfAccount(acct); ok {
 			ctx.Set("aws:ResourceOrgID", policy.Known(org))
 		}
@@ -111,6 +116,7 @@ func (e *evaluation) inboundRequest(s *side, in snapshot.InboundAccess, action, 
 	}
 	ctx.Set("aws:ResourceAccount", policy.Known(e.accountID))
 	ctx.Set("aws:ResourceOrgID", policy.Known(s.orgID))
+	ctx.Set("aws:ResourceOrgPaths", policy.Known(orgPath(s.orgID, s.path)))
 	isService := strings.HasSuffix(in.Principal, ".amazonaws.com")
 	switch {
 	case isService:
@@ -130,8 +136,12 @@ func (e *evaluation) inboundRequest(s *side, in snapshot.InboundAccess, action, 
 			ctx.Set("aws:PrincipalOrgID", policy.Known(in.PrincipalOrgID))
 		case acct == e.accountID:
 			ctx.Set("aws:PrincipalOrgID", policy.Known(s.orgID))
+			ctx.Set("aws:PrincipalOrgPaths", policy.Known(orgPath(s.orgID, s.path)))
 		default:
-			if org, ok := e.orgOfAccount(acct); ok {
+			if owner := e.sideOfAccount(acct); owner != nil {
+				ctx.Set("aws:PrincipalOrgID", policy.Known(owner.orgID))
+				ctx.Set("aws:PrincipalOrgPaths", policy.Known(orgPath(owner.orgID, owner.path)))
+			} else if org, ok := e.orgOfAccount(acct); ok {
 				ctx.Set("aws:PrincipalOrgID", policy.Known(org))
 			}
 		}

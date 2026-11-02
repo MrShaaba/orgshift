@@ -1,6 +1,6 @@
 {
   "tool": "orgshift",
-  "result_schema_version": 2,
+  "result_schema_version": 3,
   "subject": {
     "ou_id": "ou-lark-prod",
     "ou_name": "Production",
@@ -52,6 +52,8 @@
   "findings": [
     {
       "status": "INFO",
+      "category": "",
+      "confidence": "",
       "title": "Policies attached to Production move with it",
       "detail": "Moving an OU inside the organization keeps every attachment on the OU and on its nested OUs and accounts. Only what is inherited from above the OU changes, which is what the diff below and the per-account verdicts show.",
       "evidence": [
@@ -75,7 +77,7 @@
       "info": 2,
       "result": {
         "tool": "orgshift",
-        "result_schema_version": 2,
+        "result_schema_version": 3,
         "subject": {
           "account_id": "111111111118",
           "account_name": "larkspur-data-prod",
@@ -135,7 +137,10 @@
           "regions_assumed": [
             "eu-west-1",
             "us-east-1"
-          ]
+          ],
+          "declared_operations": 0,
+          "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
+          "target_org_path": "o-larkspur0001/r-lark/ou-lark-prod/"
         },
         "verdict": "REVIEW",
         "summary": "Moving larkspur-data-prod (111111111118) from Root / Workloads / Production to Root / Production: REVIEW. Nothing blocks the move outright, but 2 finding(s) could not be decided offline or need a decision.",
@@ -388,6 +393,8 @@
             "findings": [
               {
                 "status": "INFO",
+                "category": "unsupported-evaluation",
+                "confidence": "medium",
                 "title": "4 action(s) use services RCPs do not govern and were not evaluated against RCPs",
                 "detail": "RCPs apply to a fixed list of services (applicability model 2026-11-01, 62 services). These actions are not restricted by RCPs at either position, so nothing changes for them: athena:StartQueryExecution, ec2:CreateTransitGatewayVpcAttachment, ec2:RunInstances, glue:StartJobRun. Services added to RCPs after the model date are not covered; the model is updated with the tool.",
                 "references": [
@@ -404,6 +411,8 @@
             "findings": [
               {
                 "status": "INFO",
+                "category": "informational",
+                "confidence": "high",
                 "title": "The effective tag policy is the same before and after the move",
                 "detail": "The merged tag rules on the source path and on the target path are identical, so the move changes no tag compliance.",
                 "evidence": [
@@ -433,6 +442,8 @@
             "findings": [
               {
                 "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "medium",
                 "title": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
                 "detail": "Shared by account 111111111112 with OU ou-lark-work. It no longer reaches the account at its new position. What the documentation says happens: ec2:PrefixList: what happens to resources already using it is not verified against the service documentation; treat it as potentially affected. Ask the owner to re-share the resources with the account directly before the move.",
                 "evidence": [
@@ -458,6 +469,8 @@
             "findings": [
               {
                 "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "medium",
                 "title": "StackSet larkspur-baseline-roles stops targeting the account; stack instances are deleted from the account",
                 "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
                 "evidence": [
@@ -1764,7 +1777,25 @@
             "version": "2026-11-01",
             "reference": "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
             "note": "access through a share ends when the account leaves the organization or the OU the share is addressed to, unless the share was created with RetainSharingOnAccountLeaveOrganization for the account itself; what happens to traffic already flowing is modelled per resource type (transit gateways and subnets keep existing attachments and resources working, Resolver rules stop answering, others unverified)"
+          },
+          {
+            "id": "transfer-procedure",
+            "version": "2026-11-02",
+            "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
+            "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
           }
+        ],
+        "categories": {
+          "informational": 1,
+          "potential-impact": 2,
+          "unsupported-evaluation": 1
+        },
+        "limitations": [
+          "An SCP or RCP that allows an action is not a grant: IAM identity policies, resource policies, permissions boundaries and session policies decide the request and are not evaluated here. The governance-policy evaluation says what the organization forbids, not what the account can do.",
+          "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
+          "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
+          "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
         ]
       }
     },
@@ -1778,7 +1809,7 @@
       "info": 2,
       "result": {
         "tool": "orgshift",
-        "result_schema_version": 2,
+        "result_schema_version": 3,
         "subject": {
           "account_id": "111111111115",
           "account_name": "larkspur-payments-prod",
@@ -1839,7 +1870,10 @@
             "ap-southeast-1",
             "eu-west-1",
             "us-east-1"
-          ]
+          ],
+          "declared_operations": 0,
+          "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
+          "target_org_path": "o-larkspur0001/r-lark/ou-lark-prod/"
         },
         "verdict": "REVIEW",
         "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root / Production: REVIEW. Nothing blocks the move outright, but 2 finding(s) could not be decided offline or need a decision.",
@@ -2092,6 +2126,8 @@
             "findings": [
               {
                 "status": "INFO",
+                "category": "unsupported-evaluation",
+                "confidence": "medium",
                 "title": "13 action(s) use services RCPs do not govern and were not evaluated against RCPs",
                 "detail": "RCPs apply to a fixed list of services (applicability model 2026-11-01, 62 services). These actions are not restricted by RCPs at either position, so nothing changes for them: cloudwatch:PutMetricData, ec2:CreateTransitGatewayVpcAttachment, ec2:CreateVpc, ec2:DescribeInstances, ec2:RunInstances, ec2:TerminateInstances, iam:CreateRole, iam:CreateUser, iam:PassRole, lambda:InvokeFunction, organizations:DescribeOrganization, rds:CreateDBInstance, rds:DescribeDBInstances. Services added to RCPs after the model date are not covered; the model is updated with the tool.",
                 "references": [
@@ -2108,6 +2144,8 @@
             "findings": [
               {
                 "status": "INFO",
+                "category": "informational",
+                "confidence": "high",
                 "title": "The effective tag policy is the same before and after the move",
                 "detail": "The merged tag rules on the source path and on the target path are identical, so the move changes no tag compliance.",
                 "evidence": [
@@ -2137,6 +2175,8 @@
             "findings": [
               {
                 "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "medium",
                 "title": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
                 "detail": "Shared by account 111111111112 with OU ou-lark-work. It no longer reaches the account at its new position. What the documentation says happens: ec2:PrefixList: what happens to resources already using it is not verified against the service documentation; treat it as potentially affected. Ask the owner to re-share the resources with the account directly before the move.",
                 "evidence": [
@@ -2162,6 +2202,8 @@
             "findings": [
               {
                 "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "medium",
                 "title": "StackSet larkspur-baseline-roles stops targeting the account; stack instances are deleted from the account",
                 "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
                 "evidence": [
@@ -3468,7 +3510,25 @@
             "version": "2026-11-01",
             "reference": "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
             "note": "access through a share ends when the account leaves the organization or the OU the share is addressed to, unless the share was created with RetainSharingOnAccountLeaveOrganization for the account itself; what happens to traffic already flowing is modelled per resource type (transit gateways and subnets keep existing attachments and resources working, Resolver rules stop answering, others unverified)"
+          },
+          {
+            "id": "transfer-procedure",
+            "version": "2026-11-02",
+            "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
+            "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
           }
+        ],
+        "categories": {
+          "informational": 1,
+          "potential-impact": 2,
+          "unsupported-evaluation": 1
+        },
+        "limitations": [
+          "An SCP or RCP that allows an action is not a grant: IAM identity policies, resource policies, permissions boundaries and session policies decide the request and are not evaluated here. The governance-policy evaluation says what the organization forbids, not what the account can do.",
+          "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
+          "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
+          "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
         ]
       }
     }

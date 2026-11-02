@@ -141,3 +141,25 @@ table.coverage td { vertical-align: top; }
 table.coverage .pill.info { background: #e5e7eb; color: #374151; }
 .check header .pill.review[title] { margin-left: .5rem; }
 .refs a { word-break: break-all; }
+
+/* Staged migrations (scenario overlays) */
+.pill.cat { background: #eef2ff; color: #3730a3; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.pill.declared { background: #fdf2f8; color: #9d174d; }
+.pill.proposed { background: #fff7ed; color: #c2410c; border: 1px dashed #fdba74; }
+.node.proposed > .node-row { outline: 2px dashed #fb923c; background: #fff7ed; }
+ol.timeline { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 12px 0 0; }
+ol.timeline li a { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px 3px 4px; font-size: 0.85rem; text-decoration: none; color: inherit; background: var(--panel); }
+ol.timeline li.nogo a { border-color: var(--nogo); } ol.timeline li.review a { border-color: var(--review); } ol.timeline li.go a { border-color: var(--go); }
+.tl-no { display: inline-block; min-width: 1.4em; text-align: center; font-weight: 700; color: var(--muted); }
+article.stage { border: 1px solid var(--line); border-left-width: 5px; border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+article.stage.go { border-left-color: var(--go); } article.stage.review { border-left-color: var(--review); } article.stage.nogo { border-left-color: var(--nogo); }
+article.stage header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } article.stage header h3 { margin: 0; }
+.layers { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.layer-chip { font-size: 0.8rem; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; color: var(--muted); max-width: 100%; overflow-wrap: anywhere; }
+.layer-chip.changed { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.layer-chip strong { text-transform: capitalize; }
+p.state { color: var(--muted); margin: 6px 0; }
+details.transition { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 8px; } details.transition > summary { cursor: pointer; font-weight: 600; }
+.strategy { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; } .strategy.selected { border-color: var(--accent); background: var(--accent-bg); }
+.strategy h4 { margin: 8px 0 2px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+ul.verify li { list-style: none; margin-left: -18px; }

@@ -33,8 +33,15 @@ func runFixtures(args []string) error {
 		}
 		fmt.Printf("wrote %s (%s, %d accounts, %d policies)\n", path, name, len(s.Accounts), len(s.Policies))
 	}
-	fmt.Printf("\nTry:\n  orgshift simulate --from %s --to %s --account %s --target-ou %s\n",
+	for name, doc := range fixtures.ScenarioFiles() {
+		path := filepath.Join(*out, name)
+		if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("wrote %s (scenario overlay)\n", path)
+	}
+	fmt.Printf("\nTry:\n  orgshift simulate --from %s --to %s --account %s --target-ou %s\n  orgshift stages --scenario %s\n",
 		filepath.Join(*out, fixtureFiles[fixtures.LarkspurName]), filepath.Join(*out, fixtureFiles[fixtures.FernhillName]),
-		fixtures.LarkspurPaymentsProd, fixtures.FernhillPaymentsOU)
+		fixtures.LarkspurPaymentsProd, fixtures.FernhillPaymentsOU, filepath.Join(*out, "scenario-payments-to-fernhill.yaml"))
 	return nil
 }

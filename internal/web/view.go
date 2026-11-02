@@ -9,6 +9,7 @@ import (
 
 	"github.com/MrShaaba/orgshift/internal/evaluator"
 	"github.com/MrShaaba/orgshift/internal/runbook"
+	"github.com/MrShaaba/orgshift/internal/scenario"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
 
@@ -21,6 +22,56 @@ type treeNode struct {
 	OnPath    bool
 	IsSubject bool
 	Ghost     bool
+	// Proposed marks a node that a scenario creates; it is not in any
+	// snapshot.
+	Proposed bool
+}
+
+// markProposed flags the nodes whose IDs a scenario proposes.
+func markProposed(n *treeNode, proposed map[string]bool) {
+	if n == nil {
+		return
+	}
+	n.Proposed = proposed[n.Node.ID]
+	for _, c := range n.Children {
+		markProposed(c, proposed)
+	}
+	for _, a := range n.Accounts {
+		markProposed(a, proposed)
+	}
+}
+
+// stagesView is what the staged result template renders.
+type stagesView struct {
+	Report       *scenario.Report
+	ScenarioName string
+	SourceName   string
+	TargetName   string
+	CurrentTree  *treeNode
+	FinalTree    *treeNode
+	ExportQuery  template.URL
+}
+
+func newStagesView(rep *scenario.Report, scName, fromName, toName string, from *snapshot.Snapshot, query string) *stagesView {
+	subject := snapshot.Node{ID: rep.Subject.AccountID, Name: rep.Subject.AccountName, Kind: snapshot.KindAccount}
+	v := &stagesView{Report: rep, ScenarioName: scName, SourceName: fromName, TargetName: toName, ExportQuery: template.URL(query)}
+	v.CurrentTree = buildTree(from, rep.Subject.CurrentPath, subject, "", nil)
+	final := from
+	if n := len(rep.Stages); n > 0 && rep.Stages[n-1].Snapshot != nil {
+		final = rep.Stages[n-1].Snapshot
+	}
+	v.FinalTree = buildTree(final, rep.Subject.FinalPath, subject, "", nil)
+	proposed := map[string]bool{}
+	for _, ou := range rep.Proposed.OUs {
+		proposed[ou.ID] = true
+	}
+	markProposed(v.FinalTree, proposed)
+	if rep.Subject.CrossOrg {
+		v.TargetName = toName
+	} else {
+		v.TargetName = fromName
+	}
+	return v
 }
 
 type badge struct {

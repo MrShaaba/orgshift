@@ -37,11 +37,11 @@ func TestCoverageCheckIsFirstAndCompleteOnFixtures(t *testing.T) {
 			t.Errorf("check %s should carry no coverage gap: %v", c.ID, c.CoverageGaps)
 		}
 	}
-	if len(res.Models) != 2 || res.Models[0].ID != "rcp-applicability" || res.Models[0].Version != RCPModelVersion || res.Models[1].ID != "ram-behaviour" {
+	if len(res.Models) != 3 || res.Models[0].ID != "rcp-applicability" || res.Models[0].Version != RCPModelVersion || res.Models[1].ID != "ram-behaviour" || res.Models[2].ID != "transfer-procedure" {
 		t.Errorf("models should be listed with their versions: %+v", res.Models)
 	}
-	if res.ResultSchemaVersion != 2 {
-		t.Errorf("result schema version should be 2, got %d", res.ResultSchemaVersion)
+	if res.ResultSchemaVersion != 3 {
+		t.Errorf("result schema version should be 3, got %d", res.ResultSchemaVersion)
 	}
 }
 

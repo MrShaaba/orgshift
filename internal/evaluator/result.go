@@ -44,8 +44,52 @@ func Worst(a, b Status) Status {
 //
 // Version 2 added the coverage matrix, the list of versioned models the
 // evaluation used, documentation references on findings and the
-// coverage_gaps list on checks.
-const ResultSchemaVersion = 2
+// coverage_gaps list on checks. Version 3 added the impact category,
+// confidence and source on every finding, the declared critical operations
+// on the subject, the category counts and the standing limitations of the
+// offline evaluation.
+const ResultSchemaVersion = 3
+
+// Impact categories (Section 7 of the brief). Every finding carries one so
+// a reader can tell a restriction that exists from one that hits something
+// the account does, and a limitation of the evaluator from missing input.
+const (
+	// CategoryKnownRestriction: a policy or control restricts something, and
+	// nothing declared or observed depends on it (or it is restricted today
+	// already).
+	CategoryKnownRestriction = "known-restriction"
+	// CategoryDeclaredImpact: a restriction or change hits an operation the
+	// account performs (observed usage) or the operator declared as
+	// critical, or hits the migration operation itself.
+	CategoryDeclaredImpact = "declared-impact"
+	// CategoryPotentialImpact: an operation may be affected, but deciding it
+	// needs context the snapshot does not carry (a condition on a request
+	// value, a behaviour AWS does not document, an operator decision).
+	CategoryPotentialImpact = "potential-impact"
+	// CategoryUnsupported: the offline evaluator does not model this (an
+	// operator, a policy type, a resource owned outside both snapshots).
+	CategoryUnsupported = "unsupported-evaluation"
+	// CategoryMissingEvidence: the input lacks what the check needs (no usage
+	// list, no resource sample, an incompletely collected domain).
+	CategoryMissingEvidence = "missing-evidence"
+	// CategoryInformational: a change that is neither a restriction nor a
+	// problem (a share that becomes available, a trail that starts covering
+	// the account).
+	CategoryInformational = "informational"
+)
+
+// Confidence levels on findings.
+const (
+	ConfidenceHigh   = "high"
+	ConfidenceMedium = "medium"
+	ConfidenceLow    = "low"
+)
+
+// Finding sources: where the operation a finding is about came from.
+const (
+	SourceObserved = "observed"
+	SourceDeclared = "declared"
+)
 
 // Result is the complete outcome of one simulated move.
 type Result struct {
@@ -62,7 +106,12 @@ type Result struct {
 	// Models lists the versioned AWS behaviour models the evaluation used,
 	// with the documentation they were verified against.
 	Models []ModelRef `json:"models"`
-	Notes  []string   `json:"notes,omitempty"`
+	// Categories counts the findings per impact category.
+	Categories map[string]int `json:"categories"`
+	// Limitations are the standing limits of the offline evaluation: what it
+	// does not decide, whatever the snapshots contain.
+	Limitations []string `json:"limitations"`
+	Notes       []string `json:"notes,omitempty"`
 }
 
 // ModelRef names one versioned model of AWS behaviour the evaluator relies
@@ -96,6 +145,13 @@ type Subject struct {
 	InboundAccess   int      `json:"inbound_access"`
 	TaggedResources int      `json:"tagged_resources"`
 	RegionsAssumed  []string `json:"regions_assumed"`
+	// DeclaredOperations counts the critical operations the operator
+	// declared on top of the observed usage.
+	DeclaredOperations int `json:"declared_operations"`
+	// OrgPaths are the aws:PrincipalOrgPaths values of the account before
+	// and after the move, as evaluated.
+	SourceOrgPath string `json:"source_org_path"`
+	TargetOrgPath string `json:"target_org_path"`
 }
 
 // Check is one area of the verdict board.
@@ -113,7 +169,13 @@ type Check struct {
 
 // Finding is one explained observation with evidence.
 type Finding struct {
-	Status    Status     `json:"status"`
+	Status Status `json:"status"`
+	// Category is the impact category (Category* constants).
+	Category string `json:"category"`
+	// Confidence says how sure the evaluator is of the finding.
+	Confidence string `json:"confidence"`
+	// Source is observed or declared for findings about an operation.
+	Source    string     `json:"source,omitempty"`
 	Title     string     `json:"title"`
 	Detail    string     `json:"detail"`
 	Action    string     `json:"action,omitempty"`

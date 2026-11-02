@@ -17,6 +17,8 @@ Usage:
   orgshift fixtures --out DIR               write the fictional fixture organizations
   orgshift simulate --from A.json [--to B.json] --account ID --target-ou OU [flags]
   orgshift simulate --from A.json [--to B.json] --ou OU --target-ou PARENT [flags]
+  orgshift stages --scenario plan.yaml [--from A.json --to B.json] [--format text|json|markdown]
+  orgshift scenario example | scenario check --scenario plan.yaml
   orgshift serve [--from A.json --to B.json] [--fixtures] [--listen 127.0.0.1:8080]
   orgshift config example | config check --config orgshift.yaml
   orgshift iam-templates [--config orgshift.yaml] [--out docs/iam]
@@ -41,6 +43,10 @@ func main() {
 		err = runFixtures(os.Args[2:])
 	case "simulate":
 		err = runSimulate(os.Args[2:])
+	case "stages":
+		err = runStages(os.Args[2:])
+	case "scenario":
+		err = runScenario(os.Args[2:])
 	case "serve":
 		err = runServe(os.Args[2:])
 	case "collect":

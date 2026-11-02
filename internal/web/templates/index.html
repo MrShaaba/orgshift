@@ -80,9 +80,42 @@
   {{end}}
 </section>
 
+<section class="panel" id="stages-plan">
+  <h2>3. Stage a migration <span class="muted small">(scenario overlay)</span></h2>
+  <div class="row">
+    <form method="post" action="/scenarios" enctype="multipart/form-data" class="upload">
+      <label>Scenario file <span class="muted">(YAML or JSON; <code>orgshift scenario example</code> prints one)</span> <input type="file" name="scenario" accept=".yaml,.yml,.json,application/json"></label>
+      <button type="submit" class="secondary">Load scenario</button>
+    </form>
+  </div>
+  {{if and .Snapshots .Scenarios}}
+  <form hx-post="/stages" hx-target="#result" hx-indicator="#busy-stages" hx-swap="innerHTML show:#result:top" method="get" action="/stages" class="plan">
+    <div class="grid3">
+      <label>Scenario
+        <select name="scenario">{{range .Scenarios}}<option value="{{.Name}}" {{if eq .Name $.StageForm.Scenario}}selected{{end}}>{{.Name}} ({{.Account}}, {{.Stages}} stages)</option>{{end}}</select>
+      </label>
+      <label>Source snapshot
+        <select name="from">{{range .Snapshots}}<option value="{{.Name}}" {{if eq .Name $.StageForm.From}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+      </label>
+      <label>Destination snapshot <span class="muted">(same as the source for a move inside one organization)</span>
+        <select name="to">{{range .Snapshots}}<option value="{{.Name}}" {{if eq .Name $.StageForm.To}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+      </label>
+    </div>
+    <div class="actions">
+      <button type="submit">Evaluate the stages</button>
+      <span id="busy-stages" class="htmx-indicator">evaluating every stage…</span>
+      <span class="muted small">Every stage is a proposed state across five layers (membership, placement, governance, network, workload); the transition into each is evaluated with the full verdict board. Snapshots are never modified.</span>
+    </div>
+  </form>
+  {{else if .Snapshots}}
+  <p class="muted">Load a scenario file, or the fixtures (they come with two staged scenarios).</p>
+  {{end}}
+</section>
+
 <section id="result">
   {{if .Result}}{{template "result.html" .Result}}{{end}}
   {{if .OUResult}}{{template "result_ou.html" .OUResult}}{{end}}
+  {{if .Stages}}{{template "stages.html" .Stages}}{{end}}
 </section>
 </main>
 <script>

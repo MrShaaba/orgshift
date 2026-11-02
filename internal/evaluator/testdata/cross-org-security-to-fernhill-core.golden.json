@@ -1,6 +1,6 @@
 {
   "tool": "orgshift",
-  "result_schema_version": 2,
+  "result_schema_version": 3,
   "subject": {
     "account_id": "111111111113",
     "account_name": "larkspur-security",
@@ -56,7 +56,10 @@
       "ap-southeast-1",
       "eu-west-1",
       "us-east-1"
-    ]
+    ],
+    "declared_operations": 0,
+    "source_org_path": "o-larkspur0001/r-lark/ou-lark-sec/",
+    "target_org_path": "o-fernhill0001/r-fern/ou-fern-core/"
   },
   "verdict": "NO-GO",
   "summary": "Moving larkspur-security (111111111113) from Root / Security to Root / Core (organization o-larkspur0001 to o-fernhill0001): NO-GO. 5 blocking finding(s) and 13 to review.",
@@ -302,8 +305,10 @@
       "findings": [
         {
           "status": "REVIEW",
+          "category": "missing-evidence",
+          "confidence": "low",
           "title": "No actions in use were provided for this account",
-          "detail": "Add usage.actions to the source snapshot, pass --actions, or import an IAM last-accessed export. Without them nothing can be checked against the policies."
+          "detail": "Add usage.actions to the source snapshot, pass --actions or --critical-operations, or import an IAM last-accessed export. Without them nothing can be checked against the policies."
         }
       ]
     },
@@ -315,8 +320,10 @@
       "findings": [
         {
           "status": "REVIEW",
+          "category": "missing-evidence",
+          "confidence": "low",
           "title": "No actions in use were provided for this account",
-          "detail": "Add usage.actions to the source snapshot, pass --actions, or import an IAM last-accessed export. Without them nothing can be checked against the policies."
+          "detail": "Add usage.actions to the source snapshot, pass --actions or --critical-operations, or import an IAM last-accessed export. Without them nothing can be checked against the policies."
         }
       ]
     },
@@ -328,8 +335,10 @@
       "findings": [
         {
           "status": "INFO",
+          "category": "known-restriction",
+          "confidence": "high",
           "title": "Effective tag policy at the target defines cost-center, environment",
-          "detail": "Rules below are the merged result of every tag policy on the target path.",
+          "detail": "Rules below are the merged result of every tag policy on the target path. A tag policy reports non-compliance for the keys it defines and rejects non-compliant tag operations only for the resource types in enforced_for; it never requires a tag to be present at creation (that takes an SCP condition or a Config rule, which are not part of this check).",
           "evidence": [
             {
               "kind": "effective-tag-policy",
@@ -374,6 +383,8 @@
         },
         {
           "status": "REVIEW",
+          "category": "missing-evidence",
+          "confidence": "low",
           "title": "No tagged resources were provided for this account",
           "detail": "Add usage.tagged_resources to the source snapshot (for example from the Resource Groups Tagging API) to check compliance against the target tag policy."
         }
@@ -387,6 +398,8 @@
       "findings": [
         {
           "status": "NO-GO",
+          "category": "declared-impact",
+          "confidence": "high",
           "title": "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
           "detail": "Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. What the documentation says happens: ec2:Subnet: existing participant resources continue to run in the subnet; no new resources can be created in it, while existing ones can still be modified, described and deleted (subnets can only be shared inside one organization). ec2:Subnet can only be shared inside one organization, so it cannot be re-shared with the account once it has left. ec2:TransitGateway: existing transit gateway attachments remain functional; the account can no longer describe the transit gateway or create new attachments, and either side can delete the attachments. route53resolver:ResolverRule: traffic is affected at once, the rule's associations with the account's VPCs are removed and Resolver answers those queries from the remaining rules at once (an OU-scoped rule keeps its associations only when it is also shared with the destination OU). Ask the owner to re-share the resources with the account directly before the move, with external principals allowed, and accept the invitation after the move.",
           "evidence": [
@@ -406,6 +419,8 @@
         },
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "Networking share larkspur-ipam is lost: ec2:IpamPool",
           "detail": "Shared by account 111111111112 with organization o-larkspur0001. It is scoped to the source organization or one of its OUs and stops applying when the account leaves. What the documentation says happens: ec2:IpamPool: what happens to resources already using it is not verified against the service documentation; treat it as potentially affected. Ask the owner to re-share the resources with the account directly before the move, with external principals allowed, and accept the invitation after the move.",
           "evidence": [
@@ -423,6 +438,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "Share fernhill-core-network becomes available after the move: ec2:TransitGateway, route53resolver:ResolverRule",
           "detail": "Shared by account 222222222222 with organization o-fernhill0001 in the target organization. New attachments must be created by hand; nothing is attached automatically.",
           "evidence": [
@@ -444,6 +461,8 @@
       "findings": [
         {
           "status": "NO-GO",
+          "category": "declared-impact",
+          "confidence": "high",
           "title": "Account hosts the organization Config aggregator larkspur-org-aggregator",
           "detail": "The aggregator lives in this account; leaving breaks aggregation for the whole source organization.",
           "evidence": [
@@ -456,6 +475,8 @@
         },
         {
           "status": "NO-GO",
+          "category": "declared-impact",
+          "confidence": "high",
           "title": "Account is the delegated administrator for config.amazonaws.com",
           "detail": "Organizations refuses to remove an account that is a delegated administrator for any service: RemoveAccountFromOrganization and LeaveOrganization fail until it is deregistered (or another account that stays is made the administrator). Deregister through the service's console or API, or with the Organizations deregister-delegated-administrator call where the service supports it. The service's organization-wide view, and often its member enrolment, moves with the role.",
           "evidence": [
@@ -472,6 +493,8 @@
         },
         {
           "status": "NO-GO",
+          "category": "declared-impact",
+          "confidence": "high",
           "title": "Account is the delegated administrator for guardduty.amazonaws.com",
           "detail": "Organizations refuses to remove an account that is a delegated administrator for any service: RemoveAccountFromOrganization and LeaveOrganization fail until it is deregistered (or another account that stays is made the administrator). Deregister through the service's console or API, or with the Organizations deregister-delegated-administrator call where the service supports it. The service's organization-wide view, and often its member enrolment, moves with the role.",
           "evidence": [
@@ -488,6 +511,8 @@
         },
         {
           "status": "NO-GO",
+          "category": "declared-impact",
+          "confidence": "high",
           "title": "Account is the delegated administrator for securityhub.amazonaws.com",
           "detail": "Organizations refuses to remove an account that is a delegated administrator for any service: RemoveAccountFromOrganization and LeaveOrganization fail until it is deregistered (or another account that stays is made the administrator). Deregister through the service's console or API, or with the Organizations deregister-delegated-administrator call where the service supports it. The service's organization-wide view, and often its member enrolment, moves with the role.",
           "evidence": [
@@ -504,6 +529,8 @@
         },
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "Config aggregator larkspur-org-aggregator loses this account",
           "detail": "The organization-sourced aggregator in account 111111111113 (us-east-1) stops receiving this account's configuration and compliance data when it leaves.",
           "evidence": [
@@ -516,6 +543,8 @@
         },
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "Organization trail larkspur-org-trail stops logging this account",
           "detail": "The trail is owned by account 111111111114 and covers members of the source organization only. After the move the account has no CloudTrail coverage from it; the target organization's trail (if any) takes over once the account joins.",
           "evidence": [
@@ -529,6 +558,8 @@
         },
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "StackSet larkspur-config-recorder stops targeting the account; stack instances are detached but the stacks are retained in the account (retain_stacks_on_account_removal)",
           "detail": "Service-managed StackSets deploy by OU. AWS Config recorder and delivery channel. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
           "evidence": [
@@ -542,19 +573,26 @@
         },
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "Standalone account prerequisites and invitation",
-          "detail": "Before it can leave, the account needs its own contact information (verified), a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place. It then has to be invited by the target management account and accept the invitation. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements.",
+          "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02.",
           "references": [
-            "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
+            "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
+            "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
           ]
         },
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "Trusted access is not enabled in the target for: account.amazonaws.com",
           "detail": "Organization-integrated features of these services (for example organization-wide GuardDuty, RAM sharing with the organization, service-managed StackSets) are not available in the target organization until trusted access is enabled there."
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "Config aggregator fernhill-org-aggregator in the target starts receiving the account",
           "detail": "Hosted in account 222222222223 (eu-west-1).",
           "evidence": [
@@ -567,21 +605,29 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "In the target, 222222222223 administers access-analyzer.amazonaws.com",
           "detail": "The account will be enrolled by that administrator's configuration once it joins."
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "In the target, 222222222223 administers guardduty.amazonaws.com",
           "detail": "The account will be enrolled by that administrator's configuration once it joins."
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "In the target, 222222222223 administers securityhub.amazonaws.com",
           "detail": "The account will be enrolled by that administrator's configuration once it joins."
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "Organization trail fernhill-org-trail in the target starts covering the account",
           "detail": "Owned by account 222222222224, delivering to fernhill-log-archive.",
           "evidence": [
@@ -594,6 +640,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "The 2 tag(s) on the account are deleted when it leaves: managed-by, team",
           "detail": "Organizations deletes every tag attached to the account itself when it leaves. Anything that selects accounts by these tags (cost allocation, automation, SCP conditions on aws:PrincipalTag do not use them, but Organizations tag policies and reporting do) no longer sees the account. Re-tag it in the target organization.",
           "references": [
@@ -602,6 +650,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "The IAM role Organizations created for the source management account is not deleted on leaving",
           "detail": "Because the account was created in the organization, Organizations created an IAM role (usually OrganizationAccountAccessRole) that the source management account can assume. Leaving does not delete it; delete it by hand if that access should end, and expect the target management account to need a role of its own.",
           "references": [
@@ -618,6 +668,8 @@
       "findings": [
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "Target OU Core is registered with Control Tower; the account has to be enrolled",
           "detail": "Moving into a registered OU applies the OU's SCPs at once (the 1 preventive guardrail SCP(s) on the chain are attached to the OUs), but the 1 detective control(s) do not report and the baseline is not deployed until the account is enrolled. Enrolment is done from Account Factory (enroll account) and needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no Config recorder or delivery channel of the account's own in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
           "evidence": [
@@ -641,6 +693,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "1 detective control(s) start applying at Core: AWS-GR_AUDIT_BUCKET_PUBLIC_READ_PROHIBITED",
           "detail": "Detective controls are AWS Config rules that Control Tower deploys when the account is enrolled. Findings appear in the audit account's Security Hub and Config aggregator; nothing is blocked. They start reporting only once the account is enrolled.",
           "evidence": [
@@ -654,6 +708,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "1 preventive control(s) start applying at Core: AWS-GR_AUDIT_BUCKET_POLICY_CHANGES_PROHIBITED",
           "detail": "Preventive controls are the aws-guardrails-* SCPs attached to the OU chain; they apply as soon as the account is in the OU and the SCP check on this board evaluates them against the actions in use.",
           "evidence": [
@@ -675,6 +731,8 @@
       "findings": [
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "2 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*, AWSReservedSSO_ReadOnlyAccess_*",
           "detail": "When the account leaves the organization, Identity Center cleans up the resources it created in the account; the documentation names the service-linked role, and the IAM roles provisioned for permission sets (path /aws-reserved/sso.amazonaws.com/us-east-1/) go with the instance's control over the account, so plan for them to disappear and confirm in IAM after the move. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern.",
           "evidence": [
@@ -697,6 +755,8 @@
         },
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "Permission set AdministratorAccess: 1 assignment(s) removed when the account leaves (group Platform-Admins)",
           "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 1 assignment(s) stop granting access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: session duration PT1H vs PT2H.",
           "evidence": [
@@ -725,6 +785,8 @@
         },
         {
           "status": "REVIEW",
+          "category": "potential-impact",
+          "confidence": "medium",
           "title": "Permission set ReadOnlyAccess: 1 assignment(s) removed when the account leaves (group Security-Auditors)",
           "detail": "Account assignments exist only for accounts inside the organization that owns the instance. When the account leaves o-larkspur0001, Identity Center cleans up its metadata and resources for the account and a standalone account no longer works with Identity Center, so these 1 assignment(s) stop granting access at once. The target instance has a permission set with the same name; re-assign the principals to it once the account has joined. They are matched by name only: identity store d-fern0000001 is a different directory, so the users and groups are different objects there. Same name, different settings: managed policies only in the target: arn:aws:iam::aws:policy/job-function/ViewOnlyAccess; session duration PT8H vs PT12H.",
           "evidence": [
@@ -753,6 +815,8 @@
         },
         {
           "status": "INFO",
+          "category": "informational",
+          "confidence": "high",
           "title": "Access is re-created in the target Identity Center instance, not moved",
           "detail": "Assignments are not copied between instances. The target instance uses identity store d-fern0000001 (the source uses d-lark0000001); users and groups there are separate objects even when their names match, so each assignment is re-created by name after the account has accepted the invitation. Permission set names that exist in both instances: AdministratorAccess, ReadOnlyAccess.",
           "evidence": [
@@ -1966,6 +2030,26 @@
       "version": "2026-11-01",
       "reference": "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
       "note": "access through a share ends when the account leaves the organization or the OU the share is addressed to, unless the share was created with RetainSharingOnAccountLeaveOrganization for the account itself; what happens to traffic already flowing is modelled per resource type (transit gateways and subnets keep existing attachments and resources working, Resolver rules stop answering, others unverified)"
+    },
+    {
+      "id": "transfer-procedure",
+      "version": "2026-11-02",
+      "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
+      "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
     }
+  ],
+  "categories": {
+    "declared-impact": 5,
+    "informational": 11,
+    "known-restriction": 1,
+    "missing-evidence": 3,
+    "potential-impact": 10
+  },
+  "limitations": [
+    "An SCP or RCP that allows an action is not a grant: IAM identity policies, resource policies, permissions boundaries and session policies decide the request and are not evaluated here. The governance-policy evaluation says what the organization forbids, not what the account can do.",
+    "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
+    "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
+    "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
+    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
   ]
 }

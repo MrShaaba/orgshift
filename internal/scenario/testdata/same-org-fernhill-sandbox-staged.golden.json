@@ -1,6 +1,6 @@
 {
   "tool": "orgshift stages test",
-  "stages_schema_version": 1,
+  "stages_schema_version": 2,
   "name": "Fernhill sandbox into Business Units, staged",
   "description": "Move fernhill-sandbox (222222222227) from the unregistered Sandbox OU into a proposed Transitional OU under Business Units, register the OU and enroll the account, then attach a tightening policy. Same organization throughout.",
   "strategy": "transfer",
@@ -87,7 +87,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -129,7 +131,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "222222222227",
           "account_name": "fernhill-sandbox",
@@ -180,11 +182,12 @@
           "target_ou_id": "ou-fern-sand",
           "actions_in_use": 2,
           "inbound_access": 0,
-          "tagged_resources": 0,
+          "tagged_resources": 3,
           "regions_assumed": [
             "eu-west-1"
           ],
           "declared_operations": 2,
+          "derived_operations": 0,
           "source_org_path": "o-fernhill0001/r-fern/ou-fern-sand/",
           "target_org_path": "o-fernhill0001/r-fern/ou-fern-sand/"
         },
@@ -413,6 +416,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "empty",
+                "required": false
+              },
+              "target": {
+                "status": "empty",
+                "required": false
+              }
             }
           ]
         },
@@ -585,8 +627,75 @@
             "status": "GO",
             "summary": "Same organization: the 1 assignment(s) and 1 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from resource-explorer"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "empty",
+              "detail": "3 policies read, 0 reference organization identity"
+            }
+          ],
+          "stacks": 2,
+          "stack_resources": 5,
+          "sampled_resources": 3,
+          "resource_source": "resource-explorer",
+          "policies_on_organization_identity": 0,
+          "policies_inspected": 3,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 1,
+              "stack_resources": 3,
+              "sampled_resources": 1,
+              "kinds": {
+                "stack": 1,
+                "terraform": 1
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 1,
+              "stack_resources": 2,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-unknown-model": 1
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 1,
+              "kinds": {
+                "unknown": 1
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -1765,6 +1874,12 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
@@ -1777,7 +1892,8 @@
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ],
         "notes": [
           "The target OU is the account's current parent; the simulation compares the account with itself."
@@ -1813,7 +1929,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -1866,7 +1984,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "222222222227",
           "account_name": "fernhill-sandbox",
@@ -1922,11 +2040,12 @@
           "target_ou_id": "ou-proposed-transit",
           "actions_in_use": 2,
           "inbound_access": 0,
-          "tagged_resources": 0,
+          "tagged_resources": 3,
           "regions_assumed": [
             "eu-west-1"
           ],
           "declared_operations": 2,
+          "derived_operations": 0,
           "source_org_path": "o-fernhill0001/r-fern/ou-fern-sand/",
           "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-proposed-transit/"
         },
@@ -2153,6 +2272,45 @@
               },
               "target": {
                 "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "empty",
+                "required": false
+              },
+              "target": {
+                "status": "empty",
                 "required": false
               }
             }
@@ -2394,8 +2552,75 @@
             "status": "GO",
             "summary": "Same organization: the 1 assignment(s) and 1 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from resource-explorer"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "empty",
+              "detail": "3 policies read, 0 reference organization identity"
+            }
+          ],
+          "stacks": 2,
+          "stack_resources": 5,
+          "sampled_resources": 3,
+          "resource_source": "resource-explorer",
+          "policies_on_organization_identity": 0,
+          "policies_inspected": 3,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 1,
+              "stack_resources": 3,
+              "sampled_resources": 1,
+              "kinds": {
+                "stack": 1,
+                "terraform": 1
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 1,
+              "stack_resources": 2,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-unknown-model": 1
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 1,
+              "kinds": {
+                "unknown": 1
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -4163,6 +4388,12 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
@@ -4174,7 +4405,8 @@
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ]
       }
     },
@@ -4206,7 +4438,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -4266,7 +4500,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "222222222227",
           "account_name": "fernhill-sandbox",
@@ -4327,11 +4561,12 @@
           "target_ou_id": "ou-proposed-transit",
           "actions_in_use": 2,
           "inbound_access": 0,
-          "tagged_resources": 0,
+          "tagged_resources": 3,
           "regions_assumed": [
             "eu-west-1"
           ],
           "declared_operations": 2,
+          "derived_operations": 0,
           "source_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-proposed-transit/",
           "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-proposed-transit/"
         },
@@ -4560,6 +4795,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "empty",
+                "required": false
+              },
+              "target": {
+                "status": "empty",
+                "required": false
+              }
             }
           ]
         },
@@ -4679,8 +4953,75 @@
             "status": "GO",
             "summary": "Same organization: the 1 assignment(s) and 1 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from resource-explorer"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "empty",
+              "detail": "3 policies read, 0 reference organization identity"
+            }
+          ],
+          "stacks": 2,
+          "stack_resources": 5,
+          "sampled_resources": 3,
+          "resource_source": "resource-explorer",
+          "policies_on_organization_identity": 0,
+          "policies_inspected": 3,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 1,
+              "stack_resources": 3,
+              "sampled_resources": 1,
+              "kinds": {
+                "stack": 1,
+                "terraform": 1
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 1,
+              "stack_resources": 2,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-unknown-model": 1
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 1,
+              "kinds": {
+                "unknown": 1
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -6732,6 +7073,12 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
@@ -6743,7 +7090,8 @@
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ],
         "notes": [
           "The target OU is the account's current parent; the simulation compares the account with itself."
@@ -6781,7 +7129,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -6854,7 +7204,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "222222222227",
           "account_name": "fernhill-sandbox",
@@ -6915,11 +7265,12 @@
           "target_ou_id": "ou-proposed-transit",
           "actions_in_use": 2,
           "inbound_access": 0,
-          "tagged_resources": 0,
+          "tagged_resources": 3,
           "regions_assumed": [
             "eu-west-1"
           ],
           "declared_operations": 2,
+          "derived_operations": 0,
           "source_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-proposed-transit/",
           "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-proposed-transit/"
         },
@@ -7148,6 +7499,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "empty",
+                "required": false
+              },
+              "target": {
+                "status": "empty",
+                "required": false
+              }
             }
           ]
         },
@@ -7267,8 +7657,75 @@
             "status": "GO",
             "summary": "Same organization: the 1 assignment(s) and 1 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from resource-explorer"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "empty",
+              "detail": "3 policies read, 0 reference organization identity"
+            }
+          ],
+          "stacks": 2,
+          "stack_resources": 5,
+          "sampled_resources": 3,
+          "resource_source": "resource-explorer",
+          "policies_on_organization_identity": 0,
+          "policies_inspected": 3,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 1,
+              "stack_resources": 3,
+              "sampled_resources": 1,
+              "kinds": {
+                "stack": 1,
+                "terraform": 1
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 1,
+              "stack_resources": 2,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-unknown-model": 1
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 1,
+              "kinds": {
+                "unknown": 1
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -9320,6 +9777,12 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
@@ -9331,7 +9794,8 @@
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ],
         "notes": [
           "The target OU is the account's current parent; the simulation compares the account with itself."
@@ -9366,7 +9830,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -9419,7 +9885,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "222222222227",
           "account_name": "fernhill-sandbox",
@@ -9480,11 +9946,12 @@
           "target_ou_id": "ou-proposed-transit",
           "actions_in_use": 2,
           "inbound_access": 0,
-          "tagged_resources": 0,
+          "tagged_resources": 3,
           "regions_assumed": [
             "eu-west-1"
           ],
           "declared_operations": 2,
+          "derived_operations": 0,
           "source_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-proposed-transit/",
           "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-proposed-transit/"
         },
@@ -9713,6 +10180,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "empty",
+                "required": false
+              },
+              "target": {
+                "status": "empty",
+                "required": false
+              }
             }
           ]
         },
@@ -9864,8 +10370,75 @@
             "status": "GO",
             "summary": "Same organization: the 1 assignment(s) and 1 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "2 stack(s) with 5 resource(s), 3 sampled resource(s) from resource-explorer, 0 of 3 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from resource-explorer"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "empty",
+              "detail": "3 policies read, 0 reference organization identity"
+            }
+          ],
+          "stacks": 2,
+          "stack_resources": 5,
+          "sampled_resources": 3,
+          "resource_source": "resource-explorer",
+          "policies_on_organization_identity": 0,
+          "policies_inspected": 3,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 1,
+              "stack_resources": 3,
+              "sampled_resources": 1,
+              "kinds": {
+                "stack": 1,
+                "terraform": 1
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 1,
+              "stack_resources": 2,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-unknown-model": 1
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 1,
+              "kinds": {
+                "unknown": 1
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -11978,6 +12551,12 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
@@ -11990,7 +12569,8 @@
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ],
         "notes": [
           "The target OU is the account's current parent; the simulation compares the account with itself."
@@ -12059,22 +12639,109 @@
         "Create the destination account with Account Factory in the target OU (enrolled and baselined from creation; no transfer prerequisites, no standalone window)",
         "Re-create access: 1 Identity Center assignment(s) on the source account have to be granted in the destination instance",
         "Re-point 0 inbound principal(s) and every resource policy, trust policy and share principal that names account 222222222227 at the new account ID",
-        "A migration plan per workload: data, secrets, DNS and endpoint cutover"
+        "A migration plan per workload: data, secrets, DNS and endpoint cutover",
+        "Redeploy from templates or pipelines: 1 stack(s) with 3 resource(s) and 1 sampled resource(s) outside any stack (sandbox-experiments)",
+        "Have the destination's Control Tower and StackSets recreate: 1 stack(s) with 2 resource(s) (StackSet-team-tooling-071566f0-1495-2b98-c3b5-f562ee3cbeb1)",
+        "Rebuild by hand, once it is known how they were made: 1 sampled resource(s) outside any stack"
       ],
       "risks": [
         "The account ID changes: ARNs, resource policies, cross-account trusts, RAM principals and hard-coded identifiers in deployments all change",
         "Dual running: two accounts bill and have to be kept consistent until cutover",
-        "Cutover of DNS, endpoints and data has its own downtime, outside what orgshift evaluates"
+        "Cutover of DNS, endpoints and data has its own downtime, outside what orgshift evaluates",
+        "Data: redeploying a template brings back empty resources; these hold state that needs its own migration: AWS::S3::Bucket x1.",
+        "Platform: 1 stack(s) with 2 resource(s) were deployed into the account by the source's platform; they are not redeployed from the account. The destination's Control Tower and StackSets have to provide what the workloads use of them."
       ],
       "unknowns": [
-        "The workload inventory and deployment provenance are not collected by this version (a later milestone), so the migration effort is not assessed",
-        "Data volumes, cutover windows and application dependencies are not in the snapshots"
+        "Workload layer evaluated for account 222222222227; the redeployment list is an inventory with counts, not an estimate of effort",
+        "1 sampled resource(s) carry no evidence of how they were deployed (created by hand, by a script, or by a tool that leaves no trace in tags): arn:aws:lambda:eu-west-1:222222222227:function:demo.",
+        "2 classification(s) rest on a naming or tag convention rather than a record (medium confidence): stack StackSet-team-tooling-071566f0-1495-2b98-c3b5-f562ee3cbeb1, arn:aws:s3:::fernhill-sandbox-scratch.",
+        "Which pipeline or person deploys a plain stack is not collected: the template is in CloudFormation, but its parameters' sources, secrets and the pipeline's own configuration are not in the snapshot.",
+        "The sample comes from Resource Explorer, which returns at most the first 1,000 results of a query and only the resource types and Regions it indexes.",
+        "Data volumes, cutover windows, DNS and the dependencies between applications are not in the snapshot."
       ],
       "reversal": [
         "The source account is untouched until it is closed: rollback is a cutover back",
         "An abandoned destination account is closed and stays in the 90-day post-closure period before it disappears",
         "No four-day rule and no standalone-account prerequisites apply"
-      ]
+      ],
+      "redeploy": {
+        "evaluation": "evaluated",
+        "groups": [
+          {
+            "group": "pipeline",
+            "title": "redeployable from a template or pipeline",
+            "stacks": 1,
+            "stack_resources": 3,
+            "sampled_resources": 1,
+            "items": [
+              {
+                "type": "stack",
+                "name": "sandbox-experiments",
+                "region": "eu-west-1",
+                "provenance": "stack",
+                "provenance_label": "plain CloudFormation stack",
+                "confidence": "high",
+                "resources": 3
+              },
+              {
+                "type": "resource",
+                "name": "arn:aws:s3:::fernhill-sandbox-scratch",
+                "resource_type": "s3:bucket",
+                "provenance": "terraform",
+                "provenance_label": "Terraform-style tag convention",
+                "confidence": "medium"
+              }
+            ]
+          },
+          {
+            "group": "platform",
+            "title": "recreated by Control Tower or a StackSet",
+            "stacks": 1,
+            "stack_resources": 2,
+            "sampled_resources": 0,
+            "items": [
+              {
+                "type": "stack",
+                "name": "StackSet-team-tooling-071566f0-1495-2b98-c3b5-f562ee3cbeb1",
+                "region": "eu-west-1",
+                "provenance": "stackset-unknown-model",
+                "provenance_label": "StackSet, permission model unknown",
+                "confidence": "medium",
+                "resources": 2
+              }
+            ]
+          },
+          {
+            "group": "manual-or-unknown",
+            "title": "manual or unknown",
+            "stacks": 0,
+            "stack_resources": 0,
+            "sampled_resources": 1,
+            "items": [
+              {
+                "type": "resource",
+                "name": "arn:aws:lambda:eu-west-1:222222222227:function:demo",
+                "region": "eu-west-1",
+                "resource_type": "lambda:function",
+                "provenance": "unknown",
+                "provenance_label": "unknown",
+                "confidence": "low"
+              }
+            ]
+          }
+        ],
+        "dependencies": [
+          "Data: redeploying a template brings back empty resources; these hold state that needs its own migration: AWS::S3::Bucket x1.",
+          "Platform: 1 stack(s) with 2 resource(s) were deployed into the account by the source's platform; they are not redeployed from the account. The destination's Control Tower and StackSets have to provide what the workloads use of them."
+        ],
+        "unknowns": [
+          "1 sampled resource(s) carry no evidence of how they were deployed (created by hand, by a script, or by a tool that leaves no trace in tags): arn:aws:lambda:eu-west-1:222222222227:function:demo.",
+          "2 classification(s) rest on a naming or tag convention rather than a record (medium confidence): stack StackSet-team-tooling-071566f0-1495-2b98-c3b5-f562ee3cbeb1, arn:aws:s3:::fernhill-sandbox-scratch.",
+          "Which pipeline or person deploys a plain stack is not collected: the template is in CloudFormation, but its parameters' sources, secrets and the pipeline's own configuration are not in the snapshot.",
+          "The sample comes from Resource Explorer, which returns at most the first 1,000 results of a query and only the resource types and Regions it indexes.",
+          "Data volumes, cutover windows, DNS and the dependencies between applications are not in the snapshot."
+        ]
+      }
     }
   ],
   "models": [
@@ -12095,6 +12762,12 @@
       "version": "2026-11-02",
       "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
       "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+    },
+    {
+      "id": "workload-behaviour",
+      "version": "2026-11-05",
+      "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+      "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
     }
   ],
   "limitations": [
@@ -12102,7 +12775,8 @@
     "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
     "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
     "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+    "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
   ],
   "notes": [
     "Every stage is evaluated as a move from the previous state into this one with the same checks as a single simulation; the five layers are reported separately so a change in one is never read as a change in another."

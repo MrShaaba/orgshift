@@ -61,6 +61,7 @@
       "us-east-1"
     ],
     "declared_operations": 0,
+    "derived_operations": 0,
     "source_org_path": "o-larkspur0001/r-lark/ou-lark-sand/",
     "target_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/"
   },

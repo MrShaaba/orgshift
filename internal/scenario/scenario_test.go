@@ -12,6 +12,7 @@ import (
 	"github.com/MrShaaba/orgshift/internal/evaluator"
 	"github.com/MrShaaba/orgshift/internal/fixtures"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
+	"github.com/MrShaaba/orgshift/internal/workload"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -270,7 +271,7 @@ func TestCrossOrgStagedScenario(t *testing.T) {
 	if len(rep.Strategies[0].Prerequisites) == 0 || len(rep.Strategies[0].Risks) == 0 {
 		t.Errorf("transfer strategy should list prerequisites and risks from the entry stage: %+v", rep.Strategies[0])
 	}
-	if len(rep.Limitations) == 0 || len(rep.Models) != 3 {
+	if len(rep.Limitations) == 0 || len(rep.Models) != 4 {
 		t.Error("limitations and models")
 	}
 	for _, st := range rep.Stages {
@@ -426,6 +427,141 @@ stages:
 	}
 	if !rep.Strategies[1].Selected || rep.Strategies[0].Selected {
 		t.Errorf("recreate strategy selected: %+v", rep.Strategies)
+	}
+}
+
+// The workload layer of every stage is evaluated from the inventory, and the
+// stages after the account has left work on what is left of it.
+func TestWorkloadLayerPerStage(t *testing.T) {
+	l, f := fixtures.Larkspur(), fixtures.Fernhill()
+	rep, err := Run(Input{Scenario: mustParse(t, fixtures.PaymentsToFernhillStaged), Source: l, Destination: f, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range rep.Stages {
+		wl := layer(st, LayerWorkload)
+		if wl.Evaluation != workload.Evaluated || wl.Detail == "" || st.Transition.WorkloadLayer == nil {
+			t.Errorf("stage %s: the workload layer should be evaluated from the inventory: %+v", st.ID, wl)
+		}
+		for _, other := range st.Layers {
+			if other.Layer != LayerWorkload && other.Evaluation != "" {
+				t.Errorf("stage %s: only the workload layer carries an evaluation level: %+v", st.ID, other)
+			}
+		}
+	}
+	enter := stage(t, rep, "enter")
+	wl := layer(enter, LayerWorkload)
+	if !strings.Contains(wl.Detail, "8 stack(s) with 37 resource(s)") || !strings.Contains(wl.Detail, "8 item(s) to settle") ||
+		!strings.Contains(wl.Detail, "1 stack(s) are deleted by their StackSet on leaving") || !strings.Contains(wl.Detail, "StackSet-"+fixtures.LarkspurBaselineStackSet) {
+		t.Errorf("entry stage workload layer: %s", wl.Detail)
+	}
+	if transitionFinding(enter.Transition, "workloads", "denies the account's own principals after the move") == nil ||
+		transitionFinding(enter.Transition, "workloads", "sits on 2 subnets shared through larkspur-core-network") == nil {
+		t.Error("the entry transition reports the workload blockers")
+	}
+	// After entry the inventory travels with the account, less the deleted
+	// instance, and the tag check keeps using it at every later position.
+	legacy := stage(t, rep, "legacy")
+	if d := layer(legacy, LayerWorkload).Detail; !strings.Contains(d, "7 stack(s) with 33 resource(s), 12 sampled resource(s)") || !strings.Contains(d, "0 item(s) to settle") {
+		t.Errorf("after entry: %s", d)
+	}
+	if w := legacy.Snapshot.Workloads[fixtures.LarkspurPaymentsProd]; w == nil || len(w.Stacks) != 7 {
+		t.Errorf("the derived destination state should carry the inventory: %+v", w)
+	}
+	if legacy.Transition.Subject.TaggedResources != 12 {
+		t.Errorf("the tag check of a later stage uses the travelling sample, got %d", legacy.Transition.Subject.TaggedResources)
+	}
+	// The transfer strategy lists the workload findings among its risks.
+	risks := strings.Join(rep.Strategies[0].Risks, "\n")
+	if !strings.Contains(risks, "Bucket policy of "+fixtures.LarkspurSettlementBucket) || !strings.Contains(risks, "StackSet instance StackSet-"+fixtures.LarkspurBaselineStackSet) {
+		t.Errorf("transfer risks should include the workload findings:\n%s", risks)
+	}
+	// The recreate strategy lists what must be redeployed, by provenance.
+	rc := rep.Strategies[1]
+	if rc.Redeploy == nil || rc.Redeploy.Evaluation != workload.Evaluated || len(rc.Redeploy.Groups) != 3 {
+		t.Fatalf("recreate strategy should carry the redeployment plan: %+v", rc.Redeploy)
+	}
+	pre := strings.Join(rc.Prerequisites, "\n")
+	for _, want := range []string{
+		"Redeploy from templates or pipelines: 5 stack(s) with 27 resource(s) and 3 sampled resource(s) outside any stack (payments-network, payments-api,",
+		"Have the destination's Control Tower and StackSets recreate: 3 stack(s) with 10 resource(s)",
+		"Rebuild by hand, once it is known how they were made: 3 sampled resource(s) outside any stack",
+	} {
+		if !strings.Contains(pre, want) {
+			t.Errorf("recreate prerequisites should contain %q:\n%s", want, pre)
+		}
+	}
+	if u := strings.Join(rc.Unknowns, "\n"); !strings.Contains(u, "Workload layer evaluated for account 111111111115") || !strings.Contains(u, "carry no evidence of how they were deployed") {
+		t.Errorf("recreate unknowns: %s", u)
+	}
+	if r := strings.Join(rc.Risks, "\n"); !strings.Contains(r, "Order: payments-network exports values") || !strings.Contains(r, "Data: redeploying a template brings back empty resources") {
+		t.Errorf("recreate risks: %s", r)
+	}
+	if rep.Strategies[0].Redeploy != nil {
+		t.Error("the transfer strategy redeploys nothing")
+	}
+}
+
+// The recreate fixture: the account stays, and the relocation stage lists
+// what has to be brought into the new account.
+func TestRecreateScenarioListsWhatMustBeRedeployed(t *testing.T) {
+	l, f := fixtures.Larkspur(), fixtures.Fernhill()
+	rep, err := Run(Input{Scenario: mustParse(t, fixtures.PaymentsRecreatedInFernhill), Source: l, Destination: f, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Strategy != StrategyRecreate || rep.Verdict != evaluator.StatusReview || len(rep.Stages) != 3 || !rep.Strategies[1].Selected {
+		t.Fatalf("recreate scenario: %s %s", rep.Strategy, rep.Verdict)
+	}
+	for _, st := range rep.Stages {
+		if st.State.Organization.ID != l.Organization.ID {
+			t.Errorf("stage %s: the source account does not move in a recreate scenario: %+v", st.ID, st.State.Organization)
+		}
+	}
+	r := stage(t, rep, "relocate")
+	fd := hasFinding(r.Findings, "Workload relocation: 8 stack(s) and 6 sampled resource(s) outside stacks to bring into the other account, 3 of unknown provenance")
+	if fd == nil || fd.Status != evaluator.StatusReview || fd.Category != evaluator.CategoryPotentialImpact || fd.Confidence != evaluator.ConfidenceHigh || fd.Source != evaluator.SourceWorkload {
+		t.Fatalf("relocation finding: %+v", r.Findings)
+	}
+	for _, want := range []string{
+		"The stage moves the workloads to account 222222222229", "workload layer evaluated",
+		"Redeployable from a template or pipeline (5 stack(s) with 27 resource(s) and 3 sampled resource(s) outside any stack)",
+		"Recreated by Control Tower or a StackSet (3 stack(s) with 10 resource(s))",
+		"Manual or unknown (3 sampled resource(s) outside any stack): arn:aws:lambda:us-east-1:111111111115:function:settlement-notifier",
+		"What constrains the redeployment: Order: payments-network exports", "Not known: 3 sampled resource(s) carry no evidence",
+	} {
+		if !strings.Contains(fd.Detail, want) {
+			t.Errorf("relocation detail should contain %q:\n%s", want, fd.Detail)
+		}
+	}
+	if !layer(r, LayerWorkload).Changed || layer(r, LayerWorkload).Evaluation != workload.Evaluated || !r.State.Relocated {
+		t.Errorf("relocation layer: %+v", layer(r, LayerWorkload))
+	}
+	golden(t, "cross-org-payments-recreate", rep)
+
+	// Without an inventory the relocation is declared, not evaluated, and
+	// the strategy says the list is unknown instead of showing an empty one.
+	p := fixtures.LarkspurPartial()
+	rep, err = Run(Input{Scenario: mustParse(t, fixtures.PaymentsRecreatedInFernhill), Source: p, Destination: f, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r = stage(t, rep, "relocate")
+	fd = hasFinding(r.Findings, "Workload relocation is declared, not evaluated: no workload inventory for the account")
+	if fd == nil || fd.Status != evaluator.StatusReview || fd.Category != evaluator.CategoryMissingEvidence {
+		t.Fatalf("relocation without an inventory: %+v", r.Findings)
+	}
+	if layer(r, LayerWorkload).Evaluation != workload.NotEvaluated {
+		t.Errorf("layer without an inventory: %+v", layer(r, LayerWorkload))
+	}
+	rc := rep.Strategies[1]
+	if rc.Redeploy == nil || rc.Redeploy.Evaluation != workload.NotEvaluated || !strings.Contains(strings.Join(rc.Unknowns, "\n"), "no workload inventory for the account") {
+		t.Errorf("recreate strategy without an inventory: %+v", rc.Redeploy)
+	}
+	for _, line := range rc.Prerequisites {
+		if strings.Contains(line, "Redeploy from templates") {
+			t.Errorf("nothing is known to redeploy, so nothing should be listed: %s", line)
+		}
 	}
 }
 

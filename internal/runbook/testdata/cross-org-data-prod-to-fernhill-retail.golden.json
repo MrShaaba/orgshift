@@ -61,17 +61,18 @@
     "target_ou_id": "ou-fern-ret",
     "actions_in_use": 8,
     "inbound_access": 1,
-    "tagged_resources": 0,
+    "tagged_resources": 3,
     "regions_assumed": [
       "eu-west-1",
       "us-east-1"
     ],
     "declared_operations": 0,
+    "derived_operations": 0,
     "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
     "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-fern-ret/"
   },
   "verdict": "NO-GO",
-  "summary": "45 steps: 6 before the move (2 blocking), 11 to re-create, 4 for the move itself, 18 checks afterwards and 6 to roll back.",
+  "summary": "52 steps: 7 before the move (2 blocking), 12 to re-create, 4 for the move itself, 23 checks afterwards and 6 to roll back.",
   "phases": [
     {
       "id": "before",
@@ -197,19 +198,6 @@
         },
         {
           "id": "before-3",
-          "title": "No tagged resources were provided for this account",
-          "detail": "Add usage.tagged_resources to the source snapshot (for example from the Resource Groups Tagging API) to check compliance against the target tag policy.",
-          "status": "REVIEW",
-          "kind": "input",
-          "where": "account larkspur-data-prod (111111111118)",
-          "check": "tags",
-          "finding": "No tagged resources were provided for this account",
-          "commands": [
-            "aws resourcegroupstaggingapi get-resources --resources-per-page 100   # sample to add as usage.tagged_resources"
-          ]
-        },
-        {
-          "id": "before-4",
           "title": "Make the account able to stand alone",
           "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
           "status": "REVIEW",
@@ -224,7 +212,7 @@
           ]
         },
         {
-          "id": "before-5",
+          "id": "before-4",
           "title": "Lift the deny on organizations:LeaveOrganization in SCP Larkspur-Baseline-Guardrails / DenyLeaveOrganization, or let the management account remove the account",
           "detail": "SCP Larkspur-Baseline-Guardrails (p-lark0001) is attached at root Root (r-lark) and denies organizations:LeaveOrganization without a condition, so leave-organization run from inside the account fails. Either detach the policy or edit the statement for the duration of the move and put it back afterwards, or run remove-account-from-organization from the management account, which SCPs do not restrict.",
           "status": "REVIEW",
@@ -253,7 +241,7 @@
           ]
         },
         {
-          "id": "before-6",
+          "id": "before-5",
           "title": "Find what references the 3 AWSReservedSSO_* role(s) of the account",
           "detail": "When the account leaves the organization, Identity Center cleans up the resources it created in the account; the documentation names the service-linked role, and the IAM roles provisioned for permission sets (path /aws-reserved/sso.amazonaws.com/us-east-1/) go with the instance's control over the account, so plan for them to disappear and confirm in IAM after the move. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. List the exact role ARNs now, while they exist, and search for them so the references can be updated after the move.",
           "status": "REVIEW",
@@ -283,6 +271,71 @@
               "side": "source",
               "reference": "AWSReservedSSO_DataPlatformOperator_*",
               "note": "role for permission set DataPlatformOperator (arn:aws:sso:::permissionSet/ssoins-larkspur00000001/ps-lark00000004) under /aws-reserved/sso.amazonaws.com/us-east-1/; 1 assignment(s) on the account"
+            }
+          ]
+        },
+        {
+          "id": "before-6",
+          "title": "Change the policy of arn:aws:s3:::larkspur-data-lake to name the destination organization",
+          "detail": "Statement WorkloadAccountsWrite (Allow): it stops admitting the account's own principals (ForAnyValue:StringLike aws:PrincipalOrgPaths o-larkspur0001/r-lark/ou-lark-work/*); inside one account an identity policy can still grant the access, so whether anything breaks depends on policies this check does not read. Change the policy to name the destination organization (or both, for the transition) before the move.",
+          "status": "REVIEW",
+          "kind": "resource-policy",
+          "where": "account larkspur-data-prod (111111111118)",
+          "check": "workloads",
+          "finding": "Bucket policy of arn:aws:s3:::larkspur-data-lake ties access to organization identity that changes with the move",
+          "resource": "arn:aws:s3:::larkspur-data-lake",
+          "commands": [
+            "aws s3api get-bucket-policy --bucket larkspur-data-lake --query Policy --output text \u003e larkspur-data-lake-policy.json",
+            "# edit the condition on organization identity so it admits the destination as well for the transition: today it names o-larkspur0001, the account will be in o-fernhill0001 (path o-fernhill0001/r-fern/ou-fern-bu/ou-fern-ret/)",
+            "aws s3api put-bucket-policy --bucket larkspur-data-lake --policy file://larkspur-data-lake-policy.json"
+          ],
+          "evidence": [
+            {
+              "kind": "resource-policy",
+              "side": "source",
+              "policy_type": "s3-bucket-policy",
+              "statement": "WorkloadAccountsWrite",
+              "statement_json": {
+                "Sid": "WorkloadAccountsWrite",
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "s3:PutObject",
+                "Resource": "arn:aws:s3:::larkspur-data-lake/*",
+                "Condition": {
+                  "ForAnyValue:StringLike": {
+                    "aws:PrincipalOrgPaths": "o-larkspur0001/r-lark/ou-lark-work/*"
+                  }
+                }
+              },
+              "reference": "arn:aws:s3:::larkspur-data-lake",
+              "note": "read with s3:GetBucketPolicy"
+            }
+          ]
+        },
+        {
+          "id": "before-7",
+          "title": "Keep or replace stack StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 before StackSet larkspur-baseline-roles deletes it",
+          "detail": "StackSet larkspur-baseline-roles is service-managed with automatic deployment on and RetainStacksOnAccountRemoval off. When an account is removed from a target organization or OU, StackSets deletes its stack instances and their resources: here AWS::IAM::ManagedPolicy x1, AWS::IAM::Role x3. Whatever in the account uses them stops working at that moment, and the resources are not there for a rollback either. Before the move, either turn RetainStacksOnAccountRemoval on for the StackSet (the stack then stays in the account, detached from the StackSet and no longer updated) or make sure the destination deploys an equivalent. Turning retention on is a setting of the whole StackSet and applies to every account that leaves its targets from then on.",
+          "status": "REVIEW",
+          "kind": "stackset",
+          "where": "administration account 111111111111",
+          "check": "workloads",
+          "finding": "StackSet instance StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 is deleted when the account leaves the organization: 4 resource(s)",
+          "regions": [
+            "us-east-1"
+          ],
+          "commands": [
+            "aws cloudformation describe-stack-resources --stack-name StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 --region us-east-1 --query 'StackResources[].[ResourceType,LogicalResourceId,PhysicalResourceId]' --output table   # in the account: what the instance contains",
+            "aws cloudformation describe-stack-set --stack-set-name larkspur-baseline-roles --query StackSet.AutoDeployment",
+            "# to keep the stack in the account when it leaves (add --capabilities and --parameters as the StackSet needs them):",
+            "aws cloudformation update-stack-set --stack-set-name larkspur-baseline-roles --use-previous-template --auto-deployment Enabled=true,RetainStacksOnAccountRemoval=true"
+          ],
+          "evidence": [
+            {
+              "kind": "stack-instance",
+              "side": "source",
+              "reference": "StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054",
+              "note": "region us-east-1, status UPDATE_COMPLETE, 4 resource(s): AWS::IAM::ManagedPolicy x1, AWS::IAM::Role x3\nprovenance: service-managed StackSet (high confidence): the stack ID is listed as an instance of StackSet larkspur-baseline-roles (permission model SERVICE_MANAGED, administered from 111111111111)\nStackSet larkspur-baseline-roles: service-managed, auto-deployment true, retain stacks on account removal false, targets ou-lark-work; the stack ID is one of the StackSet's instances"
             }
           ]
         }
@@ -388,7 +441,7 @@
         {
           "id": "recreate-5",
           "title": "Replace what StackSet larkspur-baseline-roles deploys into the account",
-          "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
+          "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. The workloads check lists the instances found in this account and what each contains. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
           "status": "REVIEW",
           "kind": "stackset",
           "where": "administration account 111111111111",
@@ -410,7 +463,7 @@
         {
           "id": "recreate-6",
           "title": "Replace what StackSet larkspur-config-recorder deploys into the account",
-          "detail": "Service-managed StackSets deploy by OU. AWS Config recorder and delivery channel. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
+          "detail": "Service-managed StackSets deploy by OU. AWS Config recorder and delivery channel. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. The workloads check lists the instances found in this account and what each contains. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
           "status": "REVIEW",
           "kind": "stackset",
           "where": "administration account 111111111111",
@@ -556,6 +609,36 @@
               "note": "ReadOnlyAccess\nAudit and security review\nsession duration PT12H\nmanaged policies: arn:aws:iam::aws:policy/ReadOnlyAccess, arn:aws:iam::aws:policy/job-function/ViewOnlyAccess\nprovisioned in 6 account(s)"
             }
           ]
+        },
+        {
+          "id": "recreate-12",
+          "title": "Plan stack data-lake-ingest off the shared networking it references",
+          "detail": "It references tgw-54924a77a3120b1ad (parameter TransitGatewayId), shared by account 111111111112 with organization o-larkspur0001. What the documentation says happens when the share ends: existing transit gateway attachments remain functional; the account can no longer describe the transit gateway or create new attachments, and either side can delete the attachments. The stack owns the attachment: it keeps carrying traffic, but a stack update that replaces it, or redeploying the stack, fails because the account can no longer create attachments to this transit gateway. Redeploying the stack with subnets and attachments the account owns, or that the destination shares with it, is the fix; the parameters named above are where the stack takes them from.",
+          "status": "REVIEW",
+          "kind": "workload",
+          "where": "account larkspur-data-prod (111111111118)",
+          "check": "workloads",
+          "finding": "Stack data-lake-ingest sits on a transit gateway shared through larkspur-core-network, which the account loses",
+          "regions": [
+            "us-east-1"
+          ],
+          "commands": [
+            "aws cloudformation describe-stack-resources --stack-name data-lake-ingest --region us-east-1 --query 'StackResources[].[ResourceType,LogicalResourceId,PhysicalResourceId]' --output table"
+          ],
+          "evidence": [
+            {
+              "kind": "stack-reference",
+              "side": "source",
+              "reference": "data-lake-ingest",
+              "note": "region us-east-1, status UPDATE_COMPLETE, 5 resource(s): AWS::EC2::TransitGatewayAttachment x1, AWS::Glue::Job x3, AWS::IAM::Role x1\nprovenance: plain CloudFormation stack (high confidence): a CloudFormation stack whose name and ID match no StackSet instance; whatever pipeline deploys it is not collected\nreferences tgw-54924a77a3120b1ad (parameter TransitGatewayId)"
+            },
+            {
+              "kind": "resource-share",
+              "side": "source",
+              "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
+              "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
+            }
+          ]
         }
       ]
     },
@@ -629,6 +712,42 @@
         },
         {
           "id": "after-2",
+          "title": "Tag to the target standard: cost-center: lambda:function resources carry no cost-center tag",
+          "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 1 resource(s), for example arn:aws:lambda:us-east-1:111111111118:function:model-trainer. Not enforced, so this can wait until after the move.",
+          "status": "INFO",
+          "kind": "tags",
+          "where": "account larkspur-data-prod (111111111118)",
+          "check": "tags",
+          "finding": "cost-center: lambda:function resources carry no cost-center tag",
+          "evidence": [
+            {
+              "kind": "tag-compliance",
+              "side": "target",
+              "policy_type": "TAG",
+              "note": "arn:aws:lambda:us-east-1:111111111118:function:model-trainer"
+            }
+          ]
+        },
+        {
+          "id": "after-3",
+          "title": "Tag to the target standard: environment: lambda:function resources carry no environment tag",
+          "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 1 resource(s), for example arn:aws:lambda:us-east-1:111111111118:function:model-trainer. Not enforced, so this can wait until after the move.",
+          "status": "INFO",
+          "kind": "tags",
+          "where": "account larkspur-data-prod (111111111118)",
+          "check": "tags",
+          "finding": "environment: lambda:function resources carry no environment tag",
+          "evidence": [
+            {
+              "kind": "tag-compliance",
+              "side": "target",
+              "policy_type": "TAG",
+              "note": "arn:aws:lambda:us-east-1:111111111118:function:model-trainer"
+            }
+          ]
+        },
+        {
+          "id": "after-4",
           "title": "Accept the invitation for share larkspur-core-network and confirm the resources",
           "detail": "Outside the owner's organization the share arrives as an invitation. Accept it, then check that the ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule are listed and that what is attached to them still works.",
           "kind": "check",
@@ -642,7 +761,7 @@
           ]
         },
         {
-          "id": "after-3",
+          "id": "after-5",
           "title": "Accept the invitation for share larkspur-ipam and confirm the resources",
           "detail": "Outside the owner's organization the share arrives as an invitation. Accept it, then check that the ec2:IpamPool are listed and that what is attached to them still works.",
           "kind": "check",
@@ -656,7 +775,7 @@
           ]
         },
         {
-          "id": "after-4",
+          "id": "after-6",
           "title": "Accept the invitation for share larkspur-workload-prefix-lists and confirm the resources",
           "detail": "Outside the owner's organization the share arrives as an invitation. Accept it, then check that the ec2:PrefixList are listed and that what is attached to them still works.",
           "kind": "check",
@@ -670,7 +789,7 @@
           ]
         },
         {
-          "id": "after-5",
+          "id": "after-7",
           "title": "Accept the invitation for share larkspur-license-config and confirm the resources",
           "detail": "Outside the owner's organization the share arrives as an invitation. Accept it, then check that the license-manager:LicenseConfiguration are listed and that what is attached to them still works.",
           "kind": "check",
@@ -684,7 +803,7 @@
           ]
         },
         {
-          "id": "after-6",
+          "id": "after-8",
           "title": "Share fernhill-core-network becomes available: ec2:TransitGateway, route53resolver:ResolverRule",
           "detail": "Shared by account 222222222222 with organization o-fernhill0001 in the target organization. New attachments must be created by hand; nothing is attached automatically.",
           "status": "INFO",
@@ -705,7 +824,7 @@
           ]
         },
         {
-          "id": "after-7",
+          "id": "after-9",
           "title": "Confirm StackSet fernhill-baseline deployed its stack instances to the account",
           "detail": "Baseline IAM roles and GuardDuty membership. Stack instances are created automatically when auto-deployment is on.",
           "status": "INFO",
@@ -726,7 +845,7 @@
           ]
         },
         {
-          "id": "after-8",
+          "id": "after-10",
           "title": "Confirm CloudTrail coverage",
           "detail": "Organization trail(s) larkspur-org-trail stop logging the account the moment it leaves. Trail(s) fernhill-org-trail (bucket fernhill-log-archive) of the target cover it once it has joined; confirm events arrive there. Between leaving and joining nothing logs management events unless the account has a trail of its own.",
           "kind": "logging",
@@ -751,7 +870,7 @@
           ]
         },
         {
-          "id": "after-9",
+          "id": "after-11",
           "title": "Confirm AWS Config aggregation",
           "detail": "Aggregator(s) larkspur-org-aggregator of the source stop receiving the account's configuration and compliance data. Aggregator(s) fernhill-org-aggregator in the target pick it up once it has joined and the recorder in the account is running; confirm the account appears as a source.",
           "kind": "logging",
@@ -775,7 +894,7 @@
           ]
         },
         {
-          "id": "after-10",
+          "id": "after-12",
           "title": "Confirm the target's delegated administrators enrol the account",
           "detail": "In the target organization: 222222222223 administers access-analyzer.amazonaws.com; 222222222223 administers guardduty.amazonaws.com; 222222222223 administers securityhub.amazonaws.com. Each administrator's auto-enable settings decide whether the account is enrolled on joining; check the service consoles for the new member.",
           "status": "INFO",
@@ -787,7 +906,7 @@
           ]
         },
         {
-          "id": "after-11",
+          "id": "after-13",
           "title": "Confirm the Control Tower controls that start applying at Retail",
           "detail": "3 preventive control(s) start applying at Retail: AWS-GR_CLOUDTRAIL_ENABLED, AWS-GR_CONFIG_ENABLED, AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS. 4 detective control(s) start applying at Retail: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_COMMON_PORTS, AWS-GR_RESTRICTED_SSH. Preventive controls apply through the OU's SCPs at once; detective and proactive ones report once the account is enrolled.",
           "status": "INFO",
@@ -843,7 +962,7 @@
           ]
         },
         {
-          "id": "after-12",
+          "id": "after-14",
           "title": "Enroll the account in Control Tower from Account Factory (OU Retail)",
           "detail": "Moving into a registered OU applies the OU's SCPs at once (the 3 preventive guardrail SCP(s) on the chain are attached to the OUs), but the 4 detective control(s) do not report and the baseline is not deployed until the account is enrolled. Enrolment is done from Account Factory (enroll account) and needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no Config recorder or delivery channel of the account's own in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
           "status": "REVIEW",
@@ -870,7 +989,7 @@
           ]
         },
         {
-          "id": "after-13",
+          "id": "after-15",
           "title": "Update references to the deleted AWSReservedSSO_* roles with the ARNs the target instance provisions",
           "detail": "The new roles have a different random suffix. Replace the old ARNs found before the move in resource policies, key policies, EKS access entries and tooling.",
           "kind": "identity-center",
@@ -882,7 +1001,7 @@
           ]
         },
         {
-          "id": "after-14",
+          "id": "after-16",
           "title": "Assign AdministratorAccess to group Platform-Admins for the account in the target instance",
           "detail": "Users and groups in identity store d-fern0000001 are different objects from the source ones, so look each one up by name first; create it there if it is missing. Identity Center then provisions a new AWSReservedSSO_AdministratorAccess_* role in the account.",
           "status": "REVIEW",
@@ -896,7 +1015,7 @@
           ]
         },
         {
-          "id": "after-15",
+          "id": "after-17",
           "title": "Assign DataPlatformOperator to group Data-Platform for the account in the target instance",
           "detail": "Users and groups in identity store d-fern0000001 are different objects from the source ones, so look each one up by name first; create it there if it is missing. Identity Center then provisions a new AWSReservedSSO_DataPlatformOperator_* role in the account.",
           "status": "REVIEW",
@@ -910,7 +1029,7 @@
           ]
         },
         {
-          "id": "after-16",
+          "id": "after-18",
           "title": "Assign ReadOnlyAccess to group Security-Auditors for the account in the target instance",
           "detail": "Users and groups in identity store d-fern0000001 are different objects from the source ones, so look each one up by name first; create it there if it is missing. Identity Center then provisions a new AWSReservedSSO_ReadOnlyAccess_* role in the account.",
           "status": "REVIEW",
@@ -924,7 +1043,59 @@
           ]
         },
         {
-          "id": "after-17",
+          "id": "after-19",
+          "title": "Take o-larkspur0001 out of the policy of arn:aws:s3:::larkspur-data-lake once nothing there needs it",
+          "detail": "A condition that names both organizations is a transition state: it keeps admitting every principal of the organization the account left. Remove the former organization when the consumers that stayed behind no longer need the resource, or replace it with the specific accounts that do.",
+          "status": "REVIEW",
+          "kind": "resource-policy",
+          "where": "account larkspur-data-prod (111111111118)",
+          "check": "workloads",
+          "finding": "Bucket policy of arn:aws:s3:::larkspur-data-lake ties access to organization identity that changes with the move",
+          "resource": "arn:aws:s3:::larkspur-data-lake"
+        },
+        {
+          "id": "after-20",
+          "title": "Confirm what became of stack StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054",
+          "detail": "With retention on, the stack is still there and no longer belongs to the StackSet; with retention off, it and its resources are gone and whatever replaced them has to be in place.",
+          "status": "REVIEW",
+          "kind": "stackset",
+          "where": "account larkspur-data-prod (111111111118)",
+          "check": "workloads",
+          "finding": "StackSet instance StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 is deleted when the account leaves the organization: 4 resource(s)",
+          "regions": [
+            "us-east-1"
+          ],
+          "commands": [
+            "aws cloudformation describe-stacks --stack-name StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 --region us-east-1 --query 'Stacks[0].StackStatus'"
+          ]
+        },
+        {
+          "id": "after-21",
+          "title": "Adopt or replace stack StackSet-larkspur-config-recorder-d7418753-b291-d801-567c-0fc53e2afd2c, which StackSet larkspur-config-recorder left behind",
+          "detail": "RetainStacksOnAccountRemoval is on, so when the account leaves the organization the stack and its 3 resource(s) are kept in their current state and are no longer part of the StackSet: nobody updates them from then on. Adopt the stack in the destination or replace it. The stack is an ordinary stack of the account from now on: keep it under the account's own deployment, or delete it once the destination's baseline provides the same.",
+          "status": "INFO",
+          "kind": "stackset",
+          "where": "account larkspur-data-prod (111111111118)",
+          "check": "workloads",
+          "finding": "StackSet instance StackSet-larkspur-config-recorder-d7418753-b291-d801-567c-0fc53e2afd2c stays in the account, detached from StackSet larkspur-config-recorder",
+          "regions": [
+            "us-east-1"
+          ],
+          "commands": [
+            "aws cloudformation describe-stacks --stack-name StackSet-larkspur-config-recorder-d7418753-b291-d801-567c-0fc53e2afd2c --region us-east-1 --query 'Stacks[0].[StackStatus,LastUpdatedTime]'",
+            "aws cloudformation describe-stack-resources --stack-name StackSet-larkspur-config-recorder-d7418753-b291-d801-567c-0fc53e2afd2c --region us-east-1 --query 'StackResources[].[ResourceType,LogicalResourceId,PhysicalResourceId]' --output table"
+          ],
+          "evidence": [
+            {
+              "kind": "stack-instance",
+              "side": "source",
+              "reference": "StackSet-larkspur-config-recorder-d7418753-b291-d801-567c-0fc53e2afd2c",
+              "note": "region us-east-1, status CREATE_COMPLETE, 3 resource(s): AWS::Config::ConfigurationRecorder x1, AWS::Config::DeliveryChannel x1, AWS::IAM::Role x1\nprovenance: service-managed StackSet (high confidence): the stack ID is listed as an instance of StackSet larkspur-config-recorder (permission model SERVICE_MANAGED, administered from 111111111111)\nStackSet larkspur-config-recorder: service-managed, auto-deployment true, retain stacks on account removal true, targets r-lark; the stack ID is one of the StackSet's instances"
+            }
+          ]
+        },
+        {
+          "id": "after-22",
           "title": "Exercise the 8 flagged request(s) from the account",
           "detail": "These were denied or undecidable in the simulation. After the policy changes above and the move, confirm each one works (a dry run or a read of the resource is enough): athena:StartQueryExecution in us-east-1; ec2:CreateTransitGatewayVpcAttachment in us-east-1; ec2:RunInstances in us-east-1; glue:StartJobRun in us-east-1; kms:Decrypt in us-east-1; s3:GetObject in us-east-1; s3:PutObject in us-east-1; s3:PutObject by arn:aws:iam::111111111115:role/SettlementExporter in eu-west-1, us-east-1.",
           "kind": "check",
@@ -934,7 +1105,7 @@
           ]
         },
         {
-          "id": "after-18",
+          "id": "after-23",
           "title": "Collect a fresh snapshot and simulate the account at its new position",
           "detail": "With the account inside the target organization, a simulation of the account against its own parent compares it with itself and should come back GO, which closes the runbook.",
           "kind": "check",

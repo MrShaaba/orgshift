@@ -47,8 +47,11 @@ func Worst(a, b Status) Status {
 // coverage_gaps list on checks. Version 3 added the impact category,
 // confidence and source on every finding, the declared critical operations
 // on the subject, the category counts and the standing limitations of the
-// offline evaluation.
-const ResultSchemaVersion = 3
+// offline evaluation. Version 4 added the workloads check, the workload
+// layer block (how much of the layer was evaluated and what the inventory
+// holds), operations derived from the workload inventory (source
+// "workload") and their count on the subject.
+const ResultSchemaVersion = 4
 
 // Impact categories (Section 7 of the brief). Every finding carries one so
 // a reader can tell a restriction that exists from one that hits something
@@ -86,6 +89,7 @@ const (
 )
 
 // Finding sources: where the operation a finding is about came from.
+// SourceWorkload (workloads.go) marks what the workload inventory shows.
 const (
 	SourceObserved = "observed"
 	SourceDeclared = "declared"
@@ -102,7 +106,10 @@ type Result struct {
 	// whether each was completely collected on each side.
 	Coverage CoverageMatrix `json:"coverage"`
 	Checks   []Check        `json:"checks"`
-	Diff     []Diff         `json:"diff"`
+	// WorkloadLayer says how much of the workload layer was evaluated and
+	// what the account's inventory holds.
+	WorkloadLayer *WorkloadLayer `json:"workload_layer"`
+	Diff          []Diff         `json:"diff"`
 	// Models lists the versioned AWS behaviour models the evaluation used,
 	// with the documentation they were verified against.
 	Models []ModelRef `json:"models"`
@@ -148,6 +155,10 @@ type Subject struct {
 	// DeclaredOperations counts the critical operations the operator
 	// declared on top of the observed usage.
 	DeclaredOperations int `json:"declared_operations"`
+	// DerivedOperations counts the operations derived from the workload
+	// inventory (a role CloudFormation assumes to read another account's
+	// stack output), evaluated like observed ones.
+	DerivedOperations int `json:"derived_operations"`
 	// OrgPaths are the aws:PrincipalOrgPaths values of the account before
 	// and after the move, as evaluated.
 	SourceOrgPath string `json:"source_org_path"`
@@ -174,7 +185,8 @@ type Finding struct {
 	Category string `json:"category"`
 	// Confidence says how sure the evaluator is of the finding.
 	Confidence string `json:"confidence"`
-	// Source is observed or declared for findings about an operation.
+	// Source is observed, declared or workload for findings about an
+	// operation or a resource of the account.
 	Source    string     `json:"source,omitempty"`
 	Title     string     `json:"title"`
 	Detail    string     `json:"detail"`

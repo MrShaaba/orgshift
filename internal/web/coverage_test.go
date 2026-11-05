@@ -62,7 +62,7 @@ func TestCoverageInTheUI(t *testing.T) {
 	}
 	// JSON export carries the matrix and the models.
 	_, body = get(t, ts, "/export.json?"+q, nil)
-	for _, want := range []string{`"coverage": {`, `"same_snapshot": false`, `"complete": false`, `"gaps": [`, `"models": [`, `"id": "rcp-applicability"`, `"result_schema_version": 3`, `"coverage_gaps": [`} {
+	for _, want := range []string{`"coverage": {`, `"same_snapshot": false`, `"complete": false`, `"gaps": [`, `"models": [`, `"id": "rcp-applicability"`, `"result_schema_version": 4`, `"coverage_gaps": [`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("json export missing %q", want)
 		}

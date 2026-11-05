@@ -47,7 +47,7 @@ type move struct {
 
 // Models lists the versioned AWS behaviour models every evaluation uses.
 func Models() []ModelRef {
-	return []ModelRef{RCPModel(), RAMModel(), TransferModel()}
+	return []ModelRef{RCPModel(), RAMModel(), TransferModel(), WorkloadModel()}
 }
 
 // Limitations are the standing limits of the offline evaluation. They are
@@ -59,6 +59,7 @@ func Limitations() []string {
 		"Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
 		"RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
 		"Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+		"Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown.",
 	}
 }
 
@@ -105,6 +106,9 @@ func evaluateMove(m move) (*Result, error) {
 	targetOUID := e.dst.path[len(e.dst.path)-2].ID
 
 	usage := withDeclared(m.from.UsageFor(acct.ID), m.declared)
+	derived := e.derivedOperations()
+	usage.Actions = append(usage.Actions, derived...)
+	usage.TaggedResources = e.taggedSample()
 	e.usage = usage
 	res := &Result{
 		Tool: "orgshift", ResultSchemaVersion: ResultSchemaVersion,
@@ -115,7 +119,7 @@ func evaluateMove(m move) (*Result, error) {
 			CrossOrg:  e.crossOrg, SourcePath: e.src.path, TargetPath: e.dst.path,
 			SourcePathID: acct.ParentID, TargetOUID: targetOUID,
 			ActionsInUse: len(usage.Actions), InboundAccess: len(usage.InboundAccess), TaggedResources: len(usage.TaggedResources),
-			RegionsAssumed: append([]string(nil), acct.EnabledRegions...), DeclaredOperations: len(m.declared),
+			RegionsAssumed: append([]string(nil), acct.EnabledRegions...), DeclaredOperations: len(m.declared), DerivedOperations: len(derived),
 			SourceOrgPath: orgPath(e.src.orgID, e.src.path), TargetOrgPath: orgPath(e.dst.orgID, e.dst.path),
 		},
 		Models: Models(), Limitations: Limitations(),
@@ -146,7 +150,9 @@ func evaluateMove(m move) (*Result, error) {
 	e.evaluateControlTower(&controlTower)
 	identity := newCheck("identity-center", "IAM Identity Center")
 	e.evaluateIdentityCenter(&identity)
-	res.Checks = []Check{scp, rcp, tags, shares, services, controlTower, identity}
+	workloads := newCheck("workloads", "Workloads")
+	res.WorkloadLayer = e.evaluateWorkloads(&workloads)
+	res.Checks = []Check{scp, rcp, tags, shares, services, controlTower, identity, workloads}
 	e.applyCoverage(res)
 
 	for _, t := range snapshot.AllPolicyTypes {

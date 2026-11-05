@@ -185,7 +185,7 @@ func shareEvidence(side string, sh snapshot.ResourceShare) Evidence {
 // otherwise REVIEW.
 func (e *evaluation) lostShareImpact(sh snapshot.ResourceShare) (status Status, lines []string, refs []string) {
 	status = StatusReview
-	usage := e.from.UsageFor(e.accountID)
+	usage := e.usage
 	inUse := func(action string) (exact bool, wild bool) {
 		for _, a := range usage.Actions {
 			if strings.EqualFold(a.Action, action) {
@@ -405,13 +405,19 @@ func (e *evaluation) evaluateOrgServices(c *Check) {
 				ss.AdministrationAccountID, strings.Join(ss.TargetOUs, ","), strings.Join(ss.TargetAccounts, ","), strings.Join(ss.Regions, ","), ss.AutoDeployment, ss.RetainStacksOnAccountRemoval)}
 		switch {
 		case before && !after:
-			what := "deleted from the account"
-			if ss.RetainStacksOnAccountRemoval {
-				what = "detached but the stacks are retained in the account (retain_stacks_on_account_removal)"
+			what := "stack instances are deleted from the account"
+			switch {
+			case !ss.AutoDeployment:
+				what = "with automatic deployment off, what happens to its stack instances is not documented"
+			case ss.RetainStacksOnAccountRemoval:
+				what = "stack instances are detached but the stacks are retained in the account (retain_stacks_on_account_removal)"
 			}
-			c.add(Finding{Status: StatusReview, Title: fmt.Sprintf("StackSet %s stops targeting the account; stack instances are %s", ss.Name, what),
-				Detail:   "Service-managed StackSets deploy by OU. " + firstSentence(ss.Description) + " Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
-				Evidence: []Evidence{ev}})
+			detail := "Service-managed StackSets deploy by OU. " + firstSentence(ss.Description) + " Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving."
+			if e.from.WorkloadsFor(e.accountID) != nil {
+				detail += " The workloads check lists the instances found in this account and what each contains."
+			}
+			c.add(Finding{Status: StatusReview, Title: fmt.Sprintf("StackSet %s stops targeting the account; %s", ss.Name, what),
+				Detail: detail, Evidence: []Evidence{ev}, References: []string{refAutoDeployment}})
 		case !before && after:
 			c.add(Finding{Status: StatusInfo, Title: fmt.Sprintf("StackSet %s starts targeting the account", ss.Name),
 				Detail: firstSentence(ss.Description) + " Stack instances are created automatically when auto-deployment is on.", Evidence: []Evidence{ev}})

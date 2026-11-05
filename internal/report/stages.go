@@ -26,7 +26,7 @@ func StagesText(r *scenario.Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n%s\n\n", banner(r.Verdict), r.Summary)
 	fmt.Fprintf(&b, "scenario: %s (%s)\naccount: %s (%s)\nfrom: %s %s\nto:   %s %s\n", r.Name, r.Strategy, r.Subject.AccountName, r.Subject.AccountID,
-		orgLabel(r.Subject.SourceOrg), snapshot.PathString(r.Subject.CurrentPath), orgLabel(r.Subject.DestinationOrg), snapshot.PathString(r.Subject.FinalPath))
+		orgLabel(r.Subject.SourceOrg), snapshot.PathString(r.Subject.CurrentPath), orgLabel(finalOrg(r)), snapshot.PathString(r.Subject.FinalPath))
 	if len(r.CriticalOperations) > 0 {
 		b.WriteString("critical operations declared:")
 		for _, op := range r.CriticalOperations {
@@ -61,9 +61,18 @@ func StagesText(r *scenario.Report) string {
 			if l.Changed {
 				mark = "*"
 			}
-			fmt.Fprintf(&b, " %s %s: %s;", mark, l.Layer, l.Summary)
+			fmt.Fprintf(&b, " %s %s: %s", mark, l.Layer, l.Summary)
+			if l.Evaluation != "" {
+				fmt.Fprintf(&b, " [%s]", l.Evaluation)
+			}
+			b.WriteString(";")
 		}
 		b.WriteString("\n")
+		for _, l := range st.Layers {
+			if l.Detail != "" {
+				fmt.Fprintf(&b, "   %s layer %s: %s\n", l.Layer, l.Evaluation, l.Detail)
+			}
+		}
 		for _, f := range st.Findings {
 			fmt.Fprintf(&b, "   %-6s [%s] %s\n", f.Status, f.Category, f.Title)
 		}
@@ -83,8 +92,11 @@ func StagesText(r *scenario.Report) string {
 						continue
 					}
 					fmt.Fprintf(&b, "         %-6s [%s] %s", f.Status, f.Category, f.Title)
-					if f.Source == evaluator.SourceDeclared {
+					switch f.Source {
+					case evaluator.SourceDeclared:
 						b.WriteString(" (declared)")
+					case evaluator.SourceWorkload:
+						b.WriteString(" (from the workload inventory)")
 					}
 					b.WriteString("\n")
 				}
@@ -105,12 +117,36 @@ func StagesText(r *scenario.Report) string {
 		writeList(&b, "  risks", s.Risks)
 		writeList(&b, "  unknowns", s.Unknowns)
 		writeList(&b, "  reversal", s.Reversal)
+		if p := s.Redeploy; p != nil {
+			fmt.Fprintf(&b, "  what must be redeployed (workload layer %s):\n", p.Evaluation)
+			for _, g := range p.Groups {
+				fmt.Fprintf(&b, "    %s: %s\n", g.Title, g.Line())
+				for _, it := range g.Items {
+					switch it.Type {
+					case "stack":
+						fmt.Fprintf(&b, "        stack %s (%s, %d resource(s)) [%s, %s confidence]\n", it.Name, it.Region, it.Resources, it.Label, it.Confidence)
+					default:
+						fmt.Fprintf(&b, "        %s [%s, %s confidence]\n", it.Name, it.Label, it.Confidence)
+					}
+				}
+			}
+		}
 	}
 	b.WriteString("\n== Limitations\n")
 	for _, l := range r.Limitations {
 		fmt.Fprintf(&b, "- %s\n", l)
 	}
 	return b.String()
+}
+
+// finalOrg is the organization the account is in after the last stage. A
+// recreate scenario leaves the account in the source organization even
+// though it names a destination.
+func finalOrg(r *scenario.Report) evaluator.OrgRef {
+	if n := len(r.Stages); n > 0 {
+		return r.Stages[n-1].State.Organization
+	}
+	return r.Subject.DestinationOrg
 }
 
 func writeList(b *strings.Builder, title string, items []string) {
@@ -127,7 +163,7 @@ func StagesMarkdown(r *scenario.Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# orgshift staged verdict: %s\n\n%s\n\n", r.Verdict, r.Summary)
 	fmt.Fprintf(&b, "Scenario **%s** (strategy %s). Account `%s` (%s), from %s at %s to %s at %s.\n\n", md(r.Name), r.Strategy, r.Subject.AccountID, md(r.Subject.AccountName),
-		orgLabel(r.Subject.SourceOrg), snapshot.PathString(r.Subject.CurrentPath), orgLabel(r.Subject.DestinationOrg), snapshot.PathString(r.Subject.FinalPath))
+		orgLabel(r.Subject.SourceOrg), snapshot.PathString(r.Subject.CurrentPath), orgLabel(finalOrg(r)), snapshot.PathString(r.Subject.FinalPath))
 	if r.Description != "" {
 		fmt.Fprintf(&b, "%s\n\n", r.Description)
 	}
@@ -138,11 +174,14 @@ func StagesMarkdown(r *scenario.Report) string {
 	for _, st := range r.Stages {
 		fmt.Fprintf(&b, "| %d | %s | %s |", st.Index, md(st.Title), st.Verdict)
 		for _, l := range st.Layers {
+			cell := "-"
 			if l.Changed {
-				fmt.Fprintf(&b, " %s |", md(l.Summary))
-			} else {
-				b.WriteString(" - |")
+				cell = md(l.Summary)
 			}
+			if l.Evaluation != "" {
+				cell += " (" + l.Evaluation + ")"
+			}
+			fmt.Fprintf(&b, " %s |", cell)
 		}
 		b.WriteString("\n")
 	}
@@ -195,9 +234,13 @@ func StagesMarkdown(r *scenario.Report) string {
 		if len(st.State.Shares) > 0 {
 			fmt.Fprintf(&b, "; proposed shares present: %s", strings.Join(st.State.Shares, ", "))
 		}
-		b.WriteString(".\n\n| Layer | Change |\n|---|---|\n")
+		b.WriteString(".\n\n| Layer | Change | Evaluation |\n|---|---|---|\n")
 		for _, l := range st.Layers {
-			fmt.Fprintf(&b, "| %s | %s |\n", l.Layer, md(l.Summary))
+			eval := ""
+			if l.Evaluation != "" {
+				eval = "**" + l.Evaluation + "**: " + md(l.Detail)
+			}
+			fmt.Fprintf(&b, "| %s | %s | %s |\n", l.Layer, md(l.Summary), eval)
 		}
 		b.WriteString("\n")
 		if len(st.Findings) > 0 {
@@ -234,6 +277,24 @@ func StagesMarkdown(r *scenario.Report) string {
 			fmt.Fprintf(&b, "**%s**\n\n", part.title)
 			for _, it := range part.items {
 				fmt.Fprintf(&b, "- %s\n", md(it))
+			}
+			b.WriteString("\n")
+		}
+		if p := s.Redeploy; p != nil {
+			fmt.Fprintf(&b, "**What must be redeployed** (workload layer %s; an inventory with counts, not an estimate of effort)\n\n", p.Evaluation)
+			b.WriteString("| Group | Stacks | Resources in stacks | Sampled resources outside stacks |\n|---|---|---|---|\n")
+			for _, g := range p.Groups {
+				fmt.Fprintf(&b, "| %s | %d | %d | %d |\n", g.Title, g.Stacks, g.StackResources, g.SampledResources)
+			}
+			b.WriteString("\n| Group | Item | Region | Provenance | Confidence | Resources |\n|---|---|---|---|---|---|\n")
+			for _, g := range p.Groups {
+				for _, it := range g.Items {
+					n := ""
+					if it.Type == "stack" {
+						n = fmt.Sprintf("%d", it.Resources)
+					}
+					fmt.Fprintf(&b, "| %s | `%s` | %s | %s | %s | %s |\n", g.Title, it.Name, orNone(it.Region), it.Label, it.Confidence, n)
+				}
 			}
 			b.WriteString("\n")
 		}

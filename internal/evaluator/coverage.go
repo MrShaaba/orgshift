@@ -91,6 +91,9 @@ var domainDescriptions = []DomainDescription{
 	{snapshot.DomainControlTower, "the landing zone, its registered OUs and the controls that apply", "control-tower"},
 	{snapshot.DomainEnrolledAccounts, "which accounts are enrolled rather than merely placed in a registered OU", "control-tower"},
 	{snapshot.DomainIdentityCenter, "the assignments and roles that are removed when the account leaves", "identity-center"},
+	{snapshot.DomainWorkloadStacks, "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking", "workloads"},
+	{snapshot.DomainWorkloadResources, "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment", "workloads"},
+	{snapshot.DomainWorkloadPolicies, "resource policies conditioned on the organization ID or path, which change meaning when the account moves", "workloads"},
 }
 
 // DescribeDomains returns every collection domain with what it decides and
@@ -125,6 +128,12 @@ func (e *evaluation) coverageRequirements() []coverageRequirement {
 		snapshot.DomainControlTower:     {src: true, dst: true},
 		snapshot.DomainEnrolledAccounts: {src: from.ControlTower != nil},
 		snapshot.DomainIdentityCenter:   {src: cross, dst: cross},
+		// The workload inventory is the account's own. A move between
+		// organizations needs it; inside one organization only what follows
+		// the OU path changes, and the check says so when it is missing.
+		snapshot.DomainWorkloadStacks:    {src: cross, accountScoped: true},
+		snapshot.DomainWorkloadResources: {src: cross, accountScoped: true},
+		snapshot.DomainWorkloadPolicies:  {src: cross, accountScoped: true},
 	}
 	var out []coverageRequirement
 	for _, d := range domainDescriptions {

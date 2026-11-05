@@ -8,10 +8,13 @@ import (
 
 	"github.com/MrShaaba/orgshift/internal/evaluator"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
+	"github.com/MrShaaba/orgshift/internal/workload"
 )
 
 // ReportSchemaVersion is bumped when the exported staged report changes.
-const ReportSchemaVersion = 1
+// Version 2 added the evaluation level and detail of the workload layer at
+// every stage and the redeployment plan on the recreate strategy.
+const ReportSchemaVersion = 2
 
 // Documentation the stage findings refer to.
 const (
@@ -93,6 +96,12 @@ type LayerChange struct {
 	Layer   string `json:"layer"`
 	Changed bool   `json:"changed"`
 	Summary string `json:"summary"`
+	// Evaluation is set on the workload layer: evaluated,
+	// partially-evaluated or not-evaluated, according to the coverage of
+	// the account's workload inventory. Detail says what the evaluation
+	// found at this stage.
+	Evaluation string `json:"evaluation,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 // StateView is the account's position after a stage.
@@ -137,6 +146,9 @@ type StrategyComparison struct {
 	Risks         []string `json:"risks"`
 	Unknowns      []string `json:"unknowns"`
 	Reversal      []string `json:"reversal"`
+	// Redeploy is set on the recreate strategy: what has to be brought into
+	// the new account, grouped by deployment provenance, with counts.
+	Redeploy *workload.RedeployPlan `json:"redeploy,omitempty"`
 }
 
 // mods are the accumulated proposed changes to one organization.
@@ -247,6 +259,11 @@ func Run(in Input) (*Report, error) {
 			return nil, fmt.Errorf("stage %s: %w", st.ID, err)
 		}
 		findings = append(findings, r.inheritanceFindings(next, res)...)
+		for li := range layers {
+			if layers[li].Layer == LayerWorkload {
+				layers[li].Evaluation, layers[li].Detail = workloadLayerNote(res, cur, next, r)
+			}
+		}
 		for i := range findings {
 			if findings[i].Confidence == "" {
 				switch findings[i].Category {
@@ -417,6 +434,23 @@ func (r *runner) derive(org, parent string) (state, error) {
 		if r.usage != nil {
 			u := *r.usage
 			snap.Usage[a.ID] = &u
+		}
+		// The workload inventory travels with the account, less the stacks
+		// a service-managed StackSet deletes when the account leaves; its
+		// coverage records travel with it.
+		if w, _ := workload.Departed(r.in.Source, a.ID); w != nil {
+			if snap.Workloads == nil {
+				snap.Workloads = map[string]*snapshot.AccountWorkloads{}
+			}
+			snap.Workloads[a.ID] = w
+		}
+		if src := r.in.Source.Coverage; src != nil && snap.Coverage != nil {
+			for _, d := range src.Domains {
+				if snapshot.IsWorkloadDomain(d.Domain) && (d.AccountID == "" || d.AccountID == a.ID) {
+					d.AccountID = a.ID
+					snap.Coverage.Domains = append(snap.Coverage.Domains, d)
+				}
+			}
 		}
 	} else {
 		for i := range snap.Accounts {
@@ -612,9 +646,7 @@ func (r *runner) apply(prev state, st Stage) (state, []LayerChange, []evaluator.
 			summary += ": " + w.Note
 		}
 		note(LayerWorkload, summary)
-		findings = append(findings, evaluator.Finding{Status: evaluator.StatusReview, Category: evaluator.CategoryMissingEvidence, Title: "Workload relocation is declared, not evaluated",
-			Detail:     "The stage moves workloads to another account. The snapshots carry no workload inventory or deployment provenance (collected from a later milestone), so orgshift reports the relocation as a stage of the plan and does not assess what the workloads need. The account's own position is evaluated as declared.",
-			References: []string{refAccountFactory}})
+		findings = append(findings, relocationFinding(workload.Build(prev.snap, r.account.ID), w))
 	}
 	next, err := r.derive(org, parent)
 	if err != nil {
@@ -954,7 +986,7 @@ func (r *runner) compare(rep *Report) []StrategyComparison {
 	if len(transfer.Prerequisites) == 0 {
 		transfer.Prerequisites = []string{"Standalone-account information, a destination invitation and no delegated-administrator role (transfer procedure model " + evaluator.TransferModelVersion + ")"}
 	}
-	transfer.Risks = titles(entry, map[string]bool{"scp": true, "rcp": true, "ram": true, "identity-center": true, "tags": true}, evaluator.StatusNoGo, evaluator.StatusReview)
+	transfer.Risks = titles(entry, map[string]bool{"scp": true, "rcp": true, "ram": true, "identity-center": true, "tags": true, "workloads": true}, evaluator.StatusNoGo, evaluator.StatusReview)
 	if len(transfer.Risks) == 0 {
 		transfer.Risks = []string{"No policy, share or identity impact was found at the entry stage within the assessed scope"}
 	}
@@ -989,16 +1021,120 @@ func (r *runner) compare(rep *Report) []StrategyComparison {
 		"Dual running: two accounts bill and have to be kept consistent until cutover",
 		"Cutover of DNS, endpoints and data has its own downtime, outside what orgshift evaluates",
 	}
-	recreate.Unknowns = []string{
-		"The workload inventory and deployment provenance are not collected by this version (a later milestone), so the migration effort is not assessed",
-		"Data volumes, cutover windows and application dependencies are not in the snapshots",
+	plan := workload.Build(r.in.Source, r.account.ID).Redeploy()
+	recreate.Redeploy = plan
+	for _, g := range plan.Groups {
+		if g.Stacks+g.SampledResources == 0 {
+			continue
+		}
+		verb := "Redeploy from templates or pipelines"
+		switch g.Group {
+		case workload.GroupPlatform:
+			verb = "Have the destination's Control Tower and StackSets recreate"
+		case workload.GroupManual:
+			verb = "Rebuild by hand, once it is known how they were made"
+		}
+		line := fmt.Sprintf("%s: %s", verb, g.Line())
+		if names := g.StackNames(); len(names) > 0 {
+			line += " (" + strings.Join(names, ", ") + ")"
+		}
+		recreate.Prerequisites = append(recreate.Prerequisites, line)
 	}
+	recreate.Risks = append(recreate.Risks, plan.Dependencies...)
+	recreate.Unknowns = append([]string{fmt.Sprintf("Workload layer %s for account %s; the redeployment list is an inventory with counts, not an estimate of effort", plan.Evaluation, r.account.ID)}, plan.Unknowns...)
 	recreate.Reversal = []string{
 		"The source account is untouched until it is closed: rollback is a cutover back",
 		"An abandoned destination account is closed and stays in the 90-day post-closure period before it disappears",
 		"No four-day rule and no standalone-account prerequisites apply",
 	}
 	return []StrategyComparison{transfer, recreate}
+}
+
+// relocationFinding says what a declared workload relocation has to bring
+// into the other account, from the inventory of the account as it is at
+// that stage.
+func relocationFinding(inv *workload.Inventory, w *Workload) evaluator.Finding {
+	if !inv.Collected {
+		return evaluator.Finding{Status: evaluator.StatusReview, Category: evaluator.CategoryMissingEvidence, Title: "Workload relocation is declared, not evaluated: no workload inventory for the account",
+			Detail:     "The stage moves workloads to another account, and the snapshot holds no stacks, resource sample or resource policies for this one, so what has to be redeployed is unknown. Name the account under member_inspection.accounts and collect again; `orgshift workloads` then lists the inventory and how each item was deployed.",
+			References: []string{refAccountFactory}}
+	}
+	plan := inv.Redeploy()
+	var parts, counts []string
+	unknown := 0
+	for _, g := range plan.Groups {
+		if g.Stacks+g.SampledResources == 0 {
+			continue
+		}
+		counts = append(counts, fmt.Sprintf("%s: %s", g.Title, g.Line()))
+		parts = append(parts, fmt.Sprintf("%s (%s): %s.", strings.ToUpper(g.Title[:1])+g.Title[1:], g.Line(), strings.Join(g.Names(), ", ")))
+		if g.Group == workload.GroupManual {
+			unknown = g.Stacks + g.SampledResources
+		}
+	}
+	f := evaluator.Finding{Status: evaluator.StatusReview, Category: evaluator.CategoryPotentialImpact, Confidence: evaluator.ConfidenceHigh, Source: evaluator.SourceWorkload,
+		Title:      fmt.Sprintf("Workload relocation: %d stack(s) and %d sampled resource(s) outside stacks to bring into the other account, %d of unknown provenance", len(inv.Stacks), outsideStacks(plan), unknown),
+		References: []string{refAccountFactory}}
+	if len(counts) == 0 {
+		f.Status, f.Category = evaluator.StatusInfo, evaluator.CategoryInformational
+		f.Title = "Workload relocation: the inventory of the account is empty"
+		f.Detail = "The snapshot records no stacks and no sampled resources for the account, so nothing is listed to redeploy. " + strings.Join(plan.Unknowns, " ")
+		return f
+	}
+	if plan.Evaluation != workload.Evaluated {
+		f.Confidence = evaluator.ConfidenceMedium
+	}
+	target := "the other account"
+	if w != nil && w.TargetAccountID != "" {
+		target = "account " + w.TargetAccountID
+	}
+	f.Detail = fmt.Sprintf("The stage moves the workloads to %s. From the inventory of the account (workload layer %s): %s", target, plan.Evaluation, strings.Join(parts, " "))
+	if len(plan.Dependencies) > 0 {
+		f.Detail += " What constrains the redeployment: " + strings.Join(plan.Dependencies, " ")
+	}
+	f.Detail += " Not known: " + strings.Join(plan.Unknowns, " ")
+	return f
+}
+
+func outsideStacks(plan *workload.RedeployPlan) int {
+	n := 0
+	for _, g := range plan.Groups {
+		n += g.SampledResources
+	}
+	return n
+}
+
+// workloadLayerNote reads the workload layer of a transition: how much of
+// it was evaluated and what the workloads check found at this stage.
+func workloadLayerNote(res *evaluator.Result, cur, next state, r *runner) (evaluation, detail string) {
+	wl := res.WorkloadLayer
+	if wl == nil {
+		return workload.NotEvaluated, ""
+	}
+	settle, info := 0, 0
+	for _, c := range res.Checks {
+		if c.ID != "workloads" {
+			continue
+		}
+		for _, f := range c.Findings {
+			switch f.Status {
+			case evaluator.StatusNoGo, evaluator.StatusReview:
+				settle++
+			case evaluator.StatusInfo:
+				info++
+			}
+		}
+	}
+	detail = wl.Detail
+	if wl.Evaluation != workload.NotEvaluated {
+		detail = fmt.Sprintf("%s; at this stage %d item(s) to settle and %d informational in the workloads check", wl.Detail, settle, info)
+	}
+	if cur.org != next.org && next.org == OrgDestination {
+		if _, deleted := workload.Departed(r.in.Source, r.account.ID); len(deleted) > 0 {
+			detail += fmt.Sprintf("; %d stack(s) are deleted by their StackSet on leaving and are not in the inventory of the later stages (%s)", len(deleted), strings.Join(deleted, ", "))
+		}
+	}
+	return wl.Evaluation, detail
 }
 
 func appendUnique(list []string, s string) []string {

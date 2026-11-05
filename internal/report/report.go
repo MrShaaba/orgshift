@@ -41,6 +41,9 @@ func writeMarkdownBody(b *strings.Builder, r *evaluator.Result, level int) {
 	s := r.Subject
 	fmt.Fprintf(b, "Account `%s` (%s). Evaluated %d actions in use, %d inbound access entries and %d tagged resources. Regions assumed when an action has none: %s.\n\n",
 		s.AccountID, s.AccountName, s.ActionsInUse, s.InboundAccess, s.TaggedResources, orNone(strings.Join(s.RegionsAssumed, ", ")))
+	if s.DerivedOperations > 0 {
+		fmt.Fprintf(b, "%d of the actions were derived from the workload inventory (a role CloudFormation assumes to read another account's stack output) rather than observed or declared.\n\n", s.DerivedOperations)
+	}
 	for _, n := range r.Notes {
 		fmt.Fprintf(b, "> %s\n\n", n)
 	}
@@ -52,6 +55,7 @@ func writeMarkdownBody(b *strings.Builder, r *evaluator.Result, level int) {
 	b.WriteString("\n")
 
 	writeCoverage(b, r, h(2))
+	writeWorkloadLayer(b, r.WorkloadLayer, h(2))
 
 	for _, c := range r.Checks {
 		fmt.Fprintf(b, "%s %s: %s\n\n", h(2), c.Title, c.Status)
@@ -76,6 +80,34 @@ func writeMarkdownBody(b *strings.Builder, r *evaluator.Result, level int) {
 		fmt.Fprintf(b, "%s %s\n\n", h(3), d.TypeShort)
 		writeDiff(b, d)
 	}
+}
+
+// writeWorkloadLayer renders how much of the workload layer was evaluated
+// and what the inventory holds, by redeployment group.
+func writeWorkloadLayer(b *strings.Builder, wl *evaluator.WorkloadLayer, heading string) {
+	if wl == nil {
+		return
+	}
+	fmt.Fprintf(b, "%s Workload layer: %s\n\n%s.\n\n", heading, wl.Evaluation, upperFirst(wl.Detail))
+	b.WriteString("| Domain | Status | Detail |\n|---|---|---|\n")
+	for _, c := range wl.Coverage {
+		fmt.Fprintf(b, "| `%s` | %s | %s |\n", c.Domain, c.Status, md(c.Detail))
+	}
+	b.WriteString("\n")
+	if wl.Stacks+wl.SampledResources > 0 {
+		b.WriteString("| How it would be redeployed | Stacks | Resources in stacks | Sampled resources outside stacks |\n|---|---|---|---|\n")
+		for _, g := range wl.Groups {
+			fmt.Fprintf(b, "| %s | %d | %d | %d |\n", g.Title, g.Stacks, g.StackResources, g.SampledResources)
+		}
+		b.WriteString("\n")
+	}
+}
+
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // writeCoverage renders the collection coverage matrix and the models the
@@ -342,6 +374,9 @@ func Text(r *evaluator.Result) string {
 		fmt.Fprintf(&b, "note: %s\n", n)
 	}
 	fmt.Fprintf(&b, "coverage: %s\n", r.Coverage.Line())
+	if wl := r.WorkloadLayer; wl != nil {
+		fmt.Fprintf(&b, "workload layer: %s (%s)\n", wl.Evaluation, wl.Detail)
+	}
 	for _, c := range r.Checks {
 		fmt.Fprintf(&b, "[%-6s] %s", c.Status, c.Title)
 		if c.Summary != "" {

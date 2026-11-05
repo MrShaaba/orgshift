@@ -56,17 +56,18 @@
     "target_ou_id": "ou-fern-sand",
     "actions_in_use": 7,
     "inbound_access": 0,
-    "tagged_resources": 0,
+    "tagged_resources": 4,
     "regions_assumed": [
       "eu-central-1",
       "eu-west-1"
     ],
     "declared_operations": 0,
+    "derived_operations": 0,
     "source_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-fern-ret/",
     "target_org_path": "o-fernhill0001/r-fern/ou-fern-sand/"
   },
   "verdict": "REVIEW",
-  "summary": "8 steps: 1 before the move (0 blocking), 1 to re-create, 1 for the move itself, 3 checks afterwards and 2 to roll back.",
+  "summary": "10 steps: 2 before the move (0 blocking), 1 to re-create, 1 for the move itself, 4 checks afterwards and 2 to roll back.",
   "phases": [
     {
       "id": "before",
@@ -106,6 +107,33 @@
               "note": "enrolled (source manual): status ENROLLED, drift unknown, parent OU unknown"
             }
           ]
+        },
+        {
+          "id": "before-2",
+          "title": "Keep or replace stack StackSet-fernhill-baseline-0ffc3055-d88c-b7df-2589-c4170aefb8af before StackSet fernhill-baseline deletes it",
+          "detail": "StackSet fernhill-baseline is service-managed with automatic deployment on and RetainStacksOnAccountRemoval off. When an account is removed from a target organization or OU, StackSets deletes its stack instances and their resources: here AWS::GuardDuty::Member x1, AWS::IAM::Role x2. Whatever in the account uses them stops working at that moment, and the resources are not there for a rollback either. Before the move, either turn RetainStacksOnAccountRemoval on for the StackSet (the stack then stays in the account, detached from the StackSet and no longer updated) or make sure the destination deploys an equivalent. Turning retention on is a setting of the whole StackSet and applies to every account that leaves its targets from then on.",
+          "status": "REVIEW",
+          "kind": "stackset",
+          "where": "administration account 222222222221",
+          "check": "workloads",
+          "finding": "StackSet instance StackSet-fernhill-baseline-0ffc3055-d88c-b7df-2589-c4170aefb8af is deleted when the account leaves the StackSet's target OUs (ou-fern-bu): 3 resource(s)",
+          "regions": [
+            "eu-west-1"
+          ],
+          "commands": [
+            "aws cloudformation describe-stack-resources --stack-name StackSet-fernhill-baseline-0ffc3055-d88c-b7df-2589-c4170aefb8af --region eu-west-1 --query 'StackResources[].[ResourceType,LogicalResourceId,PhysicalResourceId]' --output table   # in the account: what the instance contains",
+            "aws cloudformation describe-stack-set --stack-set-name fernhill-baseline --query StackSet.AutoDeployment",
+            "# to keep the stack in the account when it leaves (add --capabilities and --parameters as the StackSet needs them):",
+            "aws cloudformation update-stack-set --stack-set-name fernhill-baseline --use-previous-template --auto-deployment Enabled=true,RetainStacksOnAccountRemoval=true"
+          ],
+          "evidence": [
+            {
+              "kind": "stack-instance",
+              "side": "source",
+              "reference": "StackSet-fernhill-baseline-0ffc3055-d88c-b7df-2589-c4170aefb8af",
+              "note": "region eu-west-1, status CREATE_COMPLETE, 3 resource(s): AWS::GuardDuty::Member x1, AWS::IAM::Role x2\nprovenance: service-managed StackSet (high confidence): the stack ID is listed as an instance of StackSet fernhill-baseline (permission model SERVICE_MANAGED, administered from 222222222221)\nStackSet fernhill-baseline: service-managed, auto-deployment true, retain stacks on account removal false, targets ou-fern-bu; the stack ID is one of the StackSet's instances"
+            }
+          ]
         }
       ]
     },
@@ -117,7 +145,7 @@
         {
           "id": "recreate-1",
           "title": "Replace what StackSet fernhill-baseline deploys into the account",
-          "detail": "Service-managed StackSets deploy by OU. Baseline IAM roles and GuardDuty membership. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
+          "detail": "Service-managed StackSets deploy by OU. Baseline IAM roles and GuardDuty membership. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. The workloads check lists the instances found in this account and what each contains. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
           "status": "REVIEW",
           "kind": "stackset",
           "where": "administration account 222222222221",
@@ -226,6 +254,22 @@
         },
         {
           "id": "after-3",
+          "title": "Confirm what became of stack StackSet-fernhill-baseline-0ffc3055-d88c-b7df-2589-c4170aefb8af",
+          "detail": "With retention on, the stack is still there and no longer belongs to the StackSet; with retention off, it and its resources are gone and whatever replaced them has to be in place.",
+          "status": "REVIEW",
+          "kind": "stackset",
+          "where": "account fernhill-retail-prod (222222222225)",
+          "check": "workloads",
+          "finding": "StackSet instance StackSet-fernhill-baseline-0ffc3055-d88c-b7df-2589-c4170aefb8af is deleted when the account leaves the StackSet's target OUs (ou-fern-bu): 3 resource(s)",
+          "regions": [
+            "eu-west-1"
+          ],
+          "commands": [
+            "aws cloudformation describe-stacks --stack-name StackSet-fernhill-baseline-0ffc3055-d88c-b7df-2589-c4170aefb8af --region eu-west-1 --query 'Stacks[0].StackStatus'"
+          ]
+        },
+        {
+          "id": "after-4",
           "title": "Collect a fresh snapshot and simulate the account at its new position",
           "detail": "With the account inside the target organization, a simulation of the account against its own parent compares it with itself and should come back GO, which closes the runbook.",
           "kind": "check",

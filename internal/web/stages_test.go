@@ -37,7 +37,7 @@ func TestStagesInTheUI(t *testing.T) {
 	}
 	// Exports.
 	resp, js := get(t, ts, "/stages.json?"+q.Encode(), nil)
-	if resp.StatusCode != 200 || !strings.Contains(js, `"stages_schema_version": 1`) || !strings.Contains(js, `"id": "enroll"`) || strings.Contains(js, `"schema_version": 2`) {
+	if resp.StatusCode != 200 || !strings.Contains(js, `"stages_schema_version": 2`) || !strings.Contains(js, `"id": "enroll"`) || strings.Contains(js, `"schema_version": 3`) {
 		t.Errorf("json export: %d %s", resp.StatusCode, js[:200])
 	}
 	resp, md := get(t, ts, "/stages.md?"+q.Encode(), nil)

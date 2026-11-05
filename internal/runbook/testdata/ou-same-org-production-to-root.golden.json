@@ -258,23 +258,90 @@
         "target_ou_id": "ou-lark-prod",
         "actions_in_use": 8,
         "inbound_access": 1,
-        "tagged_resources": 0,
+        "tagged_resources": 3,
         "regions_assumed": [
           "eu-west-1",
           "us-east-1"
         ],
         "declared_operations": 0,
+        "derived_operations": 0,
         "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
         "target_org_path": "o-larkspur0001/r-lark/ou-lark-prod/"
       },
       "verdict": "REVIEW",
-      "summary": "5 steps: 0 before the move (0 blocking), 2 to re-create, 1 for the move itself, 1 checks afterwards and 1 to roll back.",
+      "summary": "8 steps: 2 before the move (0 blocking), 2 to re-create, 1 for the move itself, 2 checks afterwards and 1 to roll back.",
       "phases": [
         {
           "id": "before",
           "title": "Before the move: fix the blockers and make the decisions",
           "intro": "Everything here is settled while the account is still at its current position. NO-GO steps block the move; REVIEW steps need a decision or a check by hand.",
-          "steps": []
+          "steps": [
+            {
+              "id": "before-1",
+              "title": "Change the policy of arn:aws:s3:::larkspur-data-lake to cover the account's new OU path",
+              "detail": "Statement WorkloadAccountsWrite (Allow): it stops admitting the account's own principals (ForAnyValue:StringLike aws:PrincipalOrgPaths o-larkspur0001/r-lark/ou-lark-work/*); inside one account an identity policy can still grant the access, so whether anything breaks depends on policies this check does not read. Change the policy to name the destination organization (or both, for the transition) before the move.",
+              "status": "REVIEW",
+              "kind": "resource-policy",
+              "where": "account larkspur-data-prod (111111111118)",
+              "check": "workloads",
+              "finding": "Bucket policy of arn:aws:s3:::larkspur-data-lake ties access to organization identity that changes with the move",
+              "resource": "arn:aws:s3:::larkspur-data-lake",
+              "commands": [
+                "aws s3api get-bucket-policy --bucket larkspur-data-lake --query Policy --output text \u003e larkspur-data-lake-policy.json",
+                "# edit the condition on the organization path so it also covers the account's new path o-larkspur0001/r-lark/ou-lark-prod/",
+                "aws s3api put-bucket-policy --bucket larkspur-data-lake --policy file://larkspur-data-lake-policy.json"
+              ],
+              "evidence": [
+                {
+                  "kind": "resource-policy",
+                  "side": "source",
+                  "policy_type": "s3-bucket-policy",
+                  "statement": "WorkloadAccountsWrite",
+                  "statement_json": {
+                    "Sid": "WorkloadAccountsWrite",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "s3:PutObject",
+                    "Resource": "arn:aws:s3:::larkspur-data-lake/*",
+                    "Condition": {
+                      "ForAnyValue:StringLike": {
+                        "aws:PrincipalOrgPaths": "o-larkspur0001/r-lark/ou-lark-work/*"
+                      }
+                    }
+                  },
+                  "reference": "arn:aws:s3:::larkspur-data-lake",
+                  "note": "read with s3:GetBucketPolicy"
+                }
+              ]
+            },
+            {
+              "id": "before-2",
+              "title": "Keep or replace stack StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 before StackSet larkspur-baseline-roles deletes it",
+              "detail": "StackSet larkspur-baseline-roles is service-managed with automatic deployment on and RetainStacksOnAccountRemoval off. When an account is removed from a target organization or OU, StackSets deletes its stack instances and their resources: here AWS::IAM::ManagedPolicy x1, AWS::IAM::Role x3. Whatever in the account uses them stops working at that moment, and the resources are not there for a rollback either. Before the move, either turn RetainStacksOnAccountRemoval on for the StackSet (the stack then stays in the account, detached from the StackSet and no longer updated) or make sure the destination deploys an equivalent. Turning retention on is a setting of the whole StackSet and applies to every account that leaves its targets from then on.",
+              "status": "REVIEW",
+              "kind": "stackset",
+              "where": "administration account 111111111111",
+              "check": "workloads",
+              "finding": "StackSet instance StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 is deleted when the account leaves the StackSet's target OUs (ou-lark-work): 4 resource(s)",
+              "regions": [
+                "us-east-1"
+              ],
+              "commands": [
+                "aws cloudformation describe-stack-resources --stack-name StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 --region us-east-1 --query 'StackResources[].[ResourceType,LogicalResourceId,PhysicalResourceId]' --output table   # in the account: what the instance contains",
+                "aws cloudformation describe-stack-set --stack-set-name larkspur-baseline-roles --query StackSet.AutoDeployment",
+                "# to keep the stack in the account when it leaves (add --capabilities and --parameters as the StackSet needs them):",
+                "aws cloudformation update-stack-set --stack-set-name larkspur-baseline-roles --use-previous-template --auto-deployment Enabled=true,RetainStacksOnAccountRemoval=true"
+              ],
+              "evidence": [
+                {
+                  "kind": "stack-instance",
+                  "side": "source",
+                  "reference": "StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054",
+                  "note": "region us-east-1, status UPDATE_COMPLETE, 4 resource(s): AWS::IAM::ManagedPolicy x1, AWS::IAM::Role x3\nprovenance: service-managed StackSet (high confidence): the stack ID is listed as an instance of StackSet larkspur-baseline-roles (permission model SERVICE_MANAGED, administered from 111111111111)\nStackSet larkspur-baseline-roles: service-managed, auto-deployment true, retain stacks on account removal false, targets ou-lark-work; the stack ID is one of the StackSet's instances"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "recreate",
@@ -306,7 +373,7 @@
             {
               "id": "recreate-2",
               "title": "Replace what StackSet larkspur-baseline-roles deploys into the account",
-              "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
+              "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. The workloads check lists the instances found in this account and what each contains. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
               "status": "REVIEW",
               "kind": "stackset",
               "where": "administration account 111111111111",
@@ -355,6 +422,22 @@
               "finding": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
               "commands": [
                 "aws ram list-resources --resource-owner OTHER-ACCOUNTS --resource-share-arns arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243"
+              ]
+            },
+            {
+              "id": "after-2",
+              "title": "Confirm what became of stack StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054",
+              "detail": "With retention on, the stack is still there and no longer belongs to the StackSet; with retention off, it and its resources are gone and whatever replaced them has to be in place.",
+              "status": "REVIEW",
+              "kind": "stackset",
+              "where": "account larkspur-data-prod (111111111118)",
+              "check": "workloads",
+              "finding": "StackSet instance StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 is deleted when the account leaves the StackSet's target OUs (ou-lark-work): 4 resource(s)",
+              "regions": [
+                "us-east-1"
+              ],
+              "commands": [
+                "aws cloudformation describe-stacks --stack-name StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 --region us-east-1 --query 'Stacks[0].StackStatus'"
               ]
             }
           ]
@@ -459,26 +542,55 @@
         ],
         "source_parent_id": "ou-lark-prod",
         "target_ou_id": "ou-lark-prod",
-        "actions_in_use": 20,
+        "actions_in_use": 21,
         "inbound_access": 5,
-        "tagged_resources": 8,
+        "tagged_resources": 14,
         "regions_assumed": [
           "ap-southeast-1",
           "eu-west-1",
           "us-east-1"
         ],
         "declared_operations": 0,
+        "derived_operations": 1,
         "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
         "target_org_path": "o-larkspur0001/r-lark/ou-lark-prod/"
       },
       "verdict": "REVIEW",
-      "summary": "5 steps: 0 before the move (0 blocking), 2 to re-create, 1 for the move itself, 1 checks afterwards and 1 to roll back.",
+      "summary": "7 steps: 1 before the move (0 blocking), 2 to re-create, 1 for the move itself, 2 checks afterwards and 1 to roll back.",
       "phases": [
         {
           "id": "before",
           "title": "Before the move: fix the blockers and make the decisions",
           "intro": "Everything here is settled while the account is still at its current position. NO-GO steps block the move; REVIEW steps need a decision or a check by hand.",
-          "steps": []
+          "steps": [
+            {
+              "id": "before-1",
+              "title": "Keep or replace stack StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9 before StackSet larkspur-baseline-roles deletes it",
+              "detail": "StackSet larkspur-baseline-roles is service-managed with automatic deployment on and RetainStacksOnAccountRemoval off. When an account is removed from a target organization or OU, StackSets deletes its stack instances and their resources: here AWS::IAM::ManagedPolicy x1, AWS::IAM::Role x3. Whatever in the account uses them stops working at that moment, and the resources are not there for a rollback either. Before the move, either turn RetainStacksOnAccountRemoval on for the StackSet (the stack then stays in the account, detached from the StackSet and no longer updated) or make sure the destination deploys an equivalent. Turning retention on is a setting of the whole StackSet and applies to every account that leaves its targets from then on.",
+              "status": "REVIEW",
+              "kind": "stackset",
+              "where": "administration account 111111111111",
+              "check": "workloads",
+              "finding": "StackSet instance StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9 is deleted when the account leaves the StackSet's target OUs (ou-lark-work): 4 resource(s)",
+              "regions": [
+                "us-east-1"
+              ],
+              "commands": [
+                "aws cloudformation describe-stack-resources --stack-name StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9 --region us-east-1 --query 'StackResources[].[ResourceType,LogicalResourceId,PhysicalResourceId]' --output table   # in the account: what the instance contains",
+                "aws cloudformation describe-stack-set --stack-set-name larkspur-baseline-roles --query StackSet.AutoDeployment",
+                "# to keep the stack in the account when it leaves (add --capabilities and --parameters as the StackSet needs them):",
+                "aws cloudformation update-stack-set --stack-set-name larkspur-baseline-roles --use-previous-template --auto-deployment Enabled=true,RetainStacksOnAccountRemoval=true"
+              ],
+              "evidence": [
+                {
+                  "kind": "stack-instance",
+                  "side": "source",
+                  "reference": "StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9",
+                  "note": "region us-east-1, status UPDATE_COMPLETE, 4 resource(s): AWS::IAM::ManagedPolicy x1, AWS::IAM::Role x3\nprovenance: service-managed StackSet (high confidence): the stack ID is listed as an instance of StackSet larkspur-baseline-roles (permission model SERVICE_MANAGED, administered from 111111111111)\nStackSet larkspur-baseline-roles: service-managed, auto-deployment true, retain stacks on account removal false, targets ou-lark-work; the stack ID is one of the StackSet's instances"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "recreate",
@@ -510,7 +622,7 @@
             {
               "id": "recreate-2",
               "title": "Replace what StackSet larkspur-baseline-roles deploys into the account",
-              "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
+              "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. The workloads check lists the instances found in this account and what each contains. Decide: redeploy the template by hand in the account, add the account to a self-managed StackSet, or accept the loss.",
               "status": "REVIEW",
               "kind": "stackset",
               "where": "administration account 111111111111",
@@ -559,6 +671,22 @@
               "finding": "Networking share larkspur-workload-prefix-lists is lost: ec2:PrefixList",
               "commands": [
                 "aws ram list-resources --resource-owner OTHER-ACCOUNTS --resource-share-arns arn:aws:ram:us-east-1:111111111112:resource-share/0479521366b778243"
+              ]
+            },
+            {
+              "id": "after-2",
+              "title": "Confirm what became of stack StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9",
+              "detail": "With retention on, the stack is still there and no longer belongs to the StackSet; with retention off, it and its resources are gone and whatever replaced them has to be in place.",
+              "status": "REVIEW",
+              "kind": "stackset",
+              "where": "account larkspur-payments-prod (111111111115)",
+              "check": "workloads",
+              "finding": "StackSet instance StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9 is deleted when the account leaves the StackSet's target OUs (ou-lark-work): 4 resource(s)",
+              "regions": [
+                "us-east-1"
+              ],
+              "commands": [
+                "aws cloudformation describe-stacks --stack-name StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9 --region us-east-1 --query 'Stacks[0].StackStatus'"
               ]
             }
           ]

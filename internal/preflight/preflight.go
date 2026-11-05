@@ -238,7 +238,8 @@ type Input struct {
 
 // unimplemented are the coverage domains this build's collector records as
 // unsupported; the preflight cannot probe them.
-var unimplemented = map[string]bool{snapshot.DomainOrgTrails: true, snapshot.DomainConfigAggregator: true, snapshot.DomainStackSets: true}
+var unimplemented = map[string]bool{snapshot.DomainOrgTrails: true, snapshot.DomainConfigAggregator: true, snapshot.DomainStackSets: true,
+	snapshot.DomainWorkloadStacks: true, snapshot.DomainWorkloadResources: true, snapshot.DomainWorkloadPolicies: true}
 
 // Run probes every side and builds the matrix.
 func Run(ctx context.Context, in Input) *Result {

@@ -61,12 +61,13 @@
     "target_ou_id": "ou-lark-prod",
     "actions_in_use": 3,
     "inbound_access": 0,
-    "tagged_resources": 0,
+    "tagged_resources": 2,
     "regions_assumed": [
       "eu-west-1",
       "us-east-1"
     ],
     "declared_operations": 0,
+    "derived_operations": 0,
     "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-dev/",
     "target_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/"
   },

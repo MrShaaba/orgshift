@@ -280,7 +280,7 @@ func TestRunbookInTheUI(t *testing.T) {
 		t.Fatalf("simulate: %d", resp.StatusCode)
 	}
 	for _, want := range []string{
-		"<h2>Migration runbook <span class=\"muted small\">53 steps:",
+		"<h2>Migration runbook <span class=\"muted small\">73 steps:",
 		`<details class="phase" open>`,
 		"<strong>Before the move: fix the blockers and make the decisions</strong>",
 		`<li class="step nogo" data-step="before-1">`,

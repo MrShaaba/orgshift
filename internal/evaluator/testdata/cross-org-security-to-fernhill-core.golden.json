@@ -1,6 +1,6 @@
 {
   "tool": "orgshift",
-  "result_schema_version": 3,
+  "result_schema_version": 4,
   "subject": {
     "account_id": "111111111113",
     "account_name": "larkspur-security",
@@ -58,15 +58,21 @@
       "us-east-1"
     ],
     "declared_operations": 0,
+    "derived_operations": 0,
     "source_org_path": "o-larkspur0001/r-lark/ou-lark-sec/",
     "target_org_path": "o-fernhill0001/r-fern/ou-fern-core/"
   },
   "verdict": "NO-GO",
-  "summary": "Moving larkspur-security (111111111113) from Root / Security to Root / Core (organization o-larkspur0001 to o-fernhill0001): NO-GO. 5 blocking finding(s) and 13 to review.",
+  "summary": "Moving larkspur-security (111111111113) from Root / Security to Root / Core (organization o-larkspur0001 to o-fernhill0001): NO-GO. 5 blocking finding(s) and 16 to review. Collection coverage is incomplete (incomplete: workloads.stacks on source: unknown; workloads.resources on source: unknown; workloads.policies on source: unknown).",
   "coverage": {
     "same_snapshot": false,
-    "complete": true,
-    "required": 26,
+    "complete": false,
+    "required": 29,
+    "gaps": [
+      "workloads.stacks on source: unknown",
+      "workloads.resources on source: unknown",
+      "workloads.policies on source: unknown"
+    ],
     "rows": [
       {
         "domain": "organization",
@@ -286,6 +292,51 @@
           "status": "observed",
           "required": true
         }
+      },
+      {
+        "domain": "workloads.stacks",
+        "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+        "check": "workloads",
+        "source": {
+          "status": "unknown",
+          "required": true,
+          "detail": "no coverage record"
+        },
+        "target": {
+          "status": "unknown",
+          "required": false,
+          "detail": "no coverage record"
+        }
+      },
+      {
+        "domain": "workloads.resources",
+        "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+        "check": "workloads",
+        "source": {
+          "status": "unknown",
+          "required": true,
+          "detail": "no coverage record"
+        },
+        "target": {
+          "status": "unknown",
+          "required": false,
+          "detail": "no coverage record"
+        }
+      },
+      {
+        "domain": "workloads.policies",
+        "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+        "check": "workloads",
+        "source": {
+          "status": "unknown",
+          "required": true,
+          "detail": "no coverage record"
+        },
+        "target": {
+          "status": "unknown",
+          "required": false,
+          "detail": "no coverage record"
+        }
       }
     ]
   },
@@ -293,8 +344,8 @@
     {
       "id": "coverage",
       "title": "Collection coverage",
-      "status": "GO",
-      "summary": "Complete: all 26 required collection domains were inspected.",
+      "status": "REVIEW",
+      "summary": "3 of 29 required collection domains are incomplete: workloads.stacks on source: unknown; workloads.resources on source: unknown; workloads.policies on source: unknown. The checks that depend on them carry a REVIEW finding each; a GO is not issued on incomplete evidence.",
       "findings": []
     },
     {
@@ -569,6 +620,9 @@
               "reference": "larkspur-config-recorder",
               "note": "admin 111111111111; targets OUs r-lark accounts ; regions us-east-1,eu-west-1,ap-southeast-1; auto-deployment true; retain on removal true"
             }
+          ],
+          "references": [
+            "https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html"
           ]
         },
         {
@@ -835,8 +889,118 @@
           ]
         }
       ]
+    },
+    {
+      "id": "workloads",
+      "title": "Workloads",
+      "status": "REVIEW",
+      "summary": "The workload layer was not evaluated: the snapshot has no workload inventory for this account.",
+      "coverage_gaps": [
+        "workloads.stacks on source",
+        "workloads.resources on source",
+        "workloads.policies on source"
+      ],
+      "findings": [
+        {
+          "status": "REVIEW",
+          "category": "missing-evidence",
+          "confidence": "low",
+          "title": "Coverage of workloads.policies is not recorded in the source snapshot",
+          "detail": "Nothing says whether workloads.policies was inspected, so an empty list there cannot be told from one that was never read. It decides resource policies conditioned on the organization ID or path, which change meaning when the account moves. Collect the snapshot again with this version of orgshift once the cause is fixed, or add the entries by hand and record them under coverage.domains; for a hand-written snapshot, set coverage.asserted_complete once every list is confirmed.",
+          "evidence": [
+            {
+              "kind": "coverage",
+              "side": "source",
+              "reference": "workloads.policies",
+              "note": "workloads.policies observed (account 111111111115): 17 policies read, 3 reference organization identity\nworkloads.policies empty (account 111111111116): 6 policies read, 0 reference organization identity\nworkloads.policies observed (account 111111111118): 9 policies read, 1 reference organization identity"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "category": "missing-evidence",
+          "confidence": "low",
+          "title": "Coverage of workloads.resources is not recorded in the source snapshot",
+          "detail": "Nothing says whether workloads.resources was inspected, so an empty list there cannot be told from one that was never read. It decides the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment. Collect the snapshot again with this version of orgshift once the cause is fixed, or add the entries by hand and record them under coverage.domains; for a hand-written snapshot, set coverage.asserted_complete once every list is confirmed.",
+          "evidence": [
+            {
+              "kind": "coverage",
+              "side": "source",
+              "reference": "workloads.resources",
+              "note": "workloads.resources observed (account 111111111115): a sample from tagging-api\nworkloads.resources observed (account 111111111116): a sample from tagging-api\nworkloads.resources observed (account 111111111118): a sample from tagging-api"
+            }
+          ]
+        },
+        {
+          "status": "REVIEW",
+          "category": "missing-evidence",
+          "confidence": "low",
+          "title": "Coverage of workloads.stacks is not recorded in the source snapshot",
+          "detail": "Nothing says whether workloads.stacks was inspected, so an empty list there cannot be told from one that was never read. It decides the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking. Collect the snapshot again with this version of orgshift once the cause is fixed, or add the entries by hand and record them under coverage.domains; for a hand-written snapshot, set coverage.asserted_complete once every list is confirmed.",
+          "evidence": [
+            {
+              "kind": "coverage",
+              "side": "source",
+              "reference": "workloads.stacks",
+              "note": "workloads.stacks observed (account 111111111115): regions us-east-1, eu-west-1\nworkloads.stacks observed (account 111111111116): regions us-east-1\nworkloads.stacks observed (account 111111111118): regions us-east-1"
+            }
+          ]
+        }
+      ]
     }
   ],
+  "workload_layer": {
+    "evaluation": "not-evaluated",
+    "detail": "no workload inventory for the account, so nothing about its stacks, resources or resource policies was assessed",
+    "coverage": [
+      {
+        "domain": "workloads.stacks",
+        "status": "unknown",
+        "detail": "no coverage record for this account"
+      },
+      {
+        "domain": "workloads.resources",
+        "status": "unknown",
+        "detail": "no coverage record for this account"
+      },
+      {
+        "domain": "workloads.policies",
+        "status": "unknown",
+        "detail": "no coverage record for this account"
+      }
+    ],
+    "stacks": 0,
+    "stack_resources": 0,
+    "sampled_resources": 0,
+    "policies_on_organization_identity": 0,
+    "policies_inspected": 0,
+    "groups": [
+      {
+        "group": "pipeline",
+        "title": "redeployable from a template or pipeline",
+        "stacks": 0,
+        "stack_resources": 0,
+        "sampled_resources": 0,
+        "kinds": {}
+      },
+      {
+        "group": "platform",
+        "title": "recreated by Control Tower or a StackSet",
+        "stacks": 0,
+        "stack_resources": 0,
+        "sampled_resources": 0,
+        "kinds": {}
+      },
+      {
+        "group": "manual-or-unknown",
+        "title": "manual or unknown",
+        "stacks": 0,
+        "stack_resources": 0,
+        "sampled_resources": 0,
+        "kinds": {}
+      }
+    ]
+  },
   "diff": [
     {
       "type": "SERVICE_CONTROL_POLICY",
@@ -2036,13 +2200,19 @@
       "version": "2026-11-02",
       "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
       "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+    },
+    {
+      "id": "workload-behaviour",
+      "version": "2026-11-05",
+      "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+      "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
     }
   ],
   "categories": {
     "declared-impact": 5,
     "informational": 11,
     "known-restriction": 1,
-    "missing-evidence": 3,
+    "missing-evidence": 6,
     "potential-impact": 10
   },
   "limitations": [
@@ -2050,6 +2220,7 @@
     "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
     "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
     "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+    "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
   ]
 }

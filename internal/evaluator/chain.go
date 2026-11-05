@@ -264,8 +264,9 @@ func unsupportedReason(reason string) bool {
 
 // sourceOf returns the finding source for an action in use.
 func sourceOf(a snapshot.ActionInUse) string {
-	if a.Source == SourceDeclared {
-		return SourceDeclared
+	switch a.Source {
+	case SourceDeclared, SourceWorkload:
+		return a.Source
 	}
 	return SourceObserved
 }
@@ -405,7 +406,10 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 			if !(len(g.regions) == 1 && g.regions[0] == "") && !globalServices[serviceOf(a.Action)] {
 				f.Regions = g.regions
 			}
-			if a.Note != "" {
+			switch {
+			case a.Source == SourceWorkload:
+				f.Detail += " This operation was derived from the workload inventory: " + a.Note + "."
+			case a.Note != "":
 				f.Detail += " Note from the usage list: " + a.Note + "."
 			}
 			f.Evidence = append(f.Evidence, g.pair.dst.evidence(routed.evidenceSide, t)...)

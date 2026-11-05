@@ -378,7 +378,7 @@ func TestEverythingAvailableIsReady(t *testing.T) {
 	s := res.Sides[0]
 	for _, d := range s.Domains {
 		switch d.Domain {
-		case snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets:
+		case snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets, snapshot.DomainWorkloadStacks, snapshot.DomainWorkloadResources, snapshot.DomainWorkloadPolicies:
 			if d.Status != Unknown || d.Required || !strings.Contains(d.Detail, "not collected by this build") {
 				t.Errorf("%s should be unknown and not required: %+v", d.Domain, d)
 			}

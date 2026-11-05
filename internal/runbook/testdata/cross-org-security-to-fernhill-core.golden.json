@@ -58,11 +58,12 @@
       "us-east-1"
     ],
     "declared_operations": 0,
+    "derived_operations": 0,
     "source_org_path": "o-larkspur0001/r-lark/ou-lark-sec/",
     "target_org_path": "o-fernhill0001/r-fern/ou-fern-core/"
   },
   "verdict": "NO-GO",
-  "summary": "44 steps: 10 before the move (4 blocking), 7 to re-create, 4 for the move itself, 16 checks afterwards and 7 to roll back.",
+  "summary": "47 steps: 13 before the move (4 blocking), 7 to re-create, 4 for the move itself, 16 checks afterwards and 7 to roll back.",
   "phases": [
     {
       "id": "before",
@@ -71,6 +72,72 @@
       "steps": [
         {
           "id": "before-1",
+          "title": "Collect the missing evidence: workloads.policies (source snapshot)",
+          "detail": "Nothing says whether workloads.policies was inspected, so an empty list there cannot be told from one that was never read. It decides resource policies conditioned on the organization ID or path, which change meaning when the account moves. Collect the snapshot again with this version of orgshift once the cause is fixed, or add the entries by hand and record them under coverage.domains; for a hand-written snapshot, set coverage.asserted_complete once every list is confirmed. Until it is collected the verdict rests on incomplete evidence and a GO is not issued.",
+          "status": "REVIEW",
+          "kind": "input",
+          "check": "workloads",
+          "finding": "Coverage of workloads.policies is not recorded in the source snapshot",
+          "commands": [
+            "# the workload inventory is read inside the member account, through the member inspection role: add 111111111113 to member_inspection.accounts in the onboarding configuration",
+            "orgshift collect --config orgshift.yaml --side source --out \u003csource snapshot\u003e",
+            "orgshift workloads --snapshot \u003csource snapshot\u003e --account 111111111113   # what was found"
+          ],
+          "evidence": [
+            {
+              "kind": "coverage",
+              "side": "source",
+              "reference": "workloads.policies",
+              "note": "workloads.policies observed (account 111111111115): 17 policies read, 3 reference organization identity\nworkloads.policies empty (account 111111111116): 6 policies read, 0 reference organization identity\nworkloads.policies observed (account 111111111118): 9 policies read, 1 reference organization identity"
+            }
+          ]
+        },
+        {
+          "id": "before-2",
+          "title": "Collect the missing evidence: workloads.resources (source snapshot)",
+          "detail": "Nothing says whether workloads.resources was inspected, so an empty list there cannot be told from one that was never read. It decides the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment. Collect the snapshot again with this version of orgshift once the cause is fixed, or add the entries by hand and record them under coverage.domains; for a hand-written snapshot, set coverage.asserted_complete once every list is confirmed. Until it is collected the verdict rests on incomplete evidence and a GO is not issued.",
+          "status": "REVIEW",
+          "kind": "input",
+          "check": "workloads",
+          "finding": "Coverage of workloads.resources is not recorded in the source snapshot",
+          "commands": [
+            "# the workload inventory is read inside the member account, through the member inspection role: add 111111111113 to member_inspection.accounts in the onboarding configuration",
+            "orgshift collect --config orgshift.yaml --side source --out \u003csource snapshot\u003e",
+            "orgshift workloads --snapshot \u003csource snapshot\u003e --account 111111111113   # what was found"
+          ],
+          "evidence": [
+            {
+              "kind": "coverage",
+              "side": "source",
+              "reference": "workloads.resources",
+              "note": "workloads.resources observed (account 111111111115): a sample from tagging-api\nworkloads.resources observed (account 111111111116): a sample from tagging-api\nworkloads.resources observed (account 111111111118): a sample from tagging-api"
+            }
+          ]
+        },
+        {
+          "id": "before-3",
+          "title": "Collect the missing evidence: workloads.stacks (source snapshot)",
+          "detail": "Nothing says whether workloads.stacks was inspected, so an empty list there cannot be told from one that was never read. It decides the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking. Collect the snapshot again with this version of orgshift once the cause is fixed, or add the entries by hand and record them under coverage.domains; for a hand-written snapshot, set coverage.asserted_complete once every list is confirmed. Until it is collected the verdict rests on incomplete evidence and a GO is not issued.",
+          "status": "REVIEW",
+          "kind": "input",
+          "check": "workloads",
+          "finding": "Coverage of workloads.stacks is not recorded in the source snapshot",
+          "commands": [
+            "# the workload inventory is read inside the member account, through the member inspection role: add 111111111113 to member_inspection.accounts in the onboarding configuration",
+            "orgshift collect --config orgshift.yaml --side source --out \u003csource snapshot\u003e",
+            "orgshift workloads --snapshot \u003csource snapshot\u003e --account 111111111113   # what was found"
+          ],
+          "evidence": [
+            {
+              "kind": "coverage",
+              "side": "source",
+              "reference": "workloads.stacks",
+              "note": "workloads.stacks observed (account 111111111115): regions us-east-1, eu-west-1\nworkloads.stacks observed (account 111111111116): regions us-east-1\nworkloads.stacks observed (account 111111111118): regions us-east-1"
+            }
+          ]
+        },
+        {
+          "id": "before-4",
           "title": "No actions in use were provided for this account",
           "detail": "Add usage.actions to the source snapshot, pass --actions or --critical-operations, or import an IAM last-accessed export. Without them nothing can be checked against the policies.",
           "status": "REVIEW",
@@ -82,7 +149,7 @@
           ]
         },
         {
-          "id": "before-2",
+          "id": "before-5",
           "title": "No actions in use were provided for this account",
           "detail": "Add usage.actions to the source snapshot, pass --actions or --critical-operations, or import an IAM last-accessed export. Without them nothing can be checked against the policies.",
           "status": "REVIEW",
@@ -94,7 +161,7 @@
           ]
         },
         {
-          "id": "before-3",
+          "id": "before-6",
           "title": "No tagged resources were provided for this account",
           "detail": "Add usage.tagged_resources to the source snapshot (for example from the Resource Groups Tagging API) to check compliance against the target tag policy.",
           "status": "REVIEW",
@@ -107,7 +174,7 @@
           ]
         },
         {
-          "id": "before-4",
+          "id": "before-7",
           "title": "Move the organization Config aggregator larkspur-org-aggregator out of the account first",
           "detail": "The aggregator lives in this account; leaving breaks aggregation for the whole source organization. Create the aggregator in the account that stays, confirm it receives data, then delete this one.",
           "status": "NO-GO",
@@ -127,7 +194,7 @@
           ]
         },
         {
-          "id": "before-5",
+          "id": "before-8",
           "title": "Hand over delegated administration for config.amazonaws.com before the account leaves",
           "detail": "Organizations refuses to remove an account that is a delegated administrator for any service: RemoveAccountFromOrganization and LeaveOrganization fail until it is deregistered (or another account that stays is made the administrator). Deregister through the service's console or API, or with the Organizations deregister-delegated-administrator call where the service supports it. The service's organization-wide view, and often its member enrolment, moves with the role. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
           "status": "NO-GO",
@@ -149,7 +216,7 @@
           ]
         },
         {
-          "id": "before-6",
+          "id": "before-9",
           "title": "Hand over delegated administration for guardduty.amazonaws.com before the account leaves",
           "detail": "Organizations refuses to remove an account that is a delegated administrator for any service: RemoveAccountFromOrganization and LeaveOrganization fail until it is deregistered (or another account that stays is made the administrator). Deregister through the service's console or API, or with the Organizations deregister-delegated-administrator call where the service supports it. The service's organization-wide view, and often its member enrolment, moves with the role. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
           "status": "NO-GO",
@@ -171,7 +238,7 @@
           ]
         },
         {
-          "id": "before-7",
+          "id": "before-10",
           "title": "Hand over delegated administration for securityhub.amazonaws.com before the account leaves",
           "detail": "Organizations refuses to remove an account that is a delegated administrator for any service: RemoveAccountFromOrganization and LeaveOrganization fail until it is deregistered (or another account that stays is made the administrator). Deregister through the service's console or API, or with the Organizations deregister-delegated-administrator call where the service supports it. The service's organization-wide view, and often its member enrolment, moves with the role. Some services need the administrator disabled in the service itself first (GuardDuty, Security Hub, Macie, Inspector and Detective have a disable-organization-admin-account call); the organization-wide view of the service moves to the stand-in.",
           "status": "NO-GO",
@@ -193,7 +260,7 @@
           ]
         },
         {
-          "id": "before-8",
+          "id": "before-11",
           "title": "Make the account able to stand alone",
           "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
           "status": "REVIEW",
@@ -208,7 +275,7 @@
           ]
         },
         {
-          "id": "before-9",
+          "id": "before-12",
           "title": "Lift the deny on organizations:LeaveOrganization in SCP Larkspur-Baseline-Guardrails / DenyLeaveOrganization, or let the management account remove the account",
           "detail": "SCP Larkspur-Baseline-Guardrails (p-lark0001) is attached at root Root (r-lark) and denies organizations:LeaveOrganization without a condition, so leave-organization run from inside the account fails. Either detach the policy or edit the statement for the duration of the move and put it back afterwards, or run remove-account-from-organization from the management account, which SCPs do not restrict.",
           "status": "REVIEW",
@@ -237,7 +304,7 @@
           ]
         },
         {
-          "id": "before-10",
+          "id": "before-13",
           "title": "Find what references the 2 AWSReservedSSO_* role(s) of the account",
           "detail": "When the account leaves the organization, Identity Center cleans up the resources it created in the account; the documentation names the service-linked role, and the IAM roles provisioned for permission sets (path /aws-reserved/sso.amazonaws.com/us-east-1/) go with the instance's control over the account, so plan for them to disappear and confirm in IAM after the move. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. List the exact role ARNs now, while they exist, and search for them so the references can be updated after the move.",
           "status": "REVIEW",

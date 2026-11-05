@@ -187,10 +187,49 @@ stages:
           target: ou-proposed-transit
 `
 
+// PaymentsRecreatedInFernhillName names the recreate-strategy scenario.
+const PaymentsRecreatedInFernhillName = "Payments production recreated in Fernhill"
+
+// PaymentsRecreatedInFernhill is the recreate strategy for the same
+// account: it stays where it is, a new account is vended in Fernhill and
+// the workloads are redeployed into it. The relocation stage lists what
+// has to be brought over, from the workload inventory.
+const PaymentsRecreatedInFernhill = `schema_version: 1
+name: Payments production recreated in Fernhill
+description: >-
+  The recreate strategy for larkspur-payments-prod (111111111115): the account
+  stays in Larkspur Holdings, a new account is vended in Fernhill Group and
+  the workloads are redeployed into it. The source account does not move, so
+  every stage evaluates it where it is; the relocation stage lists what has to
+  be brought into the new account.
+account: "111111111115"
+strategy: recreate
+source: larkspur-holdings.json
+destination: fernhill-group.json
+stages:
+  - id: current
+    title: Current placement and governance
+  - id: relocate
+    title: Redeploy the workloads into the new Fernhill account
+    workload:
+      relocate: true
+      target_account: "222222222229"
+      note: vended by Account Factory under Business Units / Payments
+  - id: cutover
+    title: Cutover validation
+    network:
+      validated: true
+    verify:
+      - settlement files are written to and read from the bucket in the new account
+      - the ledger database answers from the new account
+      - the deployment pipeline targets the new account ID
+`
+
 // ScenarioFiles maps the scenario fixture file names to their contents.
 func ScenarioFiles() map[string]string {
 	return map[string]string{
 		"scenario-payments-to-fernhill.yaml":    PaymentsToFernhillStaged,
 		"scenario-fernhill-sandbox-staged.yaml": SandboxToBusinessUnitsStaged,
+		"scenario-payments-recreate.yaml":       PaymentsRecreatedInFernhill,
 	}
 }

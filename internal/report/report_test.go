@@ -32,6 +32,20 @@ func TestRenderers(t *testing.T) {
 	if !strings.Contains(txt, "VERDICT: NO-GO") || !strings.Contains(txt, "ec2:CreateVpc") {
 		t.Errorf("text summary incomplete:\n%s", txt)
 	}
+	// The workload layer: how much was evaluated, from what, and the findings.
+	for _, want := range []string{"## Workload layer: evaluated", "8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api", "| `workloads.resources` | observed |",
+		"| How it would be redeployed | Stacks | Resources in stacks | Sampled resources outside stacks |", "| redeployable from a template or pipeline | 5 | 27 | 3 |",
+		"## Workloads: NO-GO", "### NO-GO: Bucket policy of arn:aws:s3:::larkspur-payments-settlement-files denies the account's own principals after the move",
+		"1 of the actions were derived from the workload inventory"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown missing %q", want)
+		}
+	}
+	for _, want := range []string{"workload layer: evaluated (8 stack(s) with 37 resource(s)", "[NO-GO ] Workloads - Workload layer evaluated", "NO-GO  Stack payments-api sits on 2 subnets shared through larkspur-core-network"} {
+		if !strings.Contains(txt, want) {
+			t.Errorf("text missing %q", want)
+		}
+	}
 }
 
 func TestOURenderers(t *testing.T) {

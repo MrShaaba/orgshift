@@ -1,6 +1,6 @@
 {
   "tool": "orgshift",
-  "result_schema_version": 3,
+  "result_schema_version": 4,
   "subject": {
     "account_id": "111111111117",
     "account_name": "larkspur-sandbox-1",
@@ -61,6 +61,7 @@
       "us-east-1"
     ],
     "declared_operations": 0,
+    "derived_operations": 0,
     "source_org_path": "o-larkspur0001/r-lark/ou-lark-sand/",
     "target_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/"
   },
@@ -289,6 +290,51 @@
           "status": "observed",
           "required": false
         }
+      },
+      {
+        "domain": "workloads.stacks",
+        "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+        "check": "workloads",
+        "source": {
+          "status": "unknown",
+          "required": false,
+          "detail": "no coverage record"
+        },
+        "target": {
+          "status": "unknown",
+          "required": false,
+          "detail": "no coverage record"
+        }
+      },
+      {
+        "domain": "workloads.resources",
+        "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+        "check": "workloads",
+        "source": {
+          "status": "unknown",
+          "required": false,
+          "detail": "no coverage record"
+        },
+        "target": {
+          "status": "unknown",
+          "required": false,
+          "detail": "no coverage record"
+        }
+      },
+      {
+        "domain": "workloads.policies",
+        "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+        "check": "workloads",
+        "source": {
+          "status": "unknown",
+          "required": false,
+          "detail": "no coverage record"
+        },
+        "target": {
+          "status": "unknown",
+          "required": false,
+          "detail": "no coverage record"
+        }
       }
     ]
   },
@@ -450,8 +496,75 @@
       "status": "GO",
       "summary": "Same organization: the 2 assignment(s) and 2 provisioned role(s) on the account are unchanged by a move between OUs.",
       "findings": []
+    },
+    {
+      "id": "workloads",
+      "title": "Workloads",
+      "status": "GO",
+      "summary": "The workload layer was not evaluated: the snapshot has no workload inventory for this account.",
+      "findings": [
+        {
+          "status": "INFO",
+          "category": "missing-evidence",
+          "confidence": "low",
+          "title": "No workload inventory for this account",
+          "detail": "The snapshot holds no stacks, resource sample or resource policies for the account. A move inside the organization changes only what follows the OU path: OU-targeted StackSets, OU-scoped shares and conditions on aws:PrincipalOrgPaths. The StackSet and share checks use the organization-level lists; conditions in resource policies were not assessed. Name the account under member_inspection.accounts and collect again to evaluate the layer."
+        }
+      ]
     }
   ],
+  "workload_layer": {
+    "evaluation": "not-evaluated",
+    "detail": "no workload inventory for the account, so nothing about its stacks, resources or resource policies was assessed",
+    "coverage": [
+      {
+        "domain": "workloads.stacks",
+        "status": "unknown",
+        "detail": "no coverage record for this account"
+      },
+      {
+        "domain": "workloads.resources",
+        "status": "unknown",
+        "detail": "no coverage record for this account"
+      },
+      {
+        "domain": "workloads.policies",
+        "status": "unknown",
+        "detail": "no coverage record for this account"
+      }
+    ],
+    "stacks": 0,
+    "stack_resources": 0,
+    "sampled_resources": 0,
+    "policies_on_organization_identity": 0,
+    "policies_inspected": 0,
+    "groups": [
+      {
+        "group": "pipeline",
+        "title": "redeployable from a template or pipeline",
+        "stacks": 0,
+        "stack_resources": 0,
+        "sampled_resources": 0,
+        "kinds": {}
+      },
+      {
+        "group": "platform",
+        "title": "recreated by Control Tower or a StackSet",
+        "stacks": 0,
+        "stack_resources": 0,
+        "sampled_resources": 0,
+        "kinds": {}
+      },
+      {
+        "group": "manual-or-unknown",
+        "title": "manual or unknown",
+        "stacks": 0,
+        "stack_resources": 0,
+        "sampled_resources": 0,
+        "kinds": {}
+      }
+    ]
+  },
   "diff": [
     {
       "type": "SERVICE_CONTROL_POLICY",
@@ -1807,10 +1920,17 @@
       "version": "2026-11-02",
       "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
       "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+    },
+    {
+      "id": "workload-behaviour",
+      "version": "2026-11-05",
+      "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+      "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
     }
   ],
   "categories": {
     "informational": 4,
+    "missing-evidence": 1,
     "unsupported-evaluation": 1
   },
   "limitations": [
@@ -1818,6 +1938,7 @@
     "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
     "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
     "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+    "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
   ]
 }

@@ -31,7 +31,7 @@ Every stage may change any of these, and every report keeps them apart:
 | placement | `placement.parent`, `policies.attach/detach` | the root or OU the account sits in (existing or proposed) and the policy attachments made at the stage (progressive tightening). |
 | governance | `governance.enrolled`, `governance.register_ou`, declarations | Control Tower: enrolling or unenrolling the account, registering an OU, and the enrollment prerequisites the collector cannot see. |
 | network | `network.recreate_shares`, `network.remove_shares`, `network.validated` | RAM shares created in the destination or withdrawn in the source, and the validation point. |
-| workload | `workload.relocate`, `workload.target_account` | workload relocation into another account (the recreate strategy). Reported, not evaluated: the snapshots carry no workload inventory. |
+| workload | `workload.relocate`, `workload.target_account` | workload relocation into another account (the recreate strategy). Evaluated at every stage from the account's workload inventory (stacks, resource sample, resource policies) and marked `evaluated`, `partially-evaluated` or `not-evaluated` according to its coverage. |
 
 A stage that changes no layer is a verification point: the transition
 compares the state with itself and inventories what applies to the account
@@ -111,22 +111,43 @@ evaluated.
 - **Network** adds the named proposed shares (status `PROPOSED`) to the
   organization that owns them or removes withdrawn shares; the RAM check of
   the transition then reports what becomes available or is lost.
-- **Workload** marks the state as relocated and adds a missing-evidence
-  finding: nothing in the snapshots describes the workloads.
+- **Workload** marks the state as relocated and adds a finding that lists
+  what has to be brought into the other account, grouped by deployment
+  provenance (redeployable from a template or pipeline, recreated by
+  Control Tower or a StackSet, manual or unknown) with counts, what
+  constrains the redeployment and what the inventory cannot say. Without an
+  inventory for the account the finding is missing evidence: the
+  relocation is declared, not evaluated.
+- The workload inventory travels with the account. When the account enters
+  another organization, the derived state carries its inventory without
+  the stacks a service-managed StackSet deletes on leaving (automatic
+  deployment on, stacks not retained), so the stages after entry check the
+  tag policies of each new position against what is still there.
 
 Each derived snapshot passes the same validation as a collected one.
 
 ## The report
 
-`stages_schema_version` 1. Per stage: `layers` (five entries, `changed` and
-a summary), `state` (organization, path, parent, enrolled, governed,
+`stages_schema_version` 2. Per stage: `layers` (five entries, `changed` and
+a summary; the workload entry also has `evaluation` and a `detail` with the
+inventory counts and what the workloads check found at that stage), `state` (organization, path, parent, enrolled, governed,
 proposed shares present, proposed nodes on the path, workload relocated),
 `findings` (the stage's own, each with an impact category), `transition`
 (the full `orgshift simulate` result for the move from the previous state,
-`result_schema_version` 3), `verify` and `verdict`. The report also carries
+`result_schema_version` 4), `verify` and `verdict`. The report also carries
 the proposed objects, the declared critical operations, the two strategies
 with prerequisites, risks, remaining unknowns and reversal limitations, the
 models used and the standing limitations of the offline evaluation.
+
+The recreate strategy carries `redeploy`: the redeployment plan built from
+the workload inventory of the account. It has the evaluation level, one
+entry per provenance group with counts (stacks, resources in stacks,
+sampled resources outside any stack) and the items with their provenance
+and confidence, the dependencies that constrain a redeployment (import
+order, cross-account stack outputs, networking taken from outside the
+template, stateful resources, policies tied to organization identity, what
+the source's platform deployed) and the unknowns. It is an inventory with
+counts, not an estimate of effort, and "unknown" stays visible in it.
 
 The derived snapshots themselves are never exported; the UI draws the final
 one next to the current hierarchy with proposed nodes marked.

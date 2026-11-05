@@ -1,6 +1,6 @@
 {
   "tool": "orgshift stages test",
-  "stages_schema_version": 1,
+  "stages_schema_version": 2,
   "name": "Payments production into Fernhill, staged",
   "description": "Transfer larkspur-payments-prod (111111111115) from Larkspur Holdings into Fernhill Group through a transitional Legacy OU, then enroll it in Control Tower and tighten the policies. Proposed objects are created in Fernhill before the stage that uses them; nothing here exists in the snapshots.",
   "strategy": "transfer",
@@ -93,7 +93,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -140,7 +142,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "111111111115",
           "account_name": "larkspur-payments-prod",
@@ -199,20 +201,21 @@
           ],
           "source_parent_id": "ou-lark-prod",
           "target_ou_id": "ou-lark-prod",
-          "actions_in_use": 24,
+          "actions_in_use": 25,
           "inbound_access": 5,
-          "tagged_resources": 8,
+          "tagged_resources": 14,
           "regions_assumed": [
             "ap-southeast-1",
             "eu-west-1",
             "us-east-1"
           ],
           "declared_operations": 4,
+          "derived_operations": 1,
           "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
           "target_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/"
         },
         "verdict": "GO",
-        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root / Workloads / Production: GO within the assessed scope. No blocker was found among the 24 actions (4 of them declared critical operations), 5 inbound requests, the shares, services and controls evaluated, and every required collection domain was inspected. This is not a guarantee of zero downtime or of compatibility with everything the account does; only what the snapshots and the usage list describe was checked, and an organization policy that allows an action is not an IAM grant.",
+        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root / Workloads / Production: GO within the assessed scope. No blocker was found among the 25 actions (4 of them declared critical operations), 5 inbound requests, the shares, services and controls evaluated, and every required collection domain was inspected. This is not a guarantee of zero downtime or of compatibility with everything the account does; only what the snapshots and the usage list describe was checked, and an organization policy that allows an action is not an IAM grant.",
         "coverage": {
           "same_snapshot": true,
           "complete": true,
@@ -436,6 +439,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
             }
           ]
         },
@@ -451,14 +493,14 @@
             "id": "scp",
             "title": "Service control policies",
             "status": "GO",
-            "summary": "24 actions evaluated against the SCP chain; 0 flagged.",
+            "summary": "25 actions evaluated against the SCP chain; 0 flagged.",
             "findings": []
           },
           {
             "id": "rcp",
             "title": "Resource control policies",
             "status": "GO",
-            "summary": "7 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 17 action(s) on services RCPs do not govern were not evaluated, 0 exempt. 6 inbound requests evaluated; 0 flagged.",
+            "summary": "8 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 17 action(s) on services RCPs do not govern were not evaluated, 0 exempt. 1 action(s) target resources in other accounts and were evaluated against the owner's RCPs. 6 inbound requests evaluated; 0 flagged.",
             "findings": [
               {
                 "status": "INFO",
@@ -530,8 +572,75 @@
             "status": "GO",
             "summary": "Same organization: the 4 assignment(s) and 4 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions us-east-1, eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from tagging-api"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "observed",
+              "detail": "17 policies read, 3 reference organization identity"
+            }
+          ],
+          "stacks": 8,
+          "stack_resources": 37,
+          "sampled_resources": 14,
+          "resource_source": "tagging-api",
+          "policies_on_organization_identity": 3,
+          "policies_inspected": 17,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 5,
+              "stack_resources": 27,
+              "sampled_resources": 3,
+              "kinds": {
+                "stack": 5,
+                "terraform": 3
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 3,
+              "stack_resources": 10,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-service-managed": 3
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 3,
+              "kinds": {
+                "unknown": 3
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -1962,6 +2071,12 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
@@ -1973,7 +2088,8 @@
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ],
         "notes": [
           "The target OU is the account's current parent; the simulation compares the account with itself."
@@ -2009,7 +2125,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -2062,7 +2180,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "111111111115",
           "account_name": "larkspur-payments-prod",
@@ -2121,20 +2239,21 @@
           ],
           "source_parent_id": "ou-lark-prod",
           "target_ou_id": "ou-lark-prod",
-          "actions_in_use": 24,
+          "actions_in_use": 25,
           "inbound_access": 5,
-          "tagged_resources": 8,
+          "tagged_resources": 14,
           "regions_assumed": [
             "ap-southeast-1",
             "eu-west-1",
             "us-east-1"
           ],
           "declared_operations": 4,
+          "derived_operations": 1,
           "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
           "target_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/"
         },
         "verdict": "GO",
-        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root / Workloads / Production: GO within the assessed scope. No blocker was found among the 24 actions (4 of them declared critical operations), 5 inbound requests, the shares, services and controls evaluated, and every required collection domain was inspected. This is not a guarantee of zero downtime or of compatibility with everything the account does; only what the snapshots and the usage list describe was checked, and an organization policy that allows an action is not an IAM grant.",
+        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root / Workloads / Production: GO within the assessed scope. No blocker was found among the 25 actions (4 of them declared critical operations), 5 inbound requests, the shares, services and controls evaluated, and every required collection domain was inspected. This is not a guarantee of zero downtime or of compatibility with everything the account does; only what the snapshots and the usage list describe was checked, and an organization policy that allows an action is not an IAM grant.",
         "coverage": {
           "same_snapshot": true,
           "complete": true,
@@ -2358,6 +2477,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
             }
           ]
         },
@@ -2373,14 +2531,14 @@
             "id": "scp",
             "title": "Service control policies",
             "status": "GO",
-            "summary": "24 actions evaluated against the SCP chain; 0 flagged.",
+            "summary": "25 actions evaluated against the SCP chain; 0 flagged.",
             "findings": []
           },
           {
             "id": "rcp",
             "title": "Resource control policies",
             "status": "GO",
-            "summary": "7 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 17 action(s) on services RCPs do not govern were not evaluated, 0 exempt. 6 inbound requests evaluated; 0 flagged.",
+            "summary": "8 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 17 action(s) on services RCPs do not govern were not evaluated, 0 exempt. 1 action(s) target resources in other accounts and were evaluated against the owner's RCPs. 6 inbound requests evaluated; 0 flagged.",
             "findings": [
               {
                 "status": "INFO",
@@ -2452,8 +2610,75 @@
             "status": "GO",
             "summary": "Same organization: the 4 assignment(s) and 4 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions us-east-1, eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from tagging-api"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "observed",
+              "detail": "17 policies read, 3 reference organization identity"
+            }
+          ],
+          "stacks": 8,
+          "stack_resources": 37,
+          "sampled_resources": 14,
+          "resource_source": "tagging-api",
+          "policies_on_organization_identity": 3,
+          "policies_inspected": 17,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 5,
+              "stack_resources": 27,
+              "sampled_resources": 3,
+              "kinds": {
+                "stack": 5,
+                "terraform": 3
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 3,
+              "stack_resources": 10,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-service-managed": 3
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 3,
+              "kinds": {
+                "unknown": 3
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -3884,6 +4109,12 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
@@ -3895,7 +4126,8 @@
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ],
         "notes": [
           "The target OU is the account's current parent; the simulation compares the account with itself."
@@ -3936,7 +4168,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity; at this stage 8 item(s) to settle and 3 informational in the workloads check; 1 stack(s) are deleted by their StackSet on leaving and are not in the inventory of the later stages (StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9)"
         }
       ],
       "state": {
@@ -3964,7 +4198,7 @@
         ]
       },
       "verdict": "NO-GO",
-      "summary": "NO-GO; changes: membership, placement; 3 blocking, 16 to review",
+      "summary": "NO-GO; changes: membership, placement; 5 blocking, 22 to review",
       "findings": [
         {
           "status": "INFO",
@@ -3987,7 +4221,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "111111111115",
           "account_name": "larkspur-payments-prod",
@@ -4036,24 +4270,25 @@
           ],
           "source_parent_id": "ou-lark-prod",
           "target_ou_id": "r-fern",
-          "actions_in_use": 24,
+          "actions_in_use": 25,
           "inbound_access": 5,
-          "tagged_resources": 8,
+          "tagged_resources": 14,
           "regions_assumed": [
             "ap-southeast-1",
             "eu-west-1",
             "us-east-1"
           ],
           "declared_operations": 4,
+          "derived_operations": 1,
           "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
           "target_org_path": "o-fernhill0001/r-fern/"
         },
         "verdict": "NO-GO",
-        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root (organization o-larkspur0001 to o-fernhill0001): NO-GO. 3 blocking finding(s) and 16 to review.",
+        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root (organization o-larkspur0001 to o-fernhill0001): NO-GO. 5 blocking finding(s) and 22 to review.",
         "coverage": {
           "same_snapshot": false,
           "complete": true,
-          "required": 26,
+          "required": 29,
           "rows": [
             {
               "domain": "organization",
@@ -4273,6 +4508,45 @@
                 "status": "observed",
                 "required": true
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": true
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": true
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": true
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
             }
           ]
         },
@@ -4281,14 +4555,14 @@
             "id": "coverage",
             "title": "Collection coverage",
             "status": "GO",
-            "summary": "Complete: all 26 required collection domains were inspected.",
+            "summary": "Complete: all 29 required collection domains were inspected.",
             "findings": []
           },
           {
             "id": "scp",
             "title": "Service control policies",
             "status": "NO-GO",
-            "summary": "24 actions evaluated against the SCP chain; 2 flagged.",
+            "summary": "25 actions evaluated against the SCP chain; 2 flagged.",
             "findings": [
               {
                 "status": "NO-GO",
@@ -4356,7 +4630,7 @@
             "id": "rcp",
             "title": "Resource control policies",
             "status": "GO",
-            "summary": "7 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 17 action(s) on services RCPs do not govern were not evaluated, 0 exempt. 6 inbound requests evaluated; 0 flagged.",
+            "summary": "8 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 17 action(s) on services RCPs do not govern were not evaluated, 0 exempt. 1 action(s) target resources in other accounts and were evaluated against the owner's RCPs. 6 inbound requests evaluated; 0 flagged.",
             "findings": [
               {
                 "status": "INFO",
@@ -4374,7 +4648,7 @@
             "id": "tags",
             "title": "Tag policies",
             "status": "REVIEW",
-            "summary": "2 tag keys governed at the target; 5 non-compliant tag(s) across 8 sampled resources.",
+            "summary": "2 tag keys governed at the target; 5 non-compliant tag(s) across 14 sampled resources.",
             "findings": [
               {
                 "status": "REVIEW",
@@ -4493,6 +4767,38 @@
                 "category": "known-restriction",
                 "confidence": "high",
                 "source": "observed",
+                "title": "cost-center: ec2:volume resources carry no cost-center tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 1 resource(s), for example arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
+                "title": "cost-center: iam:role resources carry no cost-center tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 2 resource(s), for example arn:aws:iam::111111111115:role/larkspur-audit, arn:aws:iam::111111111115:role/larkspur-break-glass.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:iam::111111111115:role/larkspur-audit\narn:aws:iam::111111111115:role/larkspur-break-glass"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
                 "title": "cost-center: lambda:function resources carry no cost-center tag",
                 "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 1 resource(s), for example arn:aws:lambda:us-east-1:111111111115:function:settlement-notifier.",
                 "evidence": [
@@ -4501,6 +4807,70 @@
                     "side": "target",
                     "policy_type": "TAG",
                     "note": "arn:aws:lambda:us-east-1:111111111115:function:settlement-notifier"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
+                "title": "cost-center: sqs:queue resources carry no cost-center tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 1 resource(s), for example arn:aws:sqs:us-east-1:111111111115:fraud-events.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:sqs:us-east-1:111111111115:fraud-events"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
+                "title": "environment: ec2:volume resources carry no environment tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 1 resource(s), for example arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
+                "title": "environment: iam:role resources carry no environment tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 2 resource(s), for example arn:aws:iam::111111111115:role/larkspur-audit, arn:aws:iam::111111111115:role/larkspur-break-glass.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:iam::111111111115:role/larkspur-audit\narn:aws:iam::111111111115:role/larkspur-break-glass"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
+                "title": "environment: sqs:queue resources carry no environment tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 1 resource(s), for example arn:aws:sqs:us-east-1:111111111115:fraud-events.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:sqs:us-east-1:111111111115:fraud-events"
                   }
                 ]
               }
@@ -4662,7 +5032,7 @@
                 "category": "potential-impact",
                 "confidence": "medium",
                 "title": "StackSet larkspur-baseline-roles stops targeting the account; stack instances are deleted from the account",
-                "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
+                "detail": "Service-managed StackSets deploy by OU. Audit and break-glass IAM roles for workload accounts. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. The workloads check lists the instances found in this account and what each contains.",
                 "evidence": [
                   {
                     "kind": "stackset",
@@ -4670,6 +5040,9 @@
                     "reference": "larkspur-baseline-roles",
                     "note": "admin 111111111111; targets OUs ou-lark-work accounts ; regions us-east-1; auto-deployment true; retain on removal false"
                   }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html"
                 ]
               },
               {
@@ -4677,7 +5050,7 @@
                 "category": "potential-impact",
                 "confidence": "medium",
                 "title": "StackSet larkspur-config-recorder stops targeting the account; stack instances are detached but the stacks are retained in the account (retain_stacks_on_account_removal)",
-                "detail": "Service-managed StackSets deploy by OU. AWS Config recorder and delivery channel. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving.",
+                "detail": "Service-managed StackSets deploy by OU. AWS Config recorder and delivery channel. Check what those stacks provide (roles, Config recorders, GuardDuty membership) before moving. The workloads check lists the instances found in this account and what each contains.",
                 "evidence": [
                   {
                     "kind": "stackset",
@@ -4685,6 +5058,9 @@
                     "reference": "larkspur-config-recorder",
                     "note": "admin 111111111111; targets OUs r-lark accounts ; regions us-east-1,eu-west-1,ap-southeast-1; auto-deployment true; retain on removal true"
                   }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html"
                 ]
               },
               {
@@ -4970,8 +5346,392 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "NO-GO",
+            "summary": "Workload layer evaluated: 8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity. 8 item(s) to settle, 3 informational.",
+            "findings": [
+              {
+                "status": "NO-GO",
+                "category": "declared-impact",
+                "confidence": "high",
+                "source": "workload",
+                "title": "Bucket policy of arn:aws:s3:::larkspur-payments-settlement-files denies the account's own principals after the move",
+                "detail": "Statement ReadFromTheOrganization (Allow): it stops admitting the account's own principals (StringEquals aws:PrincipalOrgID o-larkspur0001); inside one account an identity policy can still grant the access, so whether anything breaks depends on policies this check does not read; it keeps admitting principals of o-larkspur0001, the organization the account leaves, and does not admit principals of o-fernhill0001 (StringEquals aws:PrincipalOrgID o-larkspur0001). Statement DataPerimeter (Deny): it denies s3:* to the account's own principals after the move: today they are exempt (StringNotEqualsIfExists aws:PrincipalOrgID o-larkspur0001, o-acquirer0001), afterwards they are not; principals of o-larkspur0001 stay exempt from it while principals of o-fernhill0001, the account's new organization, are denied (StringNotEqualsIfExists aws:PrincipalOrgID o-larkspur0001, o-acquirer0001). A Deny in a resource policy applies to principals of the resource's own account too, so the applications in this account lose the resource the moment the account changes organization. Change the policy to name the destination organization (or both, for the transition) before the move.",
+                "resource": "arn:aws:s3:::larkspur-payments-settlement-files",
+                "evidence": [
+                  {
+                    "kind": "resource-policy",
+                    "side": "source",
+                    "policy_type": "s3-bucket-policy",
+                    "statement": "ReadFromTheOrganization",
+                    "statement_json": {
+                      "Sid": "ReadFromTheOrganization",
+                      "Effect": "Allow",
+                      "Principal": "*",
+                      "Action": "s3:GetObject",
+                      "Resource": "arn:aws:s3:::larkspur-payments-settlement-files/*",
+                      "Condition": {
+                        "StringEquals": {
+                          "aws:PrincipalOrgID": "o-larkspur0001"
+                        }
+                      }
+                    },
+                    "reference": "arn:aws:s3:::larkspur-payments-settlement-files",
+                    "note": "read with s3:GetBucketPolicy"
+                  },
+                  {
+                    "kind": "resource-policy",
+                    "side": "source",
+                    "policy_type": "s3-bucket-policy",
+                    "statement": "DataPerimeter",
+                    "statement_json": {
+                      "Sid": "DataPerimeter",
+                      "Effect": "Deny",
+                      "Principal": "*",
+                      "Action": "s3:*",
+                      "Resource": [
+                        "arn:aws:s3:::larkspur-payments-settlement-files",
+                        "arn:aws:s3:::larkspur-payments-settlement-files/*"
+                      ],
+                      "Condition": {
+                        "StringNotEqualsIfExists": {
+                          "aws:PrincipalOrgID": [
+                            "o-larkspur0001",
+                            "o-acquirer0001"
+                          ]
+                        },
+                        "BoolIfExists": {
+                          "aws:PrincipalIsAWSService": "false"
+                        }
+                      }
+                    },
+                    "reference": "arn:aws:s3:::larkspur-payments-settlement-files",
+                    "note": "read with s3:GetBucketPolicy"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html"
+                ]
+              },
+              {
+                "status": "NO-GO",
+                "category": "declared-impact",
+                "confidence": "high",
+                "source": "workload",
+                "title": "Stack payments-api sits on 2 subnets shared through larkspur-core-network, which the account loses",
+                "detail": "It references subnet-e056c922dbb17986a, subnet-1d0f03c495e44a0e4 (parameter AppSubnetIds), shared by account 111111111112 with organization o-larkspur0001. What the documentation says happens when the share ends: existing participant resources continue to run in the subnet; no new resources can be created in it, while existing ones can still be modified, described and deleted (subnets can only be shared inside one organization). The stack contains AWS::AutoScaling::AutoScalingGroup, which launches instances into its subnets whenever it scales or replaces one. Those launches need to create resources in the subnet, which fails once the share ends: what is running keeps running, and nothing can be replaced or scaled out. A stack update that replaces a resource in the subnet fails for the same reason. Sharing them again is not a way out: this resource type can only be shared inside one organization, so the workload has to move to networking of the destination before the account leaves.",
+                "regions": [
+                  "us-east-1"
+                ],
+                "evidence": [
+                  {
+                    "kind": "stack-reference",
+                    "side": "source",
+                    "reference": "payments-api",
+                    "note": "region us-east-1, status UPDATE_COMPLETE, 7 resource(s): AWS::AutoScaling::AutoScalingGroup x1, AWS::EC2::LaunchTemplate x1, AWS::ElasticLoadBalancingV2::LoadBalancer x1, AWS::ElasticLoadBalancingV2::TargetGroup x1, AWS::IAM::Role x2, AWS::Logs::LogGroup x1\nprovenance: plain CloudFormation stack (high confidence): a CloudFormation stack whose name and ID match no StackSet instance; whatever pipeline deploys it is not collected\nreferences subnet-e056c922dbb17986a, subnet-1d0f03c495e44a0e4 (parameter AppSubnetIds)"
+                  },
+                  {
+                    "kind": "resource-share",
+                    "side": "source",
+                    "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
+                    "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+                  "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-sharing-share-subnet-working-with.html#vpc-sharing-stop-share-subnet"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "declared-impact",
+                "confidence": "high",
+                "source": "workload",
+                "title": "Stack payments-ledger-db sits on 2 subnets shared through larkspur-core-network, which the account loses",
+                "detail": "It references subnet-e056c922dbb17986a, subnet-1d0f03c495e44a0e4 (parameter DatabaseSubnetIds), shared by account 111111111112 with organization o-larkspur0001. What the documentation says happens when the share ends: existing participant resources continue to run in the subnet; no new resources can be created in it, while existing ones can still be modified, described and deleted (subnets can only be shared inside one organization). A stack update that replaces a resource in the subnet fails for the same reason. Sharing them again is not a way out: this resource type can only be shared inside one organization, so the workload has to move to networking of the destination before the account leaves.",
+                "regions": [
+                  "us-east-1"
+                ],
+                "evidence": [
+                  {
+                    "kind": "stack-reference",
+                    "side": "source",
+                    "reference": "payments-ledger-db",
+                    "note": "region us-east-1, status UPDATE_COMPLETE, 3 resource(s): AWS::RDS::DBInstance x1, AWS::RDS::DBSubnetGroup x1, AWS::SecretsManager::Secret x1\nprovenance: plain CloudFormation stack (high confidence): a CloudFormation stack whose name and ID match no StackSet instance; whatever pipeline deploys it is not collected\nreferences subnet-e056c922dbb17986a, subnet-1d0f03c495e44a0e4 (parameter DatabaseSubnetIds)"
+                  },
+                  {
+                    "kind": "resource-share",
+                    "side": "source",
+                    "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
+                    "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+                  "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-sharing-share-subnet-working-with.html#vpc-sharing-stop-share-subnet"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "declared-impact",
+                "confidence": "high",
+                "source": "workload",
+                "title": "Stack payments-network sits on a transit gateway shared through larkspur-core-network, which the account loses",
+                "detail": "It references tgw-54924a77a3120b1ad (parameter TransitGatewayId), shared by account 111111111112 with organization o-larkspur0001. What the documentation says happens when the share ends: existing transit gateway attachments remain functional; the account can no longer describe the transit gateway or create new attachments, and either side can delete the attachments. The stack owns the attachment: it keeps carrying traffic, but a stack update that replaces it, or redeploying the stack, fails because the account can no longer create attachments to this transit gateway.",
+                "regions": [
+                  "us-east-1"
+                ],
+                "evidence": [
+                  {
+                    "kind": "stack-reference",
+                    "side": "source",
+                    "reference": "payments-network",
+                    "note": "region us-east-1, status UPDATE_COMPLETE, 9 resource(s): AWS::EC2::Route x4, AWS::EC2::SecurityGroup x3, AWS::EC2::TransitGatewayAttachment x1, AWS::EC2::VPC x1\nprovenance: plain CloudFormation stack (high confidence): a CloudFormation stack whose name and ID match no StackSet instance; whatever pipeline deploys it is not collected\nreferences tgw-54924a77a3120b1ad (parameter TransitGatewayId)"
+                  },
+                  {
+                    "kind": "resource-share",
+                    "side": "source",
+                    "reference": "arn:aws:ram:us-east-1:111111111112:resource-share/06a7aefe6fddce828",
+                    "note": "owner 111111111112; principals: organization o-larkspur0001; allow external principals false\nec2:TransitGateway  arn:aws:ec2:us-east-1:111111111112:transit-gateway/tgw-54924a77a3120b1ad\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-e056c922dbb17986a\nec2:Subnet  arn:aws:ec2:us-east-1:111111111112:subnet/subnet-1d0f03c495e44a0e4\nroute53resolver:ResolverRule  arn:aws:route53resolver:us-east-1:111111111112:resolver-rule/rslvr-rr-66e02e8ff78976d8b"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html",
+                  "https://docs.aws.amazon.com/vpc/latest/tgw/transit-gateway-share.html#transit-gateway-unshare"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "declared-impact",
+                "confidence": "high",
+                "title": "StackSet instance StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9 is deleted when the account leaves the organization: 4 resource(s)",
+                "detail": "StackSet larkspur-baseline-roles is service-managed with automatic deployment on and RetainStacksOnAccountRemoval off. When an account is removed from a target organization or OU, StackSets deletes its stack instances and their resources: here AWS::IAM::ManagedPolicy x1, AWS::IAM::Role x3. Whatever in the account uses them stops working at that moment, and the resources are not there for a rollback either. Before the move, either turn RetainStacksOnAccountRemoval on for the StackSet (the stack then stays in the account, detached from the StackSet and no longer updated) or make sure the destination deploys an equivalent.",
+                "regions": [
+                  "us-east-1"
+                ],
+                "evidence": [
+                  {
+                    "kind": "stack-instance",
+                    "side": "source",
+                    "reference": "StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9",
+                    "note": "region us-east-1, status UPDATE_COMPLETE, 4 resource(s): AWS::IAM::ManagedPolicy x1, AWS::IAM::Role x3\nprovenance: service-managed StackSet (high confidence): the stack ID is listed as an instance of StackSet larkspur-baseline-roles (permission model SERVICE_MANAGED, administered from 111111111111)\nStackSet larkspur-baseline-roles: service-managed, auto-deployment true, retain stacks on account removal false, targets ou-lark-work; the stack ID is one of the StackSet's instances"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html",
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "medium",
+                "source": "workload",
+                "title": "Template policy for resource AppLogSubscriptionRole of stack payments-api is conditioned on organization identity that changes with the move",
+                "detail": "Allow ForAnyValue:StringLike aws:PrincipalOrgPaths o-larkspur0001/r-lark/ou-lark-sec/*: names o-larkspur0001, the organization the account leaves. Only the organization conditions are kept from a template, not the statement around them, so who is admitted or denied cannot be evaluated here: review the resource in the template of stack payments-api and update the value before the next deployment.",
+                "evidence": [
+                  {
+                    "kind": "resource-policy",
+                    "side": "source",
+                    "policy_type": "template-policy",
+                    "reference": "resource AppLogSubscriptionRole of stack payments-api",
+                    "note": "found in the template read with cloudformation:GetTemplate"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "medium",
+                "source": "workload",
+                "title": "Trust policy of arn:aws:iam::111111111115:role/DataExportReader stays tied to the organization the account leaves",
+                "detail": "Statement DataPlatformFromTheOrganization (Allow): it keeps admitting principals of o-larkspur0001, the organization the account leaves, and does not admit principals of o-fernhill0001 (StringEquals aws:PrincipalOrgID o-larkspur0001). Decide whether principals of the former organization should keep assuming the role, and note that the destination's RCPs also apply to sts:AssumeRole on it (the RCP check evaluates the inbound entries of the usage list). Change the policy to name the destination organization (or both, for the transition) before the move.",
+                "resource": "arn:aws:iam::111111111115:role/DataExportReader",
+                "evidence": [
+                  {
+                    "kind": "resource-policy",
+                    "side": "source",
+                    "policy_type": "iam-role-trust-policy",
+                    "statement": "DataPlatformFromTheOrganization",
+                    "statement_json": {
+                      "Sid": "DataPlatformFromTheOrganization",
+                      "Effect": "Allow",
+                      "Principal": {
+                        "AWS": "*"
+                      },
+                      "Action": "sts:AssumeRole",
+                      "Condition": {
+                        "StringEquals": {
+                          "aws:PrincipalOrgID": "o-larkspur0001"
+                        },
+                        "ArnLike": {
+                          "aws:PrincipalArn": "arn:aws:iam::*:role/DataPlatformIngest"
+                        }
+                      }
+                    },
+                    "reference": "arn:aws:iam::111111111115:role/DataExportReader",
+                    "note": "read with iam:ListRoles"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "medium",
+                "source": "workload",
+                "title": "Stack payments-api reads output LogDestinationArn of stack shared-observability in account 111111111113",
+                "detail": "The reference uses Fn::GetStackOutput through role arn:aws:iam::111111111113:role/CfnOutputReader in account 111111111113, which stays in organization o-larkspur0001. It is a weak reference: the value is resolved when the consuming stack is created or updated and nothing changes at the moment of the move. The next update of payments-api resolves it again, across organizations by then: CloudFormation's execution role in this account has to assume arn:aws:iam::111111111113:role/CfnOutputReader, which the role's trust policy (in the other account, not collected here), the destination's SCPs on this account and the RCPs of the role's organization decide. The sts:AssumeRole call was evaluated as a derived operation: see the SCP and RCP checks for a denial. If the value changes or the producing stack is deleted, this stack is not told; plan where the value comes from once the accounts are in different organizations.",
+                "action": "sts:AssumeRole",
+                "resource": "arn:aws:iam::111111111113:role/CfnOutputReader",
+                "regions": [
+                  "us-east-1"
+                ],
+                "evidence": [
+                  {
+                    "kind": "stack-output-reference",
+                    "side": "source",
+                    "reference": "payments-api",
+                    "note": "region us-east-1, status UPDATE_COMPLETE, 7 resource(s): AWS::AutoScaling::AutoScalingGroup x1, AWS::EC2::LaunchTemplate x1, AWS::ElasticLoadBalancingV2::LoadBalancer x1, AWS::ElasticLoadBalancingV2::TargetGroup x1, AWS::IAM::Role x2, AWS::Logs::LogGroup x1\nprovenance: plain CloudFormation stack (high confidence): a CloudFormation stack whose name and ID match no StackSet instance; whatever pipeline deploys it is not collected\nFn::GetStackOutput: stack shared-observability, output LogDestinationArn, region us-east-1, role arn:aws:iam::111111111113:role/CfnOutputReader"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html"
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "informational",
+                "confidence": "high",
+                "title": "2 import(s) between stacks of the account move with it",
+                "detail": "Export and Fn::ImportValue work inside one account and Region only, so an import can never point at another account and these keep working after a transfer: payments-api imports payments-app-sg from payments-network; payments-api imports payments-vpc-id from payments-network. CloudFormation refuses to delete an exporting stack or change its exported output while another stack imports it, which fixes the order when the stacks are re-created in a new account: the exporting stack first. References to stacks in other accounts use Fn::GetStackOutput and are reported separately.",
+                "evidence": [
+                  {
+                    "kind": "stack-import",
+                    "side": "source",
+                    "reference": "payments-api",
+                    "note": "region us-east-1, status UPDATE_COMPLETE, 7 resource(s): AWS::AutoScaling::AutoScalingGroup x1, AWS::EC2::LaunchTemplate x1, AWS::ElasticLoadBalancingV2::LoadBalancer x1, AWS::ElasticLoadBalancingV2::TargetGroup x1, AWS::IAM::Role x2, AWS::Logs::LogGroup x1\nprovenance: plain CloudFormation stack (high confidence): a CloudFormation stack whose name and ID match no StackSet instance; whatever pipeline deploys it is not collected"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html"
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "informational",
+                "confidence": "high",
+                "title": "StackSet instance StackSet-larkspur-config-recorder-680f0561-2c45-0d1a-65b0-f6639c86913b stays in the account, detached from StackSet larkspur-config-recorder",
+                "detail": "RetainStacksOnAccountRemoval is on, so when the account leaves the organization the stack and its 3 resource(s) are kept in their current state and are no longer part of the StackSet: nobody updates them from then on. Adopt the stack in the destination or replace it.",
+                "regions": [
+                  "eu-west-1"
+                ],
+                "evidence": [
+                  {
+                    "kind": "stack-instance",
+                    "side": "source",
+                    "reference": "StackSet-larkspur-config-recorder-680f0561-2c45-0d1a-65b0-f6639c86913b",
+                    "note": "region eu-west-1, status CREATE_COMPLETE, 3 resource(s): AWS::Config::ConfigurationRecorder x1, AWS::Config::DeliveryChannel x1, AWS::IAM::Role x1\nprovenance: service-managed StackSet (high confidence): the stack ID is listed as an instance of StackSet larkspur-config-recorder (permission model SERVICE_MANAGED, administered from 111111111111)\nStackSet larkspur-config-recorder: service-managed, auto-deployment true, retain stacks on account removal true, targets r-lark; the stack ID is one of the StackSet's instances"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html",
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html"
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "informational",
+                "confidence": "high",
+                "title": "StackSet instance StackSet-larkspur-config-recorder-847f2bc4-f94d-ee77-28f6-0f769702dd36 stays in the account, detached from StackSet larkspur-config-recorder",
+                "detail": "RetainStacksOnAccountRemoval is on, so when the account leaves the organization the stack and its 3 resource(s) are kept in their current state and are no longer part of the StackSet: nobody updates them from then on. Adopt the stack in the destination or replace it.",
+                "regions": [
+                  "us-east-1"
+                ],
+                "evidence": [
+                  {
+                    "kind": "stack-instance",
+                    "side": "source",
+                    "reference": "StackSet-larkspur-config-recorder-847f2bc4-f94d-ee77-28f6-0f769702dd36",
+                    "note": "region us-east-1, status CREATE_COMPLETE, 3 resource(s): AWS::Config::ConfigurationRecorder x1, AWS::Config::DeliveryChannel x1, AWS::IAM::Role x1\nprovenance: service-managed StackSet (high confidence): the stack ID is listed as an instance of StackSet larkspur-config-recorder (permission model SERVICE_MANAGED, administered from 111111111111)\nStackSet larkspur-config-recorder: service-managed, auto-deployment true, retain stacks on account removal true, targets r-lark; the stack ID is one of the StackSet's instances"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html",
+                  "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html"
+                ]
+              }
+            ]
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions us-east-1, eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from tagging-api"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "observed",
+              "detail": "17 policies read, 3 reference organization identity"
+            }
+          ],
+          "stacks": 8,
+          "stack_resources": 37,
+          "sampled_resources": 14,
+          "resource_source": "tagging-api",
+          "policies_on_organization_identity": 3,
+          "policies_inspected": 17,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 5,
+              "stack_resources": 27,
+              "sampled_resources": 3,
+              "kinds": {
+                "stack": 5,
+                "terraform": 3
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 3,
+              "stack_resources": 10,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-service-managed": 3
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 3,
+              "kinds": {
+                "unknown": 3
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -6313,13 +7073,19 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
-          "declared-impact": 6,
-          "informational": 11,
-          "known-restriction": 3,
-          "potential-impact": 13,
+          "declared-impact": 11,
+          "informational": 14,
+          "known-restriction": 9,
+          "potential-impact": 16,
           "unsupported-evaluation": 1
         },
         "limitations": [
@@ -6327,7 +7093,8 @@
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ]
       }
     },
@@ -6360,7 +7127,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -6396,7 +7165,7 @@
         ]
       },
       "verdict": "NO-GO",
-      "summary": "NO-GO; changes: placement; 16 blocking, 0 to review",
+      "summary": "NO-GO; changes: placement; 16 blocking, 1 to review",
       "findings": [
         {
           "status": "INFO",
@@ -6411,7 +7180,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "111111111115",
           "account_name": "larkspur-payments-prod",
@@ -6455,20 +7224,21 @@
           ],
           "source_parent_id": "r-fern",
           "target_ou_id": "ou-proposed-legacy",
-          "actions_in_use": 24,
+          "actions_in_use": 25,
           "inbound_access": 5,
-          "tagged_resources": 8,
+          "tagged_resources": 12,
           "regions_assumed": [
             "ap-southeast-1",
             "eu-west-1",
             "us-east-1"
           ],
           "declared_operations": 4,
+          "derived_operations": 1,
           "source_org_path": "o-fernhill0001/r-fern/",
           "target_org_path": "o-fernhill0001/r-fern/ou-proposed-legacy/"
         },
         "verdict": "NO-GO",
-        "summary": "Moving larkspur-payments-prod (111111111115) from Root to Root / Legacy: NO-GO. 16 blocking finding(s) and 0 to review.",
+        "summary": "Moving larkspur-payments-prod (111111111115) from Root to Root / Legacy: NO-GO. 16 blocking finding(s) and 1 to review.",
         "coverage": {
           "same_snapshot": true,
           "complete": true,
@@ -6692,6 +7462,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
             }
           ]
         },
@@ -6707,7 +7516,7 @@
             "id": "scp",
             "title": "Service control policies",
             "status": "NO-GO",
-            "summary": "24 actions evaluated against the SCP chain; 18 flagged.",
+            "summary": "25 actions evaluated against the SCP chain; 18 flagged.",
             "findings": [
               {
                 "status": "NO-GO",
@@ -7629,9 +8438,22 @@
           {
             "id": "rcp",
             "title": "Resource control policies",
-            "status": "GO",
+            "status": "REVIEW",
             "summary": "7 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 17 action(s) on services RCPs do not govern were not evaluated, 0 exempt. 6 inbound requests evaluated; 0 flagged.",
             "findings": [
+              {
+                "status": "REVIEW",
+                "category": "unsupported-evaluation",
+                "confidence": "medium",
+                "source": "workload",
+                "title": "RCP evaluation skipped for sts:AssumeRole on a resource owned by another account",
+                "detail": "resource arn:aws:iam::111111111113:role/CfnOutputReader belongs to account 111111111113, which is in neither snapshot; the RCPs of its organization cannot be evaluated offline.",
+                "action": "sts:AssumeRole",
+                "resource": "arn:aws:iam::111111111113:role/CfnOutputReader",
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services"
+                ]
+              },
               {
                 "status": "INFO",
                 "category": "unsupported-evaluation",
@@ -7743,8 +8565,75 @@
             "status": "GO",
             "summary": "Same organization: the 0 assignment(s) and 0 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions us-east-1, eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from tagging-api"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "observed",
+              "detail": "17 policies read, 3 reference organization identity"
+            }
+          ],
+          "stacks": 7,
+          "stack_resources": 33,
+          "sampled_resources": 12,
+          "resource_source": "tagging-api",
+          "policies_on_organization_identity": 3,
+          "policies_inspected": 17,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 5,
+              "stack_resources": 27,
+              "sampled_resources": 3,
+              "kinds": {
+                "stack": 5,
+                "terraform": 3
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 2,
+              "stack_resources": 6,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-unknown-model": 2
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 3,
+              "kinds": {
+                "unknown": 3
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -8864,20 +9753,27 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
           "declared-impact": 16,
           "informational": 2,
           "known-restriction": 2,
-          "unsupported-evaluation": 1
+          "unsupported-evaluation": 2
         },
         "limitations": [
           "An SCP or RCP that allows an action is not a grant: IAM identity policies, resource policies, permissions boundaries and session policies decide the request and are not evaluated here. The governance-policy evaluation says what the organization forbids, not what the account can do.",
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ]
       }
     },
@@ -8909,7 +9805,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -8944,8 +9842,8 @@
           "ou-proposed-legacy"
         ]
       },
-      "verdict": "GO",
-      "summary": "GO; changes: network; 0 blocking, 0 to review",
+      "verdict": "REVIEW",
+      "summary": "REVIEW; changes: network; 0 blocking, 1 to review",
       "findings": [
         {
           "status": "INFO",
@@ -8967,7 +9865,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "111111111115",
           "account_name": "larkspur-payments-prod",
@@ -9016,20 +9914,21 @@
           ],
           "source_parent_id": "ou-proposed-legacy",
           "target_ou_id": "ou-proposed-legacy",
-          "actions_in_use": 24,
+          "actions_in_use": 25,
           "inbound_access": 5,
-          "tagged_resources": 8,
+          "tagged_resources": 12,
           "regions_assumed": [
             "ap-southeast-1",
             "eu-west-1",
             "us-east-1"
           ],
           "declared_operations": 4,
+          "derived_operations": 1,
           "source_org_path": "o-fernhill0001/r-fern/ou-proposed-legacy/",
           "target_org_path": "o-fernhill0001/r-fern/ou-proposed-legacy/"
         },
-        "verdict": "GO",
-        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Legacy to Root / Legacy: GO within the assessed scope. No blocker was found among the 24 actions (4 of them declared critical operations), 5 inbound requests, the shares, services and controls evaluated, and every required collection domain was inspected. This is not a guarantee of zero downtime or of compatibility with everything the account does; only what the snapshots and the usage list describe was checked, and an organization policy that allows an action is not an IAM grant.",
+        "verdict": "REVIEW",
+        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Legacy to Root / Legacy: REVIEW. Nothing blocks the move outright, but 1 finding(s) could not be decided offline or need a decision.",
         "coverage": {
           "same_snapshot": true,
           "complete": true,
@@ -9253,6 +10152,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
             }
           ]
         },
@@ -9268,7 +10206,7 @@
             "id": "scp",
             "title": "Service control policies",
             "status": "GO",
-            "summary": "24 actions evaluated against the SCP chain; 18 flagged.",
+            "summary": "25 actions evaluated against the SCP chain; 18 flagged.",
             "findings": [
               {
                 "status": "INFO",
@@ -10766,9 +11704,22 @@
           {
             "id": "rcp",
             "title": "Resource control policies",
-            "status": "GO",
+            "status": "REVIEW",
             "summary": "7 actions evaluated against the RCP chain; 0 flagged. RCP applicability model 2026-11-01: 17 action(s) on services RCPs do not govern were not evaluated, 0 exempt. 6 inbound requests evaluated; 0 flagged.",
             "findings": [
+              {
+                "status": "REVIEW",
+                "category": "unsupported-evaluation",
+                "confidence": "medium",
+                "source": "workload",
+                "title": "RCP evaluation skipped for sts:AssumeRole on a resource owned by another account",
+                "detail": "resource arn:aws:iam::111111111113:role/CfnOutputReader belongs to account 111111111113, which is in neither snapshot; the RCPs of its organization cannot be evaluated offline.",
+                "action": "sts:AssumeRole",
+                "resource": "arn:aws:iam::111111111113:role/CfnOutputReader",
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services"
+                ]
+              },
               {
                 "status": "INFO",
                 "category": "unsupported-evaluation",
@@ -10864,8 +11815,75 @@
             "status": "GO",
             "summary": "Same organization: the 0 assignment(s) and 0 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions us-east-1, eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from tagging-api"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "observed",
+              "detail": "17 policies read, 3 reference organization identity"
+            }
+          ],
+          "stacks": 7,
+          "stack_resources": 33,
+          "sampled_resources": 12,
+          "resource_source": "tagging-api",
+          "policies_on_organization_identity": 3,
+          "policies_inspected": 17,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 5,
+              "stack_resources": 27,
+              "sampled_resources": 3,
+              "kinds": {
+                "stack": 5,
+                "terraform": 3
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 2,
+              "stack_resources": 6,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-unknown-model": 2
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 3,
+              "kinds": {
+                "unknown": 3
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -12134,19 +13152,26 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
           "informational": 1,
           "known-restriction": 18,
-          "unsupported-evaluation": 1
+          "unsupported-evaluation": 2
         },
         "limitations": [
           "An SCP or RCP that allows an action is not a grant: IAM identity policies, resource policies, permissions boundaries and session policies decide the request and are not evaluated here. The governance-policy evaluation says what the organization forbids, not what the account can do.",
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ],
         "notes": [
           "The target OU is the account's current parent; the simulation compares the account with itself."
@@ -12188,7 +13213,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -12226,7 +13253,7 @@
         ]
       },
       "verdict": "NO-GO",
-      "summary": "NO-GO; changes: placement, governance; 5 blocking, 8 to review",
+      "summary": "NO-GO; changes: placement, governance; 5 blocking, 9 to review",
       "findings": [
         {
           "status": "REVIEW",
@@ -12241,7 +13268,7 @@
       ],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "111111111115",
           "account_name": "larkspur-payments-prod",
@@ -12295,20 +13322,21 @@
           ],
           "source_parent_id": "ou-proposed-legacy",
           "target_ou_id": "ou-fern-pay1",
-          "actions_in_use": 24,
+          "actions_in_use": 25,
           "inbound_access": 5,
-          "tagged_resources": 8,
+          "tagged_resources": 12,
           "regions_assumed": [
             "ap-southeast-1",
             "eu-west-1",
             "us-east-1"
           ],
           "declared_operations": 4,
+          "derived_operations": 1,
           "source_org_path": "o-fernhill0001/r-fern/ou-proposed-legacy/",
           "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-fern-pay1/"
         },
         "verdict": "NO-GO",
-        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Legacy to Root / Business Units / Payments: NO-GO. 5 blocking finding(s) and 7 to review.",
+        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Legacy to Root / Business Units / Payments: NO-GO. 5 blocking finding(s) and 8 to review.",
         "coverage": {
           "same_snapshot": true,
           "complete": true,
@@ -12532,6 +13560,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
             }
           ]
         },
@@ -12547,7 +13614,7 @@
             "id": "scp",
             "title": "Service control policies",
             "status": "NO-GO",
-            "summary": "24 actions evaluated against the SCP chain; 22 flagged.",
+            "summary": "25 actions evaluated against the SCP chain; 22 flagged.",
             "findings": [
               {
                 "status": "NO-GO",
@@ -14390,6 +15457,19 @@
               },
               {
                 "status": "REVIEW",
+                "category": "unsupported-evaluation",
+                "confidence": "medium",
+                "source": "workload",
+                "title": "RCP evaluation skipped for sts:AssumeRole on a resource owned by another account",
+                "detail": "resource arn:aws:iam::111111111113:role/CfnOutputReader belongs to account 111111111113, which is in neither snapshot; the RCPs of its organization cannot be evaluated offline.",
+                "action": "sts:AssumeRole",
+                "resource": "arn:aws:iam::111111111113:role/CfnOutputReader",
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services"
+                ]
+              },
+              {
+                "status": "REVIEW",
                 "category": "potential-impact",
                 "confidence": "medium",
                 "source": "observed",
@@ -14449,7 +15529,7 @@
             "id": "tags",
             "title": "Tag policies",
             "status": "REVIEW",
-            "summary": "2 tag keys governed at the target; 4 non-compliant tag(s) across 8 sampled resources.",
+            "summary": "2 tag keys governed at the target; 4 non-compliant tag(s) across 12 sampled resources.",
             "findings": [
               {
                 "status": "REVIEW",
@@ -14555,6 +15635,22 @@
                 "category": "known-restriction",
                 "confidence": "high",
                 "source": "observed",
+                "title": "cost-center: ec2:volume resources carry no cost-center tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation, Fernhill-Payments-Cost-Centers). Affected: 1 resource(s), for example arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
                 "title": "cost-center: lambda:function resources carry no cost-center tag",
                 "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation, Fernhill-Payments-Cost-Centers). Affected: 1 resource(s), for example arn:aws:lambda:us-east-1:111111111115:function:settlement-notifier.",
                 "evidence": [
@@ -14563,6 +15659,54 @@
                     "side": "target",
                     "policy_type": "TAG",
                     "note": "arn:aws:lambda:us-east-1:111111111115:function:settlement-notifier"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
+                "title": "cost-center: sqs:queue resources carry no cost-center tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation, Fernhill-Payments-Cost-Centers). Affected: 1 resource(s), for example arn:aws:sqs:us-east-1:111111111115:fraud-events.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:sqs:us-east-1:111111111115:fraud-events"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
+                "title": "environment: ec2:volume resources carry no environment tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 1 resource(s), for example arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb"
+                  }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "known-restriction",
+                "confidence": "high",
+                "source": "observed",
+                "title": "environment: sqs:queue resources carry no environment tag",
+                "detail": "Tag policies do not require a tag to be present, so this does not block the move, but these resources fall outside the target standard (Fernhill-Cost-Allocation). Affected: 1 resource(s), for example arn:aws:sqs:us-east-1:111111111115:fraud-events.",
+                "evidence": [
+                  {
+                    "kind": "tag-compliance",
+                    "side": "target",
+                    "policy_type": "TAG",
+                    "note": "arn:aws:sqs:us-east-1:111111111115:fraud-events"
                   }
                 ]
               }
@@ -14712,8 +15856,75 @@
             "status": "GO",
             "summary": "Same organization: the 0 assignment(s) and 0 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions us-east-1, eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from tagging-api"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "observed",
+              "detail": "17 policies read, 3 reference organization identity"
+            }
+          ],
+          "stacks": 7,
+          "stack_resources": 33,
+          "sampled_resources": 12,
+          "resource_source": "tagging-api",
+          "policies_on_organization_identity": 3,
+          "policies_inspected": 17,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 5,
+              "stack_resources": 27,
+              "sampled_resources": 3,
+              "kinds": {
+                "stack": 5,
+                "terraform": 3
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 2,
+              "stack_resources": 6,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-unknown-model": 2
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 3,
+              "kinds": {
+                "unknown": 3
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -16685,21 +17896,28 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
           "declared-impact": 7,
           "informational": 4,
-          "known-restriction": 21,
+          "known-restriction": 25,
           "potential-impact": 5,
-          "unsupported-evaluation": 1
+          "unsupported-evaluation": 2
         },
         "limitations": [
           "An SCP or RCP that allows an action is not a grant: IAM identity policies, resource policies, permissions boundaries and session policies decide the request and are not evaluated here. The governance-policy evaluation says what the organization forbids, not what the account can do.",
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ]
       }
     },
@@ -16732,7 +17950,9 @@
         {
           "layer": "workload",
           "changed": false,
-          "summary": "unchanged"
+          "summary": "unchanged",
+          "evaluation": "evaluated",
+          "detail": "7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity; at this stage 0 item(s) to settle and 0 informational in the workloads check"
         }
       ],
       "state": {
@@ -16770,11 +17990,11 @@
         ]
       },
       "verdict": "REVIEW",
-      "summary": "REVIEW; changes: placement; 0 blocking, 5 to review",
+      "summary": "REVIEW; changes: placement; 0 blocking, 6 to review",
       "findings": [],
       "transition": {
         "tool": "orgshift",
-        "result_schema_version": 3,
+        "result_schema_version": 4,
         "subject": {
           "account_id": "111111111115",
           "account_name": "larkspur-payments-prod",
@@ -16833,20 +18053,21 @@
           ],
           "source_parent_id": "ou-fern-pay1",
           "target_ou_id": "ou-fern-pay1",
-          "actions_in_use": 24,
+          "actions_in_use": 25,
           "inbound_access": 5,
-          "tagged_resources": 8,
+          "tagged_resources": 12,
           "regions_assumed": [
             "ap-southeast-1",
             "eu-west-1",
             "us-east-1"
           ],
           "declared_operations": 4,
+          "derived_operations": 1,
           "source_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-fern-pay1/",
           "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-fern-pay1/"
         },
         "verdict": "REVIEW",
-        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Business Units / Payments to Root / Business Units / Payments: REVIEW. Nothing blocks the move outright, but 5 finding(s) could not be decided offline or need a decision.",
+        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Business Units / Payments to Root / Business Units / Payments: REVIEW. Nothing blocks the move outright, but 6 finding(s) could not be decided offline or need a decision.",
         "coverage": {
           "same_snapshot": true,
           "complete": true,
@@ -17070,6 +18291,45 @@
                 "status": "observed",
                 "required": false
               }
+            },
+            {
+              "domain": "workloads.stacks",
+              "why": "the account's stacks: StackSet instances that are deleted or kept, references between stacks and accounts, and what sits on shared networking",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.resources",
+              "why": "the resource sample whose tags are checked against the target's tag policy and whose provenance sizes a redeployment",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
+            },
+            {
+              "domain": "workloads.policies",
+              "why": "resource policies conditioned on the organization ID or path, which change meaning when the account moves",
+              "check": "workloads",
+              "source": {
+                "status": "observed",
+                "required": false
+              },
+              "target": {
+                "status": "observed",
+                "required": false
+              }
             }
           ]
         },
@@ -17085,7 +18345,7 @@
             "id": "scp",
             "title": "Service control policies",
             "status": "REVIEW",
-            "summary": "24 actions evaluated against the SCP chain; 23 flagged.",
+            "summary": "25 actions evaluated against the SCP chain; 23 flagged.",
             "findings": [
               {
                 "status": "REVIEW",
@@ -19023,6 +20283,19 @@
               },
               {
                 "status": "REVIEW",
+                "category": "unsupported-evaluation",
+                "confidence": "medium",
+                "source": "workload",
+                "title": "RCP evaluation skipped for sts:AssumeRole on a resource owned by another account",
+                "detail": "resource arn:aws:iam::111111111113:role/CfnOutputReader belongs to account 111111111113, which is in neither snapshot; the RCPs of its organization cannot be evaluated offline.",
+                "action": "sts:AssumeRole",
+                "resource": "arn:aws:iam::111111111113:role/CfnOutputReader",
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services"
+                ]
+              },
+              {
+                "status": "REVIEW",
                 "category": "potential-impact",
                 "confidence": "medium",
                 "source": "observed",
@@ -19356,8 +20629,75 @@
             "status": "GO",
             "summary": "Same organization: the 0 assignment(s) and 0 provisioned role(s) on the account are unchanged by a move between OUs.",
             "findings": []
+          },
+          {
+            "id": "workloads",
+            "title": "Workloads",
+            "status": "GO",
+            "summary": "Workload layer evaluated: 7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity. 0 item(s) to settle, 0 informational.",
+            "findings": []
           }
         ],
+        "workload_layer": {
+          "evaluation": "evaluated",
+          "detail": "7 stack(s) with 33 resource(s), 12 sampled resource(s) from tagging-api, 3 of 17 policies read reference organization identity",
+          "coverage": [
+            {
+              "domain": "workloads.stacks",
+              "status": "observed",
+              "detail": "regions us-east-1, eu-west-1"
+            },
+            {
+              "domain": "workloads.resources",
+              "status": "observed",
+              "detail": "a sample from tagging-api"
+            },
+            {
+              "domain": "workloads.policies",
+              "status": "observed",
+              "detail": "17 policies read, 3 reference organization identity"
+            }
+          ],
+          "stacks": 7,
+          "stack_resources": 33,
+          "sampled_resources": 12,
+          "resource_source": "tagging-api",
+          "policies_on_organization_identity": 3,
+          "policies_inspected": 17,
+          "groups": [
+            {
+              "group": "pipeline",
+              "title": "redeployable from a template or pipeline",
+              "stacks": 5,
+              "stack_resources": 27,
+              "sampled_resources": 3,
+              "kinds": {
+                "stack": 5,
+                "terraform": 3
+              }
+            },
+            {
+              "group": "platform",
+              "title": "recreated by Control Tower or a StackSet",
+              "stacks": 2,
+              "stack_resources": 6,
+              "sampled_resources": 0,
+              "kinds": {
+                "stackset-unknown-model": 2
+              }
+            },
+            {
+              "group": "manual-or-unknown",
+              "title": "manual or unknown",
+              "stacks": 0,
+              "stack_resources": 0,
+              "sampled_resources": 3,
+              "kinds": {
+                "unknown": 3
+              }
+            }
+          ]
+        },
         "diff": [
           {
             "type": "SERVICE_CONTROL_POLICY",
@@ -21837,20 +23177,27 @@
             "version": "2026-11-02",
             "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
             "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+          },
+          {
+            "id": "workload-behaviour",
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+            "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
           }
         ],
         "categories": {
           "informational": 1,
           "known-restriction": 23,
           "potential-impact": 5,
-          "unsupported-evaluation": 1
+          "unsupported-evaluation": 2
         },
         "limitations": [
           "An SCP or RCP that allows an action is not a grant: IAM identity policies, resource policies, permissions boundaries and session policies decide the request and are not evaluated here. The governance-policy evaluation says what the organization forbids, not what the account can do.",
           "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
           "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
           "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+          "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+          "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
         ],
         "notes": [
           "The target OU is the account's current parent; the simulation compares the account with itself."
@@ -21934,11 +23281,19 @@
         "4 AWSReservedSSO_* role(s) are deleted from the account: AWSReservedSSO_AdministratorAccess_*, AWSReservedSSO_PaymentsEngineer_*, AWSReservedSSO_ReadOnlyAccess_*, AWSReservedSSO_DataPlatformOperator_*",
         "Permission set AdministratorAccess: 1 assignment(s) removed when the account leaves (group Platform-Admins)",
         "Permission set PaymentsEngineer: 2 assignment(s) removed when the account leaves (group Payments-Engineers, user oncall.payments)",
-        "Permission set ReadOnlyAccess: 1 assignment(s) removed when the account leaves (group Security-Auditors)"
+        "Permission set ReadOnlyAccess: 1 assignment(s) removed when the account leaves (group Security-Auditors)",
+        "Bucket policy of arn:aws:s3:::larkspur-payments-settlement-files denies the account's own principals after the move",
+        "Stack payments-api sits on 2 subnets shared through larkspur-core-network, which the account loses",
+        "Stack payments-ledger-db sits on 2 subnets shared through larkspur-core-network, which the account loses",
+        "Stack payments-network sits on a transit gateway shared through larkspur-core-network, which the account loses",
+        "StackSet instance StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9 is deleted when the account leaves the organization: 4 resource(s)",
+        "Template policy for resource AppLogSubscriptionRole of stack payments-api is conditioned on organization identity that changes with the move",
+        "Trust policy of arn:aws:iam::111111111115:role/DataExportReader stays tied to the organization the account leaves",
+        "Stack payments-api reads output LogDestinationArn of stack shared-observability in account 111111111113"
       ],
       "unknowns": [
-        "24 finding(s) need context the snapshots do not carry (potential impact) and 0 rest on missing evidence across the stages",
-        "7 evaluation(s) are outside what the offline evaluator models",
+        "27 finding(s) need context the snapshots do not carry (potential impact) and 0 rest on missing evidence across the stages",
+        "11 evaluation(s) are outside what the offline evaluator models",
         "Data-plane continuity of shared networking is modelled per resource type, not tested"
       ],
       "reversal": [
@@ -21956,22 +23311,215 @@
         "Create the destination account with Account Factory in the target OU (enrolled and baselined from creation; no transfer prerequisites, no standalone window)",
         "Re-create access: 4 Identity Center assignment(s) on the source account have to be granted in the destination instance",
         "Re-point 5 inbound principal(s) and every resource policy, trust policy and share principal that names account 111111111115 at the new account ID",
-        "A migration plan per workload: data, secrets, DNS and endpoint cutover"
+        "A migration plan per workload: data, secrets, DNS and endpoint cutover",
+        "Redeploy from templates or pipelines: 5 stack(s) with 27 resource(s) and 3 sampled resource(s) outside any stack (payments-network, payments-api, payments-settlement-storage, payments-ledger-db, payments-dr-standby)",
+        "Have the destination's Control Tower and StackSets recreate: 3 stack(s) with 10 resource(s) (StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9, StackSet-larkspur-config-recorder-847f2bc4-f94d-ee77-28f6-0f769702dd36, StackSet-larkspur-config-recorder-680f0561-2c45-0d1a-65b0-f6639c86913b)",
+        "Rebuild by hand, once it is known how they were made: 3 sampled resource(s) outside any stack"
       ],
       "risks": [
         "The account ID changes: ARNs, resource policies, cross-account trusts, RAM principals and hard-coded identifiers in deployments all change",
         "Dual running: two accounts bill and have to be kept consistent until cutover",
-        "Cutover of DNS, endpoints and data has its own downtime, outside what orgshift evaluates"
+        "Cutover of DNS, endpoints and data has its own downtime, outside what orgshift evaluates",
+        "Order: payments-network exports values that payments-api import(s), so it is deployed first and cannot be deleted or have that output changed while they exist.",
+        "Existing infrastructure: payments-network takes transit-gateway tgw-54924a77a3120b1ad from outside its template; the new account needs equivalents of its own or shared with it.",
+        "Cross-account reference: payments-api reads output LogDestinationArn of stack shared-observability in account 111111111113 through arn:aws:iam::111111111113:role/CfnOutputReader; the role's trust has to admit the new account before the stack can be created there.",
+        "Existing infrastructure: payments-api takes subnet subnet-e056c922dbb17986a, subnet-1d0f03c495e44a0e4 from outside its template; the new account needs equivalents of its own or shared with it.",
+        "Existing infrastructure: payments-ledger-db takes subnet subnet-e056c922dbb17986a, subnet-1d0f03c495e44a0e4 from outside its template; the new account needs equivalents of its own or shared with it.",
+        "Data: redeploying a template brings back empty resources; these hold state that needs its own migration: AWS::KMS::Key x1, AWS::RDS::DBInstance x1, AWS::S3::Bucket x1, AWS::SecretsManager::Secret x1.",
+        "Organization identity: 3 policy(ies) are conditioned on the organization ID or path (arn:aws:s3:::larkspur-payments-settlement-files, arn:aws:iam::111111111115:role/DataExportReader, AppLogSubscriptionRole of stack payments-api) and have to name the destination when they are re-created.",
+        "Platform: 3 stack(s) with 10 resource(s) were deployed into the account by the source's platform (larkspur-baseline-roles, larkspur-config-recorder); they are not redeployed from the account. The destination's Control Tower and StackSets have to provide what the workloads use of them."
       ],
       "unknowns": [
-        "The workload inventory and deployment provenance are not collected by this version (a later milestone), so the migration effort is not assessed",
-        "Data volumes, cutover windows and application dependencies are not in the snapshots"
+        "Workload layer evaluated for account 111111111115; the redeployment list is an inventory with counts, not an estimate of effort",
+        "3 sampled resource(s) carry no evidence of how they were deployed (created by hand, by a script, or by a tool that leaves no trace in tags): arn:aws:lambda:us-east-1:111111111115:function:settlement-notifier, arn:aws:sqs:us-east-1:111111111115:fraud-events, arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb.",
+        "3 classification(s) rest on a naming or tag convention rather than a record (medium confidence): arn:aws:ec2:us-east-1:111111111115:instance/i-c5aafe82c7111d6b7, arn:aws:ec2:us-east-1:111111111115:instance/i-5ec8c6966cdcd7b5e, arn:aws:dynamodb:us-east-1:111111111115:table/fraud-scores.",
+        "Which pipeline or person deploys a plain stack is not collected: the template is in CloudFormation, but its parameters' sources, secrets and the pipeline's own configuration are not in the snapshot.",
+        "Resources outside CloudFormation that never carried a tag are not in the sample (the Resource Groups Tagging API does not return them), so the manual-or-unknown group is a lower bound.",
+        "Data volumes, cutover windows, DNS and the dependencies between applications are not in the snapshot."
       ],
       "reversal": [
         "The source account is untouched until it is closed: rollback is a cutover back",
         "An abandoned destination account is closed and stays in the 90-day post-closure period before it disappears",
         "No four-day rule and no standalone-account prerequisites apply"
-      ]
+      ],
+      "redeploy": {
+        "evaluation": "evaluated",
+        "groups": [
+          {
+            "group": "pipeline",
+            "title": "redeployable from a template or pipeline",
+            "stacks": 5,
+            "stack_resources": 27,
+            "sampled_resources": 3,
+            "items": [
+              {
+                "type": "stack",
+                "name": "payments-network",
+                "region": "us-east-1",
+                "provenance": "stack",
+                "provenance_label": "plain CloudFormation stack",
+                "confidence": "high",
+                "resources": 9
+              },
+              {
+                "type": "stack",
+                "name": "payments-api",
+                "region": "us-east-1",
+                "provenance": "stack",
+                "provenance_label": "plain CloudFormation stack",
+                "confidence": "high",
+                "resources": 7
+              },
+              {
+                "type": "stack",
+                "name": "payments-settlement-storage",
+                "region": "us-east-1",
+                "provenance": "stack",
+                "provenance_label": "plain CloudFormation stack",
+                "confidence": "high",
+                "resources": 4
+              },
+              {
+                "type": "stack",
+                "name": "payments-ledger-db",
+                "region": "us-east-1",
+                "provenance": "stack",
+                "provenance_label": "plain CloudFormation stack",
+                "confidence": "high",
+                "resources": 3
+              },
+              {
+                "type": "stack",
+                "name": "payments-dr-standby",
+                "region": "eu-west-1",
+                "provenance": "stack",
+                "provenance_label": "plain CloudFormation stack",
+                "confidence": "high",
+                "resources": 4
+              },
+              {
+                "type": "resource",
+                "name": "arn:aws:ec2:us-east-1:111111111115:instance/i-c5aafe82c7111d6b7",
+                "region": "us-east-1",
+                "resource_type": "ec2:instance",
+                "provenance": "terraform",
+                "provenance_label": "Terraform-style tag convention",
+                "confidence": "medium"
+              },
+              {
+                "type": "resource",
+                "name": "arn:aws:ec2:us-east-1:111111111115:instance/i-5ec8c6966cdcd7b5e",
+                "region": "us-east-1",
+                "resource_type": "ec2:instance",
+                "provenance": "terraform",
+                "provenance_label": "Terraform-style tag convention",
+                "confidence": "medium"
+              },
+              {
+                "type": "resource",
+                "name": "arn:aws:dynamodb:us-east-1:111111111115:table/fraud-scores",
+                "region": "us-east-1",
+                "resource_type": "dynamodb:table",
+                "provenance": "terraform",
+                "provenance_label": "Terraform-style tag convention",
+                "confidence": "medium"
+              }
+            ]
+          },
+          {
+            "group": "platform",
+            "title": "recreated by Control Tower or a StackSet",
+            "stacks": 3,
+            "stack_resources": 10,
+            "sampled_resources": 0,
+            "items": [
+              {
+                "type": "stack",
+                "name": "StackSet-larkspur-baseline-roles-6dca20c6-dd9c-f808-0285-15666f7b21b9",
+                "region": "us-east-1",
+                "provenance": "stackset-service-managed",
+                "provenance_label": "service-managed StackSet",
+                "confidence": "high",
+                "resources": 4,
+                "stack_set": "larkspur-baseline-roles"
+              },
+              {
+                "type": "stack",
+                "name": "StackSet-larkspur-config-recorder-847f2bc4-f94d-ee77-28f6-0f769702dd36",
+                "region": "us-east-1",
+                "provenance": "stackset-service-managed",
+                "provenance_label": "service-managed StackSet",
+                "confidence": "high",
+                "resources": 3,
+                "stack_set": "larkspur-config-recorder"
+              },
+              {
+                "type": "stack",
+                "name": "StackSet-larkspur-config-recorder-680f0561-2c45-0d1a-65b0-f6639c86913b",
+                "region": "eu-west-1",
+                "provenance": "stackset-service-managed",
+                "provenance_label": "service-managed StackSet",
+                "confidence": "high",
+                "resources": 3,
+                "stack_set": "larkspur-config-recorder"
+              }
+            ]
+          },
+          {
+            "group": "manual-or-unknown",
+            "title": "manual or unknown",
+            "stacks": 0,
+            "stack_resources": 0,
+            "sampled_resources": 3,
+            "items": [
+              {
+                "type": "resource",
+                "name": "arn:aws:lambda:us-east-1:111111111115:function:settlement-notifier",
+                "region": "us-east-1",
+                "resource_type": "lambda:function",
+                "provenance": "unknown",
+                "provenance_label": "unknown",
+                "confidence": "low"
+              },
+              {
+                "type": "resource",
+                "name": "arn:aws:sqs:us-east-1:111111111115:fraud-events",
+                "region": "us-east-1",
+                "resource_type": "sqs:queue",
+                "provenance": "unknown",
+                "provenance_label": "unknown",
+                "confidence": "low"
+              },
+              {
+                "type": "resource",
+                "name": "arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb",
+                "region": "us-east-1",
+                "resource_type": "ec2:volume",
+                "provenance": "unknown",
+                "provenance_label": "unknown",
+                "confidence": "low"
+              }
+            ]
+          }
+        ],
+        "dependencies": [
+          "Order: payments-network exports values that payments-api import(s), so it is deployed first and cannot be deleted or have that output changed while they exist.",
+          "Existing infrastructure: payments-network takes transit-gateway tgw-54924a77a3120b1ad from outside its template; the new account needs equivalents of its own or shared with it.",
+          "Cross-account reference: payments-api reads output LogDestinationArn of stack shared-observability in account 111111111113 through arn:aws:iam::111111111113:role/CfnOutputReader; the role's trust has to admit the new account before the stack can be created there.",
+          "Existing infrastructure: payments-api takes subnet subnet-e056c922dbb17986a, subnet-1d0f03c495e44a0e4 from outside its template; the new account needs equivalents of its own or shared with it.",
+          "Existing infrastructure: payments-ledger-db takes subnet subnet-e056c922dbb17986a, subnet-1d0f03c495e44a0e4 from outside its template; the new account needs equivalents of its own or shared with it.",
+          "Data: redeploying a template brings back empty resources; these hold state that needs its own migration: AWS::KMS::Key x1, AWS::RDS::DBInstance x1, AWS::S3::Bucket x1, AWS::SecretsManager::Secret x1.",
+          "Organization identity: 3 policy(ies) are conditioned on the organization ID or path (arn:aws:s3:::larkspur-payments-settlement-files, arn:aws:iam::111111111115:role/DataExportReader, AppLogSubscriptionRole of stack payments-api) and have to name the destination when they are re-created.",
+          "Platform: 3 stack(s) with 10 resource(s) were deployed into the account by the source's platform (larkspur-baseline-roles, larkspur-config-recorder); they are not redeployed from the account. The destination's Control Tower and StackSets have to provide what the workloads use of them."
+        ],
+        "unknowns": [
+          "3 sampled resource(s) carry no evidence of how they were deployed (created by hand, by a script, or by a tool that leaves no trace in tags): arn:aws:lambda:us-east-1:111111111115:function:settlement-notifier, arn:aws:sqs:us-east-1:111111111115:fraud-events, arn:aws:ec2:us-east-1:111111111115:volume/vol-d56035a7aad3c0ccb.",
+          "3 classification(s) rest on a naming or tag convention rather than a record (medium confidence): arn:aws:ec2:us-east-1:111111111115:instance/i-c5aafe82c7111d6b7, arn:aws:ec2:us-east-1:111111111115:instance/i-5ec8c6966cdcd7b5e, arn:aws:dynamodb:us-east-1:111111111115:table/fraud-scores.",
+          "Which pipeline or person deploys a plain stack is not collected: the template is in CloudFormation, but its parameters' sources, secrets and the pipeline's own configuration are not in the snapshot.",
+          "Resources outside CloudFormation that never carried a tag are not in the sample (the Resource Groups Tagging API does not return them), so the manual-or-unknown group is a lower bound.",
+          "Data volumes, cutover windows, DNS and the dependencies between applications are not in the snapshot."
+        ]
+      }
     }
   ],
   "models": [
@@ -21992,6 +23540,12 @@
       "version": "2026-11-02",
       "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
       "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+    },
+    {
+      "id": "workload-behaviour",
+      "version": "2026-11-05",
+      "reference": "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html",
+      "note": "Service-managed StackSets with automatic deployment delete an account's stack instances when it is removed from a target organization or OU, unless RetainStacksOnAccountRemoval is set, in which case the stacks stay and are detached; what happens with automatic deployment off is not documented. Export and Fn::ImportValue are limited to one account and Region and block deleting or changing the exported output while it is imported; Fn::GetStackOutput can cross accounts and Regions through an IAM role and is resolved at create or update time only. The stack name form StackSet-\u003cname\u003e-\u003cid\u003e appears in AWS's examples and is not a documented rule. The Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones; Resource Explorer returns at most the first 1,000 results of a query. Verified against https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html, https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html and https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html."
     }
   ],
   "limitations": [
@@ -21999,7 +23553,8 @@
     "Condition keys evaluated with explicit context: aws:RequestedRegion, aws:PrincipalOrgID, aws:PrincipalOrgPaths, aws:PrincipalAccount, aws:PrincipalArn, aws:PrincipalTag/*, aws:PrincipalIsAWSService, aws:ResourceAccount, aws:ResourceOrgID and aws:ResourceOrgPaths, with the organization IDs and paths before and after the move. Other keys, policy variables and unsupported operators are reported as unsupported, never as an allow.",
     "Tag policies: compliance is checked on the sampled resources (existing-resource compliance), enforcement only for the resource types listed in enforced_for (enforcement on supported operations); whether tags are required at creation depends on separate controls (SCP conditions, Config rules) that are not modelled. A tag policy alone never rejects an untagged resource.",
     "RAM: a share that stops reaching the account is a control-plane change; what happens to traffic already flowing is taken from the per-resource-type behaviour model, and data-plane continuity is not tested.",
-    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict."
+    "Observed usage comes from the actions the snapshot lists; declared critical operations are evaluated the same way. Anything the account will do that is in neither list is not covered by the verdict.",
+    "Workload layer: evaluated from the inventory of the account alone (stacks, a resource sample, the policies read). Resources created outside CloudFormation appear only if the sample returned them; the Tagging API never returns untagged resources and the sample is capped. Of resource policies, bucket policies and role trust policies are read and only for conditions on organization identity; identity policies, KMS key policies and other resource policies are not. Templates are read for references and conditions, not executed, so a value computed at deployment is reported as unknown."
   ],
   "notes": [
     "A cross-organization migration transfers the account and recreates the OU arrangement around it; an OU is never transferred intact. Proposed OUs and policies in this report are to be created in the destination before the stage that uses them.",

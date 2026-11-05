@@ -142,6 +142,7 @@ type StackSetSettings struct {
 	AutoDeployment               bool     `json:"auto_deployment"`
 	RetainStacksOnAccountRemoval bool     `json:"retain_stacks_on_account_removal"`
 	TargetOUs                    []string `json:"target_ous,omitempty"`
+	TargetAccounts               []string `json:"target_accounts,omitempty"`
 	// MatchedByInstance is true when the stack ID is in the StackSet's
 	// instance list; false when the match rests on the stack name.
 	MatchedByInstance bool `json:"matched_by_instance"`
@@ -257,7 +258,19 @@ func Build(s *snapshot.Snapshot, accountID string) *Inventory {
 	}
 	w := s.WorkloadsFor(accountID)
 	if w == nil {
-		inv.Notes = append(inv.Notes, "The snapshot has no workload inventory for this account; name it under member_inspection.accounts and collect again, or add a workloads block by hand.")
+		// No block for the account. When every workload domain is recorded
+		// (or asserted) complete for it, the inventory is empty rather than
+		// missing: the author or the collector says there is nothing.
+		complete := true
+		for _, c := range inv.Coverage {
+			complete = complete && c.Status.Complete()
+		}
+		if complete {
+			inv.Collected = true
+			inv.Notes = append(inv.Notes, "The snapshot lists no stacks, resources or policies for this account and its coverage says the workload domains are complete, so the inventory is empty rather than missing.")
+		} else {
+			inv.Notes = append(inv.Notes, "The snapshot has no workload inventory for this account; name it under member_inspection.accounts and collect again, or add a workloads block by hand.")
+		}
 		inv.Groups = groupSummaries(inv)
 		return inv
 	}
@@ -356,7 +369,7 @@ func classifyStack(s *snapshot.Snapshot, accountID string, st snapshot.Stack) (P
 	var settings *StackSetSettings
 	if ss != nil {
 		settings = &StackSetSettings{Name: ss.Name, PermissionModel: ss.PermissionModel, AdministrationAccountID: ss.AdministrationAccountID,
-			AutoDeployment: ss.AutoDeployment, RetainStacksOnAccountRemoval: ss.RetainStacksOnAccountRemoval, TargetOUs: ss.TargetOUs, MatchedByInstance: byInstance}
+			AutoDeployment: ss.AutoDeployment, RetainStacksOnAccountRemoval: ss.RetainStacksOnAccountRemoval, TargetOUs: ss.TargetOUs, TargetAccounts: ss.TargetAccounts, MatchedByInstance: byInstance}
 	}
 	remainder := snapshot.StackSetNameFromStack(st.Name)
 	// Control Tower first: its baselines are StackSets too, and the name

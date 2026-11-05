@@ -177,6 +177,8 @@ func build(res *evaluator.Result, from, to *snapshot.Snapshot, partOfOU string) 
 			b.controlTowerSteps(c)
 		case "identity-center":
 			b.identityCenterSteps(c)
+		case "workloads":
+			b.workloadSteps(c)
 		}
 	}
 	b.moveSteps()
@@ -323,6 +325,13 @@ func (b *builder) coverageSteps() {
 				cmds = append(cmds, "# the Identity Center APIs answer only in the instance's region: pass --region <instance region>")
 			case "organization_trails", "config_aggregators", "stack_sets":
 				cmds = append(cmds, "# not read by this collector version: add the entries by hand (docs/snapshot.md) and record them under coverage.domains")
+			}
+			if snapshot.IsWorkloadDomain(ev.Reference) {
+				cmds = []string{
+					fmt.Sprintf("# the workload inventory is read inside the member account, through the member inspection role: add %s to member_inspection.accounts in the onboarding configuration", b.acct),
+					fmt.Sprintf("orgshift collect --config orgshift.yaml --side %s --out <%s snapshot>", map[string]string{"source": "source", "target": "destination"}[which], which),
+					fmt.Sprintf("orgshift workloads --snapshot <%s snapshot> --account %s   # what was found", which, b.acct),
+				}
 			}
 			b.add(PhaseBefore, Step{Kind: KindInput, Status: f.Status, Title: fmt.Sprintf("Collect the missing evidence: %s (%s snapshot)", ev.Reference, which), Check: c.ID, Finding: f.Title,
 				Detail:   f.Detail + " Until it is collected the verdict rests on incomplete evidence and a GO is not issued.",

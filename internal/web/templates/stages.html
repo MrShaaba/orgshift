@@ -62,7 +62,7 @@
     </header>
     {{if .Description}}<p class="muted">{{.Description}}</p>{{end}}
     <div class="layers">
-      {{range .Layers}}<span class="layer-chip {{if .Changed}}changed{{end}}" title="{{.Summary}}"><strong>{{.Layer}}</strong> {{.Summary}}</span>{{end}}
+      {{range .Layers}}<span class="layer-chip {{if .Changed}}changed{{end}}" title="{{if .Detail}}{{.Detail}}{{else}}{{.Summary}}{{end}}"><strong>{{.Layer}}</strong> {{.Summary}}{{if .Evaluation}} <span class="pill {{evalClass .Evaluation}}">{{.Evaluation}}</span>{{end}}</span>{{end}}
     </div>
     <p class="state small">State: {{.State.Organization.Name}} <code>{{.State.Organization.ID}}</code> · {{pathLabel .State.Path}}
       {{if .State.Enrolled}} · <span class="pill ct">enrolled</span>{{end}}{{if .State.Governed}} · <span class="pill ct">registered OU</span>{{end}}
@@ -76,6 +76,12 @@
     {{if .Verify}}
     <h4>Operator verification at this stage</h4>
     <ul class="compact verify">{{range .Verify}}<li>☐ {{.}}</li>{{end}}</ul>
+    {{end}}
+    {{with index $.Workloads .Index}}
+    <details class="transition stage-workloads">
+      <summary>{{with .Layer}}<span class="pill {{evalClass .Evaluation}}">{{.Evaluation}}</span>{{end}} Workload layer going into this stage{{with .Inventory}}{{if .Collected}}: {{len .Stacks}} stack(s), {{len .Resources}} sampled resource(s){{end}}{{end}}{{if .Settle}}, {{.Settle}} item(s) to settle{{end}}</summary>
+      {{template "workload_panel" .}}
+    </details>
     {{end}}
     {{if .Transition}}
     <details class="transition">
@@ -98,6 +104,20 @@
       <h4>Risks</h4><ul class="compact">{{range .Risks}}<li>{{.}}</li>{{end}}</ul>
       <h4>Remaining unknowns</h4><ul class="compact">{{range .Unknowns}}<li>{{.}}</li>{{end}}</ul>
       <h4>Reversal limitations</h4><ul class="compact">{{range .Reversal}}<li>{{.}}</li>{{end}}</ul>
+      {{with .Redeploy}}
+      <h4>What must be redeployed <span class="pill {{evalClass .Evaluation}}">{{.Evaluation}}</span></h4>
+      <p class="muted small">From the workload inventory of the account, grouped by how each item was deployed. An inventory with counts, not an estimate of effort.</p>
+      <table class="rollup workload-groups redeploy">
+        <thead><tr><th>Group</th><th class="num">Stacks</th><th class="num">Resources in stacks</th><th class="num">Sampled outside stacks</th></tr></thead>
+        <tbody>{{range .Groups}}<tr><td>{{.Title}}</td><td class="num">{{.Stacks}}</td><td class="num">{{.StackResources}}</td><td class="num">{{.SampledResources}}</td></tr>{{end}}</tbody>
+      </table>
+      {{range .Groups}}{{if .Items}}
+      <details class="workload-more">
+        <summary>{{.Title}}: {{.Line}}</summary>
+        <ul class="compact">{{range .Items}}<li><code>{{.Name}}</code>{{if .Region}} <span class="muted small">{{.Region}}</span>{{end}} <span class="pill prov {{.Provenance}}">{{.Label}}</span> <span class="pill {{confClass .Confidence}}">{{.Confidence}}</span>{{if .Resources}} <span class="muted small">{{.Resources}} resource(s)</span>{{end}}</li>{{end}}</ul>
+      </details>
+      {{end}}{{end}}
+      {{end}}
     </div>
   {{end}}
   </div>

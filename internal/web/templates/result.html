@@ -18,7 +18,7 @@
     <div><h4>From</h4><div>{{$s.SourceOrg.Name}} <code>{{$s.SourceOrg.ID}}</code></div><div class="path">{{parentPath $s.SourcePath}}</div></div>
     <div><h4>To</h4><div>{{$s.TargetOrg.Name}} <code>{{$s.TargetOrg.ID}}</code>{{if $s.CrossOrg}} <span class="pill warn">different organization</span>{{end}}</div><div class="path">{{parentPath $s.TargetPath}}</div></div>
   </div>
-  <p class="muted small">Evaluated {{plural $s.ActionsInUse "action in use" "actions in use"}}, {{plural $s.InboundAccess "inbound access entry" "inbound access entries"}} and {{plural $s.TaggedResources "tagged resource" "tagged resources"}}. Regions assumed when an action has none: {{if $s.RegionsAssumed}}{{join $s.RegionsAssumed ", "}}{{else}}none{{end}}.</p>
+  <p class="muted small">Evaluated {{plural $s.ActionsInUse "action in use" "actions in use"}}{{if $s.DerivedOperations}} ({{$s.DerivedOperations}} derived from the workload inventory){{end}}, {{plural $s.InboundAccess "inbound access entry" "inbound access entries"}} and {{plural $s.TaggedResources "tagged resource" "tagged resources"}}. Workload layer: <a href="#workloads">{{$r.WorkloadLayer.Evaluation}}</a>. Regions assumed when an action has none: {{if $s.RegionsAssumed}}{{join $s.RegionsAssumed ", "}}{{else}}none{{end}}.</p>
 </section>
 
 <section class="panel">
@@ -31,6 +31,12 @@
   <p class="muted small">{{$r.Coverage.Line}}. An empty list in a snapshot only means "nothing exists" when the domain's status is observed or empty; a required domain in any other state turns the check that depends on it into a REVIEW.{{if $r.Coverage.SameSnapshot}} Both columns describe the same snapshot.{{end}}</p>
   {{template "coverage_matrix" $r.Coverage}}
   <p class="muted small">Models used:{{range $r.Models}} <span title="{{.Note}}">{{.ID}} <code>{{.Version}}</code> (<a href="{{.Reference}}">reference</a>)</span>{{end}}</p>
+</section>
+
+<section class="panel workload-panel" id="workloads">
+  <h2>Workloads <span class="pill {{evalClass $r.WorkloadLayer.Evaluation}}">{{$r.WorkloadLayer.Evaluation}}</span></h2>
+  <p class="muted small">What was read inside the account through the member inspection role: its stacks, a resource sample and the policies tied to the organization, each with how it was most likely deployed and the evidence for that. The findings are on the verdict board under Workloads. <code>orgshift workloads --snapshot FILE --account {{$s.AccountID}}</code> prints the same inventory.</p>
+  {{template "workload_panel" .Workloads}}
 </section>
 
 <section class="panel runbook-panel">

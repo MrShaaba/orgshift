@@ -163,3 +163,18 @@ details.transition { border-top: 1px dashed var(--line); margin-top: 10px; paddi
 .strategy { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; } .strategy.selected { border-color: var(--accent); background: var(--accent-bg); }
 .strategy h4 { margin: 8px 0 2px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 ul.verify li { list-style: none; margin-left: -18px; }
+
+/* Workload layer */
+.workload-panel h2 .pill { margin-left: 8px; }
+.workloads h4 { margin: 14px 0 4px; }
+table.workload-groups { width: auto; min-width: 60%; }
+table.workload-stacks td, table.workload-resources td, table.workload-policies td { overflow-wrap: anywhere; }
+table.workload-stacks code, table.workload-resources code { font-size: 0.8rem; }
+.pill.prov { background: #eef2ff; color: #3730a3; font-weight: 600; letter-spacing: 0; }
+.pill.prov.control-tower { background: #e6fffa; color: #0f766e; }
+.pill.prov.stackset-service-managed, .pill.prov.stackset-self-managed, .pill.prov.stackset-unknown-model { background: #fff7ed; color: #c2410c; }
+.pill.prov.terraform { background: #f5f3ff; color: #6d28d9; }
+.pill.prov.unknown { background: #e5e7eb; color: #374151; }
+details.workload-more { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 8px; }
+details.workload-more > summary { cursor: pointer; font-weight: 600; }
+.layer-chip .pill { margin-left: 4px; }

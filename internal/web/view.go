@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"sort"
 	"strings"
 
 	"github.com/MrShaaba/orgshift/internal/evaluator"
 	"github.com/MrShaaba/orgshift/internal/runbook"
 	"github.com/MrShaaba/orgshift/internal/scenario"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
+	"github.com/MrShaaba/orgshift/internal/workload"
 )
 
 // treeNode is a root, OU or account rendered in the side-by-side tree.
@@ -50,6 +52,9 @@ type stagesView struct {
 	CurrentTree  *treeNode
 	FinalTree    *treeNode
 	ExportQuery  template.URL
+	// Workloads is the workload panel of every stage, by stage index: the
+	// inventory the transition into the stage evaluated and what it found.
+	Workloads map[int]*workloadPanel
 }
 
 func newStagesView(rep *scenario.Report, scName, fromName, toName string, from *snapshot.Snapshot, query string) *stagesView {
@@ -66,6 +71,17 @@ func newStagesView(rep *scenario.Report, scName, fromName, toName string, from *
 		proposed[ou.ID] = true
 	}
 	markProposed(v.FinalTree, proposed)
+	// Each stage's panel shows the inventory its transition evaluated: the
+	// account as it was going into the stage. The stage after the account
+	// leaves the organization therefore shows what is left of it.
+	v.Workloads = map[int]*workloadPanel{}
+	before := from
+	for _, st := range rep.Stages {
+		v.Workloads[st.Index] = newWorkloadPanel(st.Transition, before, rep.Subject.AccountID, false)
+		if st.Snapshot != nil {
+			before = st.Snapshot
+		}
+	}
 	if rep.Subject.CrossOrg {
 		v.TargetName = toName
 	} else {
@@ -225,6 +241,8 @@ type resultView struct {
 	ReservedRoles []string
 	// Runbook is the migration checklist built from the result.
 	Runbook *runbook.Runbook
+	// Workloads is the workload panel of the account.
+	Workloads *workloadPanel
 }
 
 func newResultView(res *evaluator.Result, fromName, toName string, from, to *snapshot.Snapshot, query string) *resultView {
@@ -241,6 +259,7 @@ func newResultView(res *evaluator.Result, fromName, toName string, from, to *sna
 		v.ReservedRoles = reservedRoles(ic, subject.ID)
 	}
 	v.Runbook = runbook.Build(res, from, to)
+	v.Workloads = newWorkloadPanel(res, from, subject.ID, true)
 	return v
 }
 
@@ -364,4 +383,120 @@ func dict(pairs ...any) (map[string]any, error) {
 		m[k] = pairs[i+1]
 	}
 	return m, nil
+}
+
+// workloadPanel is what the workload panel renders: how much of the
+// workload layer was evaluated for the account, what its inventory holds
+// with the deployment provenance of every stack and sampled resource, and
+// how many items the workloads check found.
+type workloadPanel struct {
+	AccountID string
+	// Layer is the workload layer of the result (or of a stage's
+	// transition).
+	Layer     *evaluator.WorkloadLayer
+	Inventory *workload.Inventory
+	Stacks    []stackRow
+	// Settle and Informational count the findings of the workloads check.
+	Settle, Informational int
+	// Open says the panel starts expanded.
+	Open bool
+}
+
+// stackRow is a stack with what the table shows about it.
+type stackRow struct {
+	workload.StackView
+	// Types lists the resource types with their counts.
+	Types string
+	// Depends lists what the stack takes from other stacks, accounts and
+	// shared infrastructure.
+	Depends []string
+}
+
+// newWorkloadPanel builds the panel for an account from the snapshot that
+// holds its inventory and the result that evaluated it.
+func newWorkloadPanel(res *evaluator.Result, snap *snapshot.Snapshot, accountID string, open bool) *workloadPanel {
+	p := &workloadPanel{AccountID: accountID, Open: open}
+	if res != nil {
+		p.Layer = res.WorkloadLayer
+		for _, c := range res.Checks {
+			if c.ID != "workloads" {
+				continue
+			}
+			p.Settle = c.Counts()[evaluator.StatusNoGo] + c.Counts()[evaluator.StatusReview]
+			p.Informational = c.Counts()[evaluator.StatusInfo]
+		}
+	}
+	if snap == nil {
+		return p
+	}
+	p.Inventory = workload.Build(snap, accountID)
+	for _, st := range p.Inventory.Stacks {
+		row := stackRow{StackView: st}
+		types := make([]string, 0, len(st.ResourceTypes))
+		for t := range st.ResourceTypes {
+			types = append(types, t)
+		}
+		sort.Strings(types)
+		for i, t := range types {
+			types[i] = fmt.Sprintf("%s x%d", t, st.ResourceTypes[t])
+		}
+		row.Types = strings.Join(types, ", ")
+		exporters := map[string]int{}
+		var order []string
+		for _, im := range st.Imports {
+			from := im.ExportingStack
+			if from == "" {
+				from = "a stack outside the inventory"
+			}
+			if exporters[from] == 0 {
+				order = append(order, from)
+			}
+			exporters[from]++
+		}
+		for _, from := range order {
+			row.Depends = append(row.Depends, fmt.Sprintf("imports %s from %s", plural(exporters[from], "export", "exports"), from))
+		}
+		for _, ex := range st.ExternalOutputs {
+			where := "another stack"
+			if ex.AccountID != "" {
+				where = "account " + ex.AccountID
+			}
+			row.Depends = append(row.Depends, fmt.Sprintf("reads output %s of stack %s in %s", ex.OutputName, ex.StackName, where))
+		}
+		kinds := map[string]int{}
+		var kindOrder []string
+		for _, ref := range st.References {
+			if kinds[ref.Kind] == 0 {
+				kindOrder = append(kindOrder, ref.Kind)
+			}
+			kinds[ref.Kind]++
+		}
+		for _, k := range kindOrder {
+			row.Depends = append(row.Depends, fmt.Sprintf("references %d %s", kinds[k], k))
+		}
+		p.Stacks = append(p.Stacks, row)
+	}
+	return p
+}
+
+// evaluationClass maps a workload evaluation level to a status class.
+func evaluationClass(level string) string {
+	switch level {
+	case workload.Evaluated:
+		return "go"
+	case workload.PartiallyEvaluated:
+		return "review"
+	}
+	return "info"
+}
+
+// confidenceClass maps a provenance confidence to a status class.
+func confidenceClass(c string) string {
+	switch c {
+	case workload.ConfidenceHigh:
+		return "go"
+	case workload.ConfidenceMedium:
+		return "review"
+	}
+	return "info"
 }

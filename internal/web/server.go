@@ -59,6 +59,8 @@ func New(store *Store, logger *log.Logger) (*Server, error) {
 		"doneKey":     doneKey,
 		"lines":       func(list []string) string { return strings.Join(list, "\n") },
 		"coverClass":  coverageClass,
+		"evalClass":   evaluationClass,
+		"confClass":   confidenceClass,
 	}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html")
 	if err != nil {

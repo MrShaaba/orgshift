@@ -158,3 +158,81 @@
   <pre class="json">{{pretty .Document}}</pre>
 </details>
 {{end}}
+
+{{/* workload_panel renders the workload layer of one account: how much of
+     it was evaluated, how the inventory would be redeployed, and every
+     stack, sampled resource and policy with the evidence its deployment
+     provenance rests on. It takes a workloadPanel. */}}
+{{define "workload_panel"}}
+<div class="workloads">
+  {{with .Layer}}
+  <p class="muted small">{{.Detail}}.{{if or $.Settle $.Informational}} The Workloads check has {{$.Settle}} item(s) to settle and {{$.Informational}} informational.{{end}}</p>
+  <div class="layers">
+    {{range .Coverage}}<span class="layer-chip" title="{{.Detail}}"><strong>{{.Domain}}</strong> <span class="pill {{if .Status.Complete}}go{{else}}review{{end}}">{{.Status}}</span>{{if .Detail}} <span class="muted small">{{.Detail}}</span>{{end}}</span>{{end}}
+  </div>
+  {{end}}
+  {{with .Inventory}}
+  {{if .Collected}}
+  <h4>How it would be redeployed</h4>
+  <table class="rollup workload-groups">
+    <thead><tr><th>Group</th><th class="num">Stacks</th><th class="num">Resources in stacks</th><th class="num">Sampled resources outside stacks</th></tr></thead>
+    <tbody>{{range .Groups}}<tr><td>{{.Title}}</td><td class="num">{{.Stacks}}</td><td class="num">{{.StackResources}}</td><td class="num">{{.SampledResources}}</td></tr>{{end}}</tbody>
+  </table>
+  {{if $.Stacks}}
+  <h4>Stacks ({{len $.Stacks}})</h4>
+  <table class="rollup workload-stacks">
+    <thead><tr><th>Stack</th><th>Region</th><th>Deployed by</th><th class="num">Resources</th><th>Depends on</th></tr></thead>
+    <tbody>
+    {{range $.Stacks}}
+      <tr>
+        <td><code>{{.Name}}</code>{{if .TerminationProtection}} <span class="pill info" title="termination protection is on">protected</span>{{end}}<div class="muted small">{{.Status}}</div></td>
+        <td>{{.Region}}</td>
+        <td><span class="pill prov {{.Provenance.Kind}}">{{.Provenance.Kind.Label}}</span> <span class="pill {{confClass .Provenance.Confidence}}" title="confidence of the classification">{{.Provenance.Confidence}}</span>
+          <div class="muted small">{{join .Provenance.Evidence "; "}}</div>
+          {{with .StackSetSettings}}<div class="muted small">StackSet <code>{{.Name}}</code>: auto-deployment {{.AutoDeployment}}, retain stacks on account removal {{.RetainStacksOnAccountRemoval}}{{if .TargetOUs}}, targets {{join .TargetOUs ", "}}{{end}}</div>{{end}}</td>
+        <td class="num" title="{{.Types}}">{{.Resources}}</td>
+        <td class="small">{{range .Depends}}<div>{{.}}</div>{{else}}<span class="muted">nothing outside the stack</span>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  {{if .Resources}}
+  <details class="workload-more">
+    <summary>Sampled resources ({{len .Resources}}) from {{if .ResourceSource}}{{.ResourceSource}}{{else}}an unrecorded source{{end}}{{if .ResourcesTruncated}} <span class="pill review">sample capped</span>{{end}}</summary>
+    <table class="rollup workload-resources">
+      <thead><tr><th>Resource</th><th>Type</th><th>Region</th><th>Deployed by</th><th>Tags</th></tr></thead>
+      <tbody>
+      {{range .Resources}}{{$res := .}}
+        <tr>
+          <td><code>{{.ARN}}</code></td><td>{{.Type}}</td><td>{{.Region}}</td>
+          <td><span class="pill prov {{.Provenance.Kind}}">{{.Provenance.Kind.Label}}</span> <span class="pill {{confClass .Provenance.Confidence}}">{{.Provenance.Confidence}}</span><div class="muted small">{{join .Provenance.Evidence "; "}}</div></td>
+          <td class="small">{{range $k := sortedKeys .Tags}}<div><code>{{$k}}</code> = {{index $res.Tags $k}}</div>{{else}}<span class="muted">no tags</span>{{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </details>
+  {{end}}
+  <details class="workload-more">
+    <summary>Policies that reference organization identity ({{len .Policies}} of {{.PoliciesInspected}} read)</summary>
+    {{if .Policies}}
+    <table class="rollup workload-policies">
+      <thead><tr><th>Kind</th><th>Resource</th><th>Conditions on the organization</th></tr></thead>
+      <tbody>
+      {{range .Policies}}
+        <tr>
+          <td>{{.Kind}}<div class="muted small">{{.Source}}</div></td>
+          <td>{{if .ResourceARN}}<code>{{.ResourceARN}}</code>{{else}}<code>{{.Resource}}</code> of stack <code>{{.Stack}}</code>{{end}}</td>
+          <td class="small">{{range .Conditions}}<div>{{.Effect}} {{.Sid}}: {{.Operator}} <code>{{.Key}}</code> {{join .Values ", "}}{{if .Dynamic}} <span class="pill review" title="computed in the template, not known offline">computed</span>{{end}}</div>{{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}<p class="ok">None of the policies read is conditioned on the organization ID or path.</p>{{end}}
+  </details>
+  {{end}}
+  {{range .Notes}}<p class="muted small">Note: {{.}}</p>{{end}}
+  {{end}}
+</div>
+{{end}}

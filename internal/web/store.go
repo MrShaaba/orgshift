@@ -95,12 +95,14 @@ func (s *Store) Names() []string {
 }
 
 // LoadFixtures adds the fixture organizations, source first, then the
-// partially collected copy of the source, and the two staged scenarios.
+// partially collected copy of the source, and the staged scenarios: the
+// transfer and the recreate strategy for the payments account, and the
+// same-organization one.
 func (s *Store) LoadFixtures() {
 	s.Add(fixtures.LarkspurName, fixtures.Larkspur())
 	s.Add(fixtures.FernhillName, fixtures.Fernhill())
 	s.Add(fixtures.LarkspurPartialName, fixtures.LarkspurPartial())
-	for _, doc := range []string{fixtures.PaymentsToFernhillStaged, fixtures.SandboxToBusinessUnitsStaged} {
+	for _, doc := range []string{fixtures.PaymentsToFernhillStaged, fixtures.PaymentsRecreatedInFernhill, fixtures.SandboxToBusinessUnitsStaged} {
 		if sc, err := scenario.Parse([]byte(doc)); err == nil {
 			s.AddScenario(sc.Name, sc)
 		}

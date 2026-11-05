@@ -156,10 +156,23 @@ func TestCoverageRecordsSkippedAndUnsupported(t *testing.T) {
 	if rec := record(t, snap, snapshot.DomainIdentityCenter); rec.Status != snapshot.CoverageSkipped || !strings.Contains(rec.Reason, "no client") {
 		t.Errorf("identity center without a reason: %+v", rec)
 	}
-	for _, d := range []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets} {
+	for _, d := range []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator} {
 		if rec := record(t, snap, d); rec.Status != snapshot.CoverageUnsupported {
 			t.Errorf("%s should be unsupported: %+v", d, rec)
 		}
+	}
+	// StackSets and the workload inventory are collected by this build; with
+	// no client and no account to inspect they are skipped, with the reason.
+	if rec := record(t, snap, snapshot.DomainStackSets); rec.Status != snapshot.CoverageSkipped || !strings.Contains(rec.Reason, "no client") {
+		t.Errorf("stack_sets without a client: %+v", rec)
+	}
+	for _, d := range snapshot.WorkloadDomains {
+		if rec := record(t, snap, d); rec.Status != snapshot.CoverageSkipped || !strings.Contains(rec.Reason, "member_inspection.accounts") || rec.AccountID != "" {
+			t.Errorf("%s without accounts to inspect: %+v", d, rec)
+		}
+	}
+	if snap.Workloads != nil {
+		t.Errorf("no inventory without an inspected account: %+v", snap.Workloads)
 	}
 	for _, d := range []string{snapshot.DomainOrganization, snapshot.DomainTree, snapshot.DomainAccountTags, snapshot.DomainDelegatedAdmins, snapshot.DomainTrustedAccess, snapshot.DomainPoliciesSCP} {
 		if rec := record(t, snap, d); rec.Status != snapshot.CoverageObserved || rec.Items == 0 {

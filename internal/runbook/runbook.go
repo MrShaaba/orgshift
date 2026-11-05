@@ -323,8 +323,10 @@ func (b *builder) coverageSteps() {
 				cmds = append(cmds, "# the landing zone APIs answer only in the home region: pass --region <home region>")
 			case "identity_center":
 				cmds = append(cmds, "# the Identity Center APIs answer only in the instance's region: pass --region <instance region>")
-			case "organization_trails", "config_aggregators", "stack_sets":
+			case "organization_trails", "config_aggregators":
 				cmds = append(cmds, "# not read by this collector version: add the entries by hand (docs/snapshot.md) and record them under coverage.domains")
+			case "stack_sets":
+				cmds = append(cmds, "# StackSets are read from the management account with cloudformation:ListStackSets, DescribeStackSet and ListStackInstances; grant them (docs/iam) or collect with --config")
 			}
 			if snapshot.IsWorkloadDomain(ev.Reference) {
 				cmds = []string{

@@ -72,16 +72,18 @@ destination:
 | `<side>.management` | An access block (below) for the management account or an Organizations delegated administrator. Reads Organizations, the regions of every account and the management account's own RAM shares. `region` is required here and is the default for the other access blocks. |
 | `<side>.control_tower` | `home_region` (the landing zone APIs answer only there; defaults to the management region) and `enabled` (default true). |
 | `<side>.identity_center` | `region` (the instance APIs answer only there), `enabled`, and an optional `access` block for the delegated administrator account (`from: management` plus `assume_role`). |
-| `<side>.member_inspection` | `role_name` of the role present in every member account, optional `external_id`, `accounts` the preflight always tries, and `sample`: how many more accounts it tries (default 5, `0` none, `-1` all within a 25-call budget). Nothing in this build reads member accounts; the role exists so the trust is in place. |
+| `<side>.member_inspection` | `role_name` of the role present in every member account, optional `external_id`, `accounts` and `sample`. `accounts` are the accounts whose workload inventory is read (name the accounts you plan to move); the preflight always tries the role there and probes one page of each workload read. `sample` is how many more accounts the preflight tries the role in (default 5, `0` none, `-1` all within a 25-call budget). |
 | `<side>.network` | Access blocks for the accounts that own shared networking. RAM lists only the caller's own shares, so each owner is read with its own credentials. |
 | `<side>.security` | Access blocks for the audit and log archive accounts. The preflight verifies their identity; a later milestone reads organization trails and Config aggregators through them. |
-| `<side>.workload_regions` | Regions the workloads run in, for later network-path reasoning. |
-| `<side>.skip` | Coverage domains not to collect: `enabled_regions`, `resource_shares`, `control_tower`, `identity_center`. Recorded as `skipped`. |
+| `<side>.workload_regions` | Regions the workloads run in. The workload inventory is read in each of them (default: the management region); later milestones scope network-path reasoning to them. |
+| `<side>.workloads` | Tunes the workload inventory: `resource_source` (`auto`, `tagging-api` or `resource-explorer`; `auto` uses Resource Explorer when the account has an aggregator index and a searchable default view, otherwise the Resource Groups Tagging API, and the snapshot records which was used) and the per-account caps `max_stacks` (500), `max_resources` (1000), `max_roles` (2000), `max_buckets` (200). |
+| `<side>.skip` | Coverage domains not to collect: `enabled_regions`, `resource_shares`, `control_tower`, `identity_center`, `stack_sets`, `workloads`. Recorded as `skipped`. |
 | `collection.concurrency` | Parallel per-item calls (account tags, regions, shares, permission sets). Default 4, maximum 32. |
 | `collection.retry_attempts` | SDK attempts per call in adaptive retry mode. Default 8. The collector retries throttling on top with full-jitter backoff. |
 | `collection.timeout` | Whole-run timeout, default `10m`. |
 | `collection.checkpoint` | Write `<out>.checkpoint.json` after every completed step and resume from it. Default true. |
-| `billable.cloudtrail_lake`, `billable.config_queries` | Opt-ins for the reads AWS bills. Off by default; `collect` refuses to run with either on until they are implemented. |
+| `billable.bucket_policies` | Opt-in for the bucket policies of the inspected accounts (`s3:ListBuckets`, `s3:GetBucketPolicy`). S3 bills every request: one LIST request per account and one request per bucket in the workload Regions. Off by default; `--with-bucket-policies` turns it on for one run. Off, the workload layer reads partially evaluated. |
+| `billable.cloudtrail_lake`, `billable.config_queries` | Opt-ins for reads AWS bills that are not implemented yet. Off by default; `collect` refuses to run with either on. |
 | `templates.role_prefix` | Prefix of the generated role names, default `Orgshift`. |
 | `templates.trusted_principal_arns` | Who may assume the management-account roles: the operator role or user that runs orgshift. |
 | `templates.external_id` | Required in the trust policies of the management-account roles when set. |
@@ -120,7 +122,7 @@ will add (listed, not granted), and the `aws iam create-role` commands.
 | `org-management` | `OrgshiftOrgRead` | Management account (or a delegated administrator with a resource-based delegation policy for the tree and policy reads). Assumes the member and network roles. |
 | `control-tower` | `OrgshiftControlTowerRead` | Management account, home region. No delegated administrator exists for the Control Tower APIs. |
 | `identity-center` | `OrgshiftIdentityCenterRead` | Management account or the Identity Center delegated administrator. |
-| `member-inspection` | `OrgshiftMemberRead` | Every member account; trust only in this build. |
+| `member-inspection` | `OrgshiftMemberRead` | Every member account (at least the ones named under `member_inspection.accounts`). Reads the workload inventory; the S3 statement for bucket policies is a separate opt-in policy. |
 | `network` | `OrgshiftNetworkRead` | Each account that owns shared networking. |
 
 The actions come from the operation catalog (`internal/collector/operations.go`),
@@ -153,7 +155,7 @@ the member inspection role for the configured accounts plus a sample.
 | `error` | The call failed for another reason, including an empty Control Tower or Identity Center answer in a region where trusted access shows the service is in use. Blocking. |
 | `mismatch` | The credentials belong to another account than configured. Blocking; nothing else is probed with them. |
 | `skipped` | Turned off in the configuration. Not required. |
-| `unknown` | Not tried: nothing existed to try against (no delegated administrator, no share, no policy of the type), a call it depends on failed, or this build does not collect the domain (trails, Config aggregators, StackSets). Only the second case blocks. |
+| `unknown` | Not tried: nothing existed to try against (no delegated administrator, no share, no policy of the type, no account named for inspection), a call it depends on failed, the read is a billed one whose opt-in is off (bucket policies), or this build does not collect the domain (trails, Config aggregators). Only the second case blocks. |
 
 The matrix has the evaluation's coverage-matrix rows (domain, what it
 decides, which check depends on it) plus a `member_inspection` row, with
@@ -191,7 +193,41 @@ orgshift collect --config orgshift.yaml --side destination --out snapshots/desti
   and deletes it; `--no-checkpoint` turns the mechanism off).
 - **Legacy flags.** `orgshift collect --profile NAME --expect-account ID
   --out FILE` runs without a configuration file; `--expect-account` is
-  required because the identity check always runs.
+  required because the identity check always runs. Without a configuration
+  no member account is inspected.
+
+### The workload inventory
+
+For every account under `member_inspection.accounts` the collector assumes
+the member inspection role from the management credentials and reads, in
+each of `workload_regions`:
+
+- the CloudFormation stacks: status, tags, resource types and counts,
+  output keys and export names, imports, termination protection; the
+  template is read in memory for `Fn::GetStackOutput` references to other
+  accounts, identifiers of infrastructure the stack takes from outside
+  (subnets, transit gateways) and policy conditions on organization
+  identity, and is never stored;
+- a resource sample with tags, from Resource Explorer when the account has
+  an aggregator index, otherwise from the Resource Groups Tagging API (which
+  never returns resources that were never tagged);
+- the trust policy of every role, kept only when it is conditioned on the
+  organization ID or path;
+- with `billable.bucket_policies` or `--with-bucket-policies`, the bucket
+  policies, kept on the same condition. This is the one billed read; see
+  [permissions.md](permissions.md#what-the-workload-inventory-costs).
+
+From the management account it also reads the StackSets administered there
+and their stack instances, which is how a stack in a member account is known
+to be a StackSet instance and what happens to it when the account leaves.
+
+Each inspected account gets one coverage record per workload domain
+(`workloads.stacks`, `workloads.resources`, `workloads.policies`). A denied
+call in one domain does not hide what the others read, an account whose role
+cannot be assumed is recorded as `access_denied`, and an account that is not
+in the organization is recorded as an error for that account only.
+`orgshift workloads --snapshot FILE` lists what was read with the
+deployment provenance of every stack and resource.
 
 The snapshot's `coverage` block records every domain, including the ones
 that were skipped, denied or not collected by this build, so a simulation

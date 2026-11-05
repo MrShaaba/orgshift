@@ -22,6 +22,7 @@ func runPreflight(args []string) error {
 	format := fs.String("format", "text", "output format: text, json or markdown")
 	out := fs.String("out", "", "write the report to this file instead of stdout")
 	timeout := fs.Duration("timeout", 5*time.Minute, "overall timeout")
+	bucketPolicies := fs.Bool("with-bucket-policies", false, "OPT-IN, COSTS MONEY: also probe the bucket policy reads (S3 bills one LIST request and one request for the first bucket, per inspected account)")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: orgshift preflight --config orgshift.yaml [--side source|destination|both] [--format text|json|markdown] [--out FILE]")
 		fs.PrintDefaults()
@@ -38,6 +39,9 @@ func runPreflight(args []string) error {
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		return err
+	}
+	if *bucketPolicies {
+		cfg.Billable.BucketPolicies = true
 	}
 	var names []string
 	switch *sideName {

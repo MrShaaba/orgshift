@@ -165,7 +165,7 @@ records was not inspected, whatever other accounts' records say.
 | --- | --- |
 | `regions` | The Regions that were inspected. |
 | `stacks` | CloudFormation stacks, see below. |
-| `resources` | A sample of the account's resources: `{arn, type, region, tags, stack}`. `type` uses the `service:type` notation of tag policies (`ec2:instance`, `s3:bucket`). `stack` is set when a stack lists the resource; the `aws:cloudformation:stack-name` tag, when the resource carries it, stays in `tags`. A sample by design: `resources_truncated` says the cap was reached. |
+| `resources` | A sample of the account's resources: `{arn, type, region, tags, stack}`. `type` uses the `service:type` notation of tag policies (`ec2:instance`, `s3:bucket`). `stack` is the stack the resource belongs to: the collector takes it from the `aws:cloudformation:stack-name` tag CloudFormation puts on the resources it creates (for resource types that propagate stack tags), and the tag stays in `tags`. A sample by design: `resources_truncated` says the cap was reached. |
 | `resource_source` | `tagging-api` (the Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones), `resource-explorer` (returns untagged resources too and stops at the first 1,000 results of a query) or `manual`. |
 | `resource_policies` | The resource-based policies that reference organization identity, see below. Policies that do not are counted in `policies_inspected` and not kept. |
 | `collected_at` | RFC 3339. |

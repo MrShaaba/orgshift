@@ -184,3 +184,44 @@ collection:
 		t.Errorf("JSON duration: %v", c.Collection.Timeout)
 	}
 }
+
+func TestWorkloadsAndBillableConfiguration(t *testing.T) {
+	cfg, err := Parse([]byte(Example))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Billable.BucketPolicies || cfg.Billable.CloudTrailLake || cfg.Billable.ConfigQueries {
+		t.Errorf("every billable read is off in the example: %+v", cfg.Billable)
+	}
+	if cfg.Source.Workloads != nil || len(cfg.Source.WorkloadRegions) != 2 || len(cfg.Source.MemberInspection.Accounts) != 1 {
+		t.Errorf("the example inspects one account in two regions with the default workload settings: %+v", cfg.Source)
+	}
+	base := `schema_version: 1
+source:
+  name: Test
+  management: {account_id: "111111111111", region: us-east-1, profile: test}
+  member_inspection: {role_name: OrgshiftMemberRead, accounts: ["111111111112"]}
+`
+	ok := base + `  workloads: {resource_source: resource-explorer, max_stacks: 10, max_buckets: 5}
+  skip: [stack_sets, workloads]
+billable:
+  bucket_policies: true
+`
+	cfg, err = Parse([]byte(ok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := cfg.Source.Workloads; w == nil || w.ResourceSource != "resource-explorer" || w.MaxStacks != 10 || w.MaxBuckets != 5 || !cfg.Billable.BucketPolicies || !cfg.Source.Skipped("workloads") || !cfg.Source.Skipped("stack_sets") {
+		t.Errorf("workloads block: %+v", cfg.Source.Workloads)
+	}
+	for doc, want := range map[string]string{
+		base + "  workloads: {resource_source: config}\n": `workloads.resource_source "config" is not one of auto, tagging-api, resource-explorer`,
+		base + "  workloads: {max_resources: -1}\n":       "workloads.max_resources must not be negative",
+		base + "  skip: [workloads.stacks]\n":             `"workloads.stacks" is not one of`,
+		base + "  workloads: {resource_sources: auto}\n":  "resource_sources",
+	} {
+		if _, err := Parse([]byte(doc)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("expected an error containing %q, got %v", want, err)
+		}
+	}
+}

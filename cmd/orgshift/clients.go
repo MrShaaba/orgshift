@@ -4,14 +4,20 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/account"
+	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	"github.com/aws/aws-sdk-go-v2/service/controlcatalog"
 	"github.com/aws/aws-sdk-go-v2/service/controltower"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/identitystore"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
+	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
@@ -66,6 +72,12 @@ func buildSide(ctx context.Context, cfg *config.Config, name string, verify bool
 	for _, d := range side.Skip {
 		skip[d] = "configuration: skip " + d
 	}
+	if reason, off := skip["workloads"]; off {
+		delete(skip, "workloads")
+		for _, d := range snapshot.WorkloadDomains {
+			skip[d] = reason
+		}
+	}
 	if !side.ControlTowerEnabled() {
 		skip[snapshot.DomainControlTower] = "configuration: control_tower disabled"
 		skip[snapshot.DomainEnrolledAccounts] = skip[snapshot.DomainControlTower]
@@ -93,6 +105,10 @@ func buildSide(ctx context.Context, cfg *config.Config, name string, verify bool
 		ctCfg.Region = side.ControlTowerRegion()
 		mgmt.ControlTower, mgmt.ControlCatalog, mgmt.ControlTowerRegion = controltower.NewFromConfig(ctCfg), controlcatalog.NewFromConfig(ctCfg), ctCfg.Region
 		opts.ControlTower, opts.ControlCatalog = mgmt.ControlTower, mgmt.ControlCatalog
+	}
+	if _, off := skip[snapshot.DomainStackSets]; !off {
+		mgmt.StackSets = cloudformation.NewFromConfig(mgmtCfg)
+		opts.StackSets = mgmt.StackSets
 	}
 	in := preflight.SideInput{Name: name, Management: mgmt, Skip: skip}
 	if _, off := skip[snapshot.DomainIdentityCenter]; !off {
@@ -141,8 +157,52 @@ func buildSide(ctx context.Context, cfg *config.Config, name string, verify bool
 	}
 	if m := side.MemberInspection; m != nil {
 		in.Member = &preflight.Member{RoleName: m.RoleName, ExternalID: m.ExternalID, Accounts: m.Accounts, Sample: m.MemberSample(), STS: sts.NewFromConfig(mgmtCfg)}
+		if _, off := skip[snapshot.DomainWorkloadStacks]; !off {
+			regions := side.WorkloadRegions
+			if len(regions) == 0 {
+				regions = []string{mgmtCfg.Region}
+			}
+			factory := memberClients(mgmtCfg, m, bo, cfg.Billable.BucketPolicies)
+			w := &collector.WorkloadOptions{Accounts: m.Accounts, Regions: regions, Clients: factory, BucketPolicies: cfg.Billable.BucketPolicies}
+			if sw := side.Workloads; sw != nil {
+				w.ResourceSource, w.MaxStacks, w.MaxResources, w.MaxBuckets, w.MaxRoles = sw.ResourceSource, sw.MaxStacks, sw.MaxResources, sw.MaxBuckets, sw.MaxRoles
+			}
+			opts.Workloads = w
+			in.Member.Clients, in.Member.Regions, in.Member.ResourceSource, in.Member.BucketPolicies = factory, regions, w.ResourceSource, cfg.Billable.BucketPolicies
+		}
 	}
 	sc.preflight = in
 	sc.collect = opts
 	return sc, nil
+}
+
+// memberClients returns the factory that builds the clients of a member
+// account in a Region by assuming the member inspection role from the
+// management credentials. Building is offline: the role is assumed by the
+// first call made with the clients. The S3 client exists only when the
+// bucket-policies opt-in is on, so nothing can call it otherwise.
+func memberClients(mgmtCfg aws.Config, m *config.MemberInspection, bo awsaccess.BuildOptions, bucketPolicies bool) collector.MemberClientFactory {
+	var mu sync.Mutex
+	cache := map[string]*collector.MemberClients{}
+	return func(ctx context.Context, accountID, region string) (*collector.MemberClients, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		key := accountID + "/" + region
+		if c, ok := cache[key]; ok {
+			return c, nil
+		}
+		access := config.Access{Label: "member " + accountID, AccountID: accountID, Region: region, From: "management",
+			AssumeRole: []config.RoleHop{{RoleARN: fmt.Sprintf("arn:aws:iam::%s:role/%s", accountID, m.RoleName), ExternalID: m.ExternalID, SessionName: "orgshift-workloads"}}}
+		c, err := awsaccess.Build(ctx, access, &mgmtCfg, bo)
+		if err != nil {
+			return nil, err
+		}
+		mc := &collector.MemberClients{Stacks: cloudformation.NewFromConfig(c), Tagging: resourcegroupstaggingapi.NewFromConfig(c),
+			ResourceExplorer: resourceexplorer2.NewFromConfig(c), Roles: iam.NewFromConfig(c)}
+		if bucketPolicies {
+			mc.Buckets = s3.NewFromConfig(c)
+		}
+		cache[key] = mc
+		return mc, nil
+	}
 }

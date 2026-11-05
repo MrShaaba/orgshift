@@ -42,10 +42,34 @@ func TestEveryWildcardIsJustifiedAndActionsMatchTheCatalog(t *testing.T) {
 				}
 			}
 		}
+		// Billable reads are never in the default permissions policy: they
+		// sit in a separate opt-in statement, each with its justification.
+		optIn := map[string]bool{}
+		for _, s := range tpl.OptIn {
+			if len(s.Justification) < 40 || !strings.Contains(s.Justification, "bills") {
+				t.Errorf("%s/%s: an opt-in statement says what AWS bills", tpl.ID, s.Sid)
+			}
+			for _, a := range s.Actions {
+				optIn[a] = true
+				op, ok := collector.Lookup(a)
+				if !ok || !op.Used || op.Kind != collector.KindReadBillable || op.OptIn == "" {
+					t.Errorf("%s/%s: %s is not a billable read with an opt-in", tpl.ID, s.Sid, a)
+				}
+			}
+		}
 		for _, a := range collector.ActionsFor(tpl.ID, false) {
-			if !granted[a] {
+			op, _ := collector.Lookup(a)
+			switch {
+			case op.Kind == collector.KindReadBillable && granted[a]:
+				t.Errorf("%s: billable %s must not be in the default permissions policy", tpl.ID, a)
+			case op.Kind == collector.KindReadBillable && !optIn[a]:
+				t.Errorf("%s: billable %s is missing from the opt-in statement", tpl.ID, a)
+			case op.Kind != collector.KindReadBillable && !granted[a]:
 				t.Errorf("%s: catalog action %s is not in the permissions policy", tpl.ID, a)
 			}
+		}
+		if (tpl.OptInPolicy == nil) != (len(tpl.OptIn) == 0) {
+			t.Errorf("%s: opt-in policy and statements disagree", tpl.ID)
 		}
 		for _, p := range tpl.Planned {
 			if p.Used || granted[p.Action()] {
@@ -102,8 +126,26 @@ func TestPlaceholdersAndConfiguredValues(t *testing.T) {
 		t.Errorf("delegation policy example: %s", org.DelegationPolicy)
 	}
 	member := byID[collector.RoleMemberInspection]
-	if member.PermissionsPolicy != nil || !strings.Contains(string(member.TrustPolicy), "arn:aws:iam::<management-account-id>:role/OrgshiftOrgRead") {
-		t.Errorf("member role: trust only, from the org role: %s", member.TrustPolicy)
+	if !strings.Contains(string(member.TrustPolicy), "arn:aws:iam::<management-account-id>:role/OrgshiftOrgRead") {
+		t.Errorf("member role trusts the org role: %s", member.TrustPolicy)
+	}
+	perm := string(member.PermissionsPolicy)
+	for _, want := range []string{"cloudformation:DescribeStacks", "cloudformation:ListStacks", "cloudformation:GetTemplate", "tag:GetResources", "resource-explorer-2:Search", "iam:ListRoles"} {
+		if !strings.Contains(perm, want) {
+			t.Errorf("member permissions should grant %s: %s", want, perm)
+		}
+	}
+	if strings.Contains(perm, "s3:") {
+		t.Errorf("the S3 reads are billed and must not be in the default member policy: %s", perm)
+	}
+	if optIn := string(member.OptInPolicy); !strings.Contains(optIn, "s3:GetBucketPolicy") || !strings.Contains(optIn, "s3:ListAllMyBuckets") || strings.Contains(optIn, "s3:ListBuckets\"") {
+		t.Errorf("the opt-in policy carries the S3 reads under their IAM names: %s", optIn)
+	}
+	if !strings.Contains(strings.Join(member.Commands, "\n"), "# only for the billable opt-in: aws iam put-role-policy") {
+		t.Errorf("the opt-in policy is attached by a separate, commented command: %v", member.Commands)
+	}
+	if !strings.Contains(string(org.PermissionsPolicy), "cloudformation:ListStackSets") {
+		t.Errorf("the org role reads the StackSets: %s", org.PermissionsPolicy)
 	}
 	if !strings.Contains(byID[collector.RoleControlTower].DelegatedAdministrator, "no delegated administrator") && !strings.Contains(byID[collector.RoleControlTower].DelegatedAdministrator, "None") {
 		t.Error("control tower has no delegated administrator")
@@ -160,7 +202,7 @@ func TestWriteFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"README.md", "control-tower-permissions.json", "control-tower-trust.json", "identity-center-permissions.json", "identity-center-trust.json", "member-inspection-trust.json", "network-permissions.json", "network-trust.json", "org-management-delegation-policy.json", "org-management-permissions.json", "org-management-trust.json"}
+	want := []string{"README.md", "control-tower-permissions.json", "control-tower-trust.json", "identity-center-permissions.json", "identity-center-trust.json", "member-inspection-billable-opt-in.json", "member-inspection-permissions.json", "member-inspection-trust.json", "network-permissions.json", "network-trust.json", "org-management-delegation-policy.json", "org-management-permissions.json", "org-management-trust.json"}
 	if len(paths) != len(want) {
 		t.Fatalf("files: %v", paths)
 	}
@@ -205,6 +247,35 @@ func TestDocsIAMMatchesTheGenerator(t *testing.T) {
 	for _, e := range entries {
 		if _, ok := files[e.Name()]; !ok {
 			t.Errorf("docs/iam/%s is not generated; remove it or teach the generator", e.Name())
+		}
+	}
+}
+
+// With the opt-in on in the configuration, the S3 statement is part of the
+// member role's permissions policy and no separate opt-in file is written.
+func TestBucketPolicyOptInMovesIntoThePermissionsPolicy(t *testing.T) {
+	cfg, err := config.Parse([]byte(config.Example))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Billable.BucketPolicies = true
+	ts, err := Generate(Input{Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tpl := range ts {
+		if tpl.ID != collector.RoleMemberInspection {
+			continue
+		}
+		perm := string(tpl.PermissionsPolicy)
+		if !strings.Contains(perm, "s3:GetBucketPolicy") || !strings.Contains(perm, "s3:ListAllMyBuckets") || tpl.OptInPolicy != nil || len(tpl.OptIn) != 0 {
+			t.Errorf("opted in, the S3 reads belong to the permissions policy: %s", perm)
+		}
+		if !strings.Contains(strings.Join(tpl.Notes, " "), "billable.bucket_policies is on") {
+			t.Errorf("the notes should say why the S3 statement is there: %v", tpl.Notes)
+		}
+		if _, ok := Files(ts, Input{Config: cfg})["member-inspection-billable-opt-in.json"]; ok {
+			t.Error("no separate opt-in file when the statement is in the permissions policy")
 		}
 	}
 }

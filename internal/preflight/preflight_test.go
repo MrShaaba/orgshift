@@ -11,15 +11,25 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/account"
 	accounttypes "github.com/aws/aws-sdk-go-v2/service/account/types"
+	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	cfntypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/controlcatalog"
 	cctypes "github.com/aws/aws-sdk-go-v2/service/controlcatalog/types"
 	"github.com/aws/aws-sdk-go-v2/service/controltower"
 	cttypes "github.com/aws/aws-sdk-go-v2/service/controltower/types"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/identitystore"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
 	ramtypes "github.com/aws/aws-sdk-go-v2/service/ram/types"
+	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
+	retypes "github.com/aws/aws-sdk-go-v2/service/resourceexplorer2/types"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	tagtypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	ssotypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -42,6 +52,9 @@ type fake struct {
 	noInstance    bool
 	trusted       []string
 	throttleOnce  map[string]bool
+	// aggregator is the Region of the member accounts' Resource Explorer
+	// aggregator index; empty means none.
+	aggregator string
 
 	mu    sync.Mutex
 	calls map[string]int
@@ -340,13 +353,131 @@ func (f *fake) DescribeGroup(context.Context, *identitystore.DescribeGroupInput,
 	return &identitystore.DescribeGroupOutput{DisplayName: aws.String("Admins")}, nil
 }
 
+// The StackSet reads of the management account and the workload reads of
+// a member account, answered by the same fake.
+
+func (f *fake) ListStackSets(context.Context, *cloudformation.ListStackSetsInput, ...func(*cloudformation.Options)) (*cloudformation.ListStackSetsOutput, error) {
+	if err := f.call("ListStackSets"); err != nil {
+		return nil, err
+	}
+	return &cloudformation.ListStackSetsOutput{Summaries: []cfntypes.StackSetSummary{{StackSetName: aws.String("baseline-roles")}}}, nil
+}
+
+func (f *fake) DescribeStackSet(context.Context, *cloudformation.DescribeStackSetInput, ...func(*cloudformation.Options)) (*cloudformation.DescribeStackSetOutput, error) {
+	if err := f.call("DescribeStackSet"); err != nil {
+		return nil, err
+	}
+	return &cloudformation.DescribeStackSetOutput{StackSet: &cfntypes.StackSet{StackSetName: aws.String("baseline-roles"), PermissionModel: cfntypes.PermissionModelsServiceManaged}}, nil
+}
+
+func (f *fake) ListStackInstances(context.Context, *cloudformation.ListStackInstancesInput, ...func(*cloudformation.Options)) (*cloudformation.ListStackInstancesOutput, error) {
+	if err := f.call("ListStackInstances"); err != nil {
+		return nil, err
+	}
+	return &cloudformation.ListStackInstancesOutput{Summaries: []cfntypes.StackInstanceSummary{{Account: aws.String(member)}}}, nil
+}
+
+func (f *fake) DescribeStacks(context.Context, *cloudformation.DescribeStacksInput, ...func(*cloudformation.Options)) (*cloudformation.DescribeStacksOutput, error) {
+	if err := f.call("DescribeStacks"); err != nil {
+		return nil, err
+	}
+	return &cloudformation.DescribeStacksOutput{Stacks: []cfntypes.Stack{{StackName: aws.String("payments-api")}}}, nil
+}
+
+func (f *fake) ListStackResources(context.Context, *cloudformation.ListStackResourcesInput, ...func(*cloudformation.Options)) (*cloudformation.ListStackResourcesOutput, error) {
+	if err := f.call("ListStackResources"); err != nil {
+		return nil, err
+	}
+	return &cloudformation.ListStackResourcesOutput{StackResourceSummaries: []cfntypes.StackResourceSummary{{ResourceType: aws.String("AWS::IAM::Role")}}}, nil
+}
+
+func (f *fake) ListExports(context.Context, *cloudformation.ListExportsInput, ...func(*cloudformation.Options)) (*cloudformation.ListExportsOutput, error) {
+	if err := f.call("ListExports"); err != nil {
+		return nil, err
+	}
+	return &cloudformation.ListExportsOutput{}, nil
+}
+
+func (f *fake) ListImports(context.Context, *cloudformation.ListImportsInput, ...func(*cloudformation.Options)) (*cloudformation.ListImportsOutput, error) {
+	if err := f.call("ListImports"); err != nil {
+		return nil, err
+	}
+	return &cloudformation.ListImportsOutput{}, nil
+}
+
+func (f *fake) GetTemplate(context.Context, *cloudformation.GetTemplateInput, ...func(*cloudformation.Options)) (*cloudformation.GetTemplateOutput, error) {
+	if err := f.call("GetTemplate"); err != nil {
+		return nil, err
+	}
+	return &cloudformation.GetTemplateOutput{TemplateBody: aws.String(`{"Resources": {}}`)}, nil
+}
+
+func (f *fake) GetResources(context.Context, *resourcegroupstaggingapi.GetResourcesInput, ...func(*resourcegroupstaggingapi.Options)) (*resourcegroupstaggingapi.GetResourcesOutput, error) {
+	if err := f.call("GetResources"); err != nil {
+		return nil, err
+	}
+	return &resourcegroupstaggingapi.GetResourcesOutput{ResourceTagMappingList: []tagtypes.ResourceTagMapping{{ResourceARN: aws.String("arn:aws:sqs:us-east-1:" + member + ":events")}}}, nil
+}
+
+func (f *fake) ListIndexes(context.Context, *resourceexplorer2.ListIndexesInput, ...func(*resourceexplorer2.Options)) (*resourceexplorer2.ListIndexesOutput, error) {
+	if err := f.call("ListIndexes"); err != nil {
+		return nil, err
+	}
+	out := &resourceexplorer2.ListIndexesOutput{}
+	if f.aggregator != "" {
+		out.Indexes = []retypes.Index{{Region: aws.String(f.aggregator), Type: retypes.IndexTypeAggregator}}
+	}
+	return out, nil
+}
+
+func (f *fake) Search(context.Context, *resourceexplorer2.SearchInput, ...func(*resourceexplorer2.Options)) (*resourceexplorer2.SearchOutput, error) {
+	if err := f.call("Search"); err != nil {
+		return nil, err
+	}
+	return &resourceexplorer2.SearchOutput{Resources: []retypes.Resource{{Arn: aws.String("arn:aws:sqs:us-east-1:" + member + ":events")}}}, nil
+}
+
+func (f *fake) ListRoles(context.Context, *iam.ListRolesInput, ...func(*iam.Options)) (*iam.ListRolesOutput, error) {
+	if err := f.call("ListRoles"); err != nil {
+		return nil, err
+	}
+	return &iam.ListRolesOutput{Roles: []iamtypes.Role{{RoleName: aws.String("AppInstance")}}}, nil
+}
+
+func (f *fake) ListBuckets(context.Context, *s3.ListBucketsInput, ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
+	if err := f.call("ListBuckets"); err != nil {
+		return nil, err
+	}
+	return &s3.ListBucketsOutput{Buckets: []s3types.Bucket{{Name: aws.String("settlement")}}}, nil
+}
+
+func (f *fake) GetBucketPolicy(context.Context, *s3.GetBucketPolicyInput, ...func(*s3.Options)) (*s3.GetBucketPolicyOutput, error) {
+	if err := f.call("GetBucketPolicy"); err != nil {
+		return nil, err
+	}
+	return nil, &smithy.GenericAPIError{Code: "NoSuchBucketPolicy", Message: "The bucket policy does not exist"}
+}
+
+// memberFactory hands the fake out as the clients of any member account;
+// the S3 client exists only with the opt-in, as in the CLI.
+func memberFactory(f *fake, bucketPolicies bool) collector.MemberClientFactory {
+	return func(context.Context, string, string) (*collector.MemberClients, error) {
+		mc := &collector.MemberClients{Stacks: f, Tagging: f, ResourceExplorer: f, Roles: f}
+		if bucketPolicies {
+			mc.Buckets = f
+		}
+		return mc, nil
+	}
+}
+
 // clientsFor wires one fake into every client slot.
 func clientsFor(f *fake, label, expected string) *Clients {
-	return &Clients{Label: label, ExpectedAccount: expected, Via: "profile test", Region: "us-east-1", STS: f, Organizations: f, Account: f, RAM: f, ControlTower: f, ControlTowerRegion: "us-east-1", ControlCatalog: f, SSOAdmin: f, IdentityCenterRegion: "us-east-1", IdentityStore: f}
+	return &Clients{Label: label, ExpectedAccount: expected, Via: "profile test", Region: "us-east-1", STS: f, Organizations: f, Account: f, RAM: f, ControlTower: f, ControlTowerRegion: "us-east-1", ControlCatalog: f, SSOAdmin: f, IdentityCenterRegion: "us-east-1", IdentityStore: f, StackSets: f}
 }
 
 func side(name string, f *fake, expected string) SideInput {
-	return SideInput{Name: name, Management: clientsFor(f, "management", expected), Member: &Member{RoleName: "OrgshiftMemberRead", Accounts: []string{member}, Sample: 2, STS: f}, Skip: map[string]string{}}
+	return SideInput{Name: name, Management: clientsFor(f, "management", expected),
+		Member: &Member{RoleName: "OrgshiftMemberRead", Accounts: []string{member}, Sample: 2, STS: f, Clients: memberFactory(f, false), Regions: []string{"us-east-1"}}, Skip: map[string]string{}}
 }
 
 func domain(t *testing.T, s SideResult, name string) DomainResult {
@@ -378,7 +509,7 @@ func TestEverythingAvailableIsReady(t *testing.T) {
 	s := res.Sides[0]
 	for _, d := range s.Domains {
 		switch d.Domain {
-		case snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets, snapshot.DomainWorkloadStacks, snapshot.DomainWorkloadResources, snapshot.DomainWorkloadPolicies:
+		case snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator:
 			if d.Status != Unknown || d.Required || !strings.Contains(d.Detail, "not collected by this build") {
 				t.Errorf("%s should be unknown and not required: %+v", d.Domain, d)
 			}
@@ -395,7 +526,9 @@ func TestEverythingAvailableIsReady(t *testing.T) {
 			t.Errorf("probe timing: %+v", p)
 		}
 	}
-	for _, want := range []string{"organizations:DescribeOrganization", "organizations:ListTargetsForPolicy", "account:ListRegions", "ram:ListResources", "controltower:ListEnabledControls", "controlcatalog:GetControl", "sso:ListAccountAssignments", "identitystore:DescribeGroup", "sts:AssumeRole", "organizations:ListDelegatedServicesForAccount"} {
+	for _, want := range []string{"organizations:DescribeOrganization", "organizations:ListTargetsForPolicy", "account:ListRegions", "ram:ListResources", "controltower:ListEnabledControls", "controlcatalog:GetControl", "sso:ListAccountAssignments", "identitystore:DescribeGroup", "sts:AssumeRole", "organizations:ListDelegatedServicesForAccount",
+		"cloudformation:ListStackSets", "cloudformation:DescribeStackSet", "cloudformation:ListStackInstances", "cloudformation:DescribeStacks", "cloudformation:ListStackResources", "cloudformation:ListExports", "cloudformation:GetTemplate",
+		"tag:GetResources", "resource-explorer-2:ListIndexes", "iam:ListRoles"} {
 		if !ops[want] {
 			t.Errorf("%s was not probed; probed: %v", want, ops)
 		}
@@ -600,5 +733,116 @@ func TestSeparateIdentityCenterAccessIsVerified(t *testing.T) {
 	}
 	if d := domain(t, s, snapshot.DomainIdentityCenter); d.Status != Available {
 		t.Errorf("identity center: %+v", d)
+	}
+}
+
+// The workload reads are probed inside the accounts named for inspection:
+// one page of each, never the billed S3 reads unless they are opted in.
+func TestWorkloadProbes(t *testing.T) {
+	f := newFake("111111111111")
+	res := Run(context.Background(), Input{Sides: []SideInput{side("source", f, "111111111111")}})
+	s := res.Sides[0]
+	if !res.Ready {
+		t.Fatalf("everything is available: %v", res.Blocking)
+	}
+	for _, d := range snapshot.WorkloadDomains {
+		if r := domain(t, s, d); r.Status != Available || !r.Required {
+			t.Errorf("%s: %+v", d, r)
+		}
+	}
+	if d := domain(t, s, snapshot.DomainStackSets); d.Status != Available || !strings.Contains(d.Detail, "3 call(s)") {
+		t.Errorf("stack sets: %+v", d)
+	}
+	if f.count("ListBuckets")+f.count("GetBucketPolicy") != 0 {
+		t.Errorf("the billed S3 reads are not probed without the opt-in: %d", f.count("ListBuckets")+f.count("GetBucketPolicy"))
+	}
+	if f.count("ListImports") != 0 {
+		t.Error("ListImports has nothing safe to probe and is left to the collector")
+	}
+	var bucketNote, explorerNote string
+	for _, p := range s.Probes {
+		if p.Operation == "s3:GetBucketPolicy" {
+			bucketNote = string(p.Status) + ": " + p.Detail
+		}
+		if p.Operation == "resource-explorer-2:ListIndexes" {
+			explorerNote = string(p.Status) + ": " + p.Detail
+		}
+		if snapshot.IsWorkloadDomain(p.Domain) && p.Access != "member "+member {
+			t.Errorf("workload probes run inside the member account: %+v", p)
+		}
+	}
+	if !strings.Contains(bucketNote, "unknown: not tried: bucket policies are a billed read") || !strings.Contains(bucketNote, "partially evaluated") {
+		t.Errorf("the S3 probe says why it was not tried: %s", bucketNote)
+	}
+	if !strings.Contains(explorerNote, "available: no aggregator index: the collector uses the Resource Groups Tagging API") {
+		t.Errorf("resource explorer without an aggregator: %s", explorerNote)
+	}
+
+	// With the opt-in the S3 reads are probed: one bucket, billed.
+	f = newFake("111111111111")
+	in := side("source", f, "111111111111")
+	in.Member.Clients, in.Member.BucketPolicies = memberFactory(f, true), true
+	res = Run(context.Background(), Input{Sides: []SideInput{in}})
+	if f.count("ListBuckets") != 1 || f.count("GetBucketPolicy") != 1 || !res.Ready {
+		t.Errorf("opted in: %d ListBuckets, %d GetBucketPolicy, ready %t", f.count("ListBuckets"), f.count("GetBucketPolicy"), res.Ready)
+	}
+	// An aggregator index is searched; a denied search does not block when
+	// the source is auto, because the Tagging API is the fallback.
+	f = newFake("111111111111")
+	f.aggregator = "us-east-1"
+	f.deny["Search"] = denied("resource-explorer-2:Search")
+	res = Run(context.Background(), Input{Sides: []SideInput{side("source", f, "111111111111")}})
+	if d := domain(t, res.Sides[0], snapshot.DomainWorkloadResources); !res.Ready || d.Status != Available || f.count("Search") != 1 {
+		t.Errorf("a failed search with the Tagging API available: %+v ready %t", d, res.Ready)
+	}
+	// Asked for explicitly, the same denial blocks.
+	f = newFake("111111111111")
+	f.aggregator = "us-east-1"
+	f.deny["Search"] = denied("resource-explorer-2:Search")
+	in = side("source", f, "111111111111")
+	in.Member.ResourceSource = snapshot.ResourceSourceResourceExplorer
+	res = Run(context.Background(), Input{Sides: []SideInput{in}})
+	if d := domain(t, res.Sides[0], snapshot.DomainWorkloadResources); res.Ready || d.Status != Denied || f.count("GetResources") != 0 {
+		t.Errorf("explicit resource-explorer with a denied search: %+v", d)
+	}
+	// A denied read inside the member account blocks and names the call.
+	f = newFake("111111111111")
+	f.deny["DescribeStacks"] = denied("cloudformation:DescribeStacks")
+	res = Run(context.Background(), Input{Sides: []SideInput{side("source", f, "111111111111")}})
+	if d := domain(t, res.Sides[0], snapshot.DomainWorkloadStacks); res.Ready || d.Status != Denied || !strings.Contains(strings.Join(res.Blocking, "\n"), "cloudformation:DescribeStacks denied for member "+member) {
+		t.Errorf("denied stacks: %+v %v", d, res.Blocking)
+	}
+	if f.count("GetTemplate") != 0 {
+		t.Error("nothing more is tried in a domain whose first call was denied")
+	}
+	// No account named: nothing to try, and that is said rather than
+	// shown as available.
+	f = newFake("111111111111")
+	in = side("source", f, "111111111111")
+	in.Member.Accounts = nil
+	res = Run(context.Background(), Input{Sides: []SideInput{in}})
+	for _, d := range snapshot.WorkloadDomains {
+		if r := domain(t, res.Sides[0], d); r.Status != Unknown || r.Required || !strings.Contains(r.Detail, "no account named under member_inspection.accounts") {
+			t.Errorf("%s without accounts: %+v", d, r)
+		}
+	}
+	if !res.Ready || f.count("DescribeStacks") != 0 {
+		t.Errorf("nothing to inspect is not blocking: %v", res.Blocking)
+	}
+	// Skipped by configuration.
+	f = newFake("111111111111")
+	in = side("source", f, "111111111111")
+	in.Skip = map[string]string{snapshot.DomainStackSets: "configuration: skip stack_sets"}
+	for _, d := range snapshot.WorkloadDomains {
+		in.Skip[d] = "configuration: skip workloads"
+	}
+	res = Run(context.Background(), Input{Sides: []SideInput{in}})
+	for _, d := range append([]string{snapshot.DomainStackSets}, snapshot.WorkloadDomains...) {
+		if r := domain(t, res.Sides[0], d); r.Status != Skipped || r.Required {
+			t.Errorf("%s skipped: %+v", d, r)
+		}
+	}
+	if f.count("ListStackSets")+f.count("DescribeStacks")+f.count("GetResources")+f.count("ListRoles") != 0 {
+		t.Error("skipped domains must not be called")
 	}
 }

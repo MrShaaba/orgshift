@@ -19,13 +19,20 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/account"
+	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	cfntypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/controlcatalog"
 	"github.com/aws/aws-sdk-go-v2/service/controltower"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/identitystore"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
 	ramtypes "github.com/aws/aws-sdk-go-v2/service/ram/types"
+	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
+	retypes "github.com/aws/aws-sdk-go-v2/service/resourceexplorer2/types"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	ssotypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -198,6 +205,8 @@ type Clients struct {
 	// IdentityCenterRegion is the region the Identity Center clients call.
 	IdentityCenterRegion string
 	IdentityStore        collector.IdentityStoreAPI
+	// StackSets lists the StackSets administered from the account.
+	StackSets collector.StackSetsAPI
 }
 
 // Member describes the member inspection role to try.
@@ -210,6 +219,18 @@ type Member struct {
 	Sample   int
 	// STS assumes the role with the management credentials.
 	STS Assumer
+	// Clients builds the clients of a member account through the role, for
+	// the workload probes in Accounts. Nil leaves the workload domains
+	// unprobed.
+	Clients collector.MemberClientFactory
+	// Regions are the workload Regions; the first one is probed.
+	Regions []string
+	// ResourceSource is the configured sample source (auto, tagging-api,
+	// resource-explorer).
+	ResourceSource string
+	// BucketPolicies says the billable S3 reads are opted in, so they are
+	// probed too.
+	BucketPolicies bool
 }
 
 // SideInput is one organization's credentials.
@@ -238,8 +259,7 @@ type Input struct {
 
 // unimplemented are the coverage domains this build's collector records as
 // unsupported; the preflight cannot probe them.
-var unimplemented = map[string]bool{snapshot.DomainOrgTrails: true, snapshot.DomainConfigAggregator: true, snapshot.DomainStackSets: true,
-	snapshot.DomainWorkloadStacks: true, snapshot.DomainWorkloadResources: true, snapshot.DomainWorkloadPolicies: true}
+var unimplemented = map[string]bool{snapshot.DomainOrgTrails: true, snapshot.DomainConfigAggregator: true}
 
 // Run probes every side and builds the matrix.
 func Run(ctx context.Context, in Input) *Result {
@@ -417,7 +437,9 @@ func (p *prober) run() SideResult {
 		}
 	}
 	p.identityCenter(mgmtOK)
+	p.stackSets(mgmtOK)
 	p.member(mgmtOK)
+	p.workloads(mgmtOK)
 	for d := range unimplemented {
 		p.unknown(m, d, "", "not collected by this build; the simulation reports the domain as unsupported until it is entered by hand or a later build collects it", true)
 	}
@@ -1033,6 +1055,299 @@ func (p *prober) member(mgmtOK bool) {
 	}
 }
 
+// stackSets probes the StackSet reads of the management account.
+func (p *prober) stackSets(mgmtOK bool) {
+	m := p.side.Management
+	domain := snapshot.DomainStackSets
+	if reason, off := p.side.Skip[domain]; off {
+		p.skipped(m, domain, reason)
+		return
+	}
+	if !mgmtOK {
+		p.unknown(m, domain, "cloudformation:ListStackSets", "not probed: the management identity check failed", false)
+		return
+	}
+	if m.StackSets == nil {
+		p.unknown(m, domain, "cloudformation:ListStackSets", "no CloudFormation client", false)
+		return
+	}
+	var first string
+	ok, _ := p.probe(m, domain, "cloudformation:ListStackSets", false, func() (string, error) {
+		out, err := m.StackSets.ListStackSets(p.ctx, &cloudformation.ListStackSetsInput{Status: cfntypes.StackSetStatusActive, MaxResults: aws.Int32(1)})
+		if err != nil {
+			return "", err
+		}
+		if len(out.Summaries) == 0 {
+			return "no StackSet is administered from this account", nil
+		}
+		first = aws.ToString(out.Summaries[0].StackSetName)
+		return "first StackSet " + first, nil
+	})
+	if !ok {
+		return
+	}
+	if first == "" {
+		p.unknown(m, domain, "cloudformation:DescribeStackSet", "not tried: no StackSet to describe", true)
+		p.unknown(m, domain, "cloudformation:ListStackInstances", "not tried: no StackSet to list instances of", true)
+		return
+	}
+	p.probe(m, domain, "cloudformation:DescribeStackSet", false, func() (string, error) {
+		out, err := m.StackSets.DescribeStackSet(p.ctx, &cloudformation.DescribeStackSetInput{StackSetName: aws.String(first)})
+		if err != nil {
+			return "", err
+		}
+		if out.StackSet == nil {
+			return "described", nil
+		}
+		return fmt.Sprintf("%s, permission model %s", first, out.StackSet.PermissionModel), nil
+	})
+	p.probe(m, domain, "cloudformation:ListStackInstances", false, func() (string, error) {
+		out, err := m.StackSets.ListStackInstances(p.ctx, &cloudformation.ListStackInstancesInput{StackSetName: aws.String(first), MaxResults: aws.Int32(1)})
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%d instance(s) on the first page", len(out.Summaries)), nil
+	})
+}
+
+// workloads probes, inside every account named for inspection, the reads
+// the workload inventory makes: one call per source, one page or one item
+// each. The S3 reads are billed per request and are probed only when the
+// opt-in is on.
+func (p *prober) workloads(mgmtOK bool) {
+	mem := p.side.Member
+	m := p.side.Management
+	stacks, resources, policies := snapshot.DomainWorkloadStacks, snapshot.DomainWorkloadResources, snapshot.DomainWorkloadPolicies
+	if reason, off := p.side.Skip[stacks]; off {
+		for _, d := range snapshot.WorkloadDomains {
+			p.skipped(m, d, reason)
+		}
+		return
+	}
+	why := ""
+	switch {
+	case mem == nil:
+		why = "not tried: no member_inspection block in the configuration"
+	case !mgmtOK:
+		why = "not probed: the management identity check failed"
+	case len(mem.Accounts) == 0:
+		why = "not tried: no account named under member_inspection.accounts, so the collector inspects none and records the workload domains as skipped"
+	case mem.Clients == nil:
+		why = "no clients for the member accounts"
+	}
+	if why != "" {
+		for _, d := range snapshot.WorkloadDomains {
+			p.unknown(m, d, "", why, true)
+		}
+		return
+	}
+	region := m.Region
+	if len(mem.Regions) > 0 {
+		region = mem.Regions[0]
+	}
+	for _, acct := range mem.Accounts {
+		c := &Clients{Label: "member " + acct, ExpectedAccount: acct, Region: region}
+		mc, err := mem.Clients(p.ctx, acct, region)
+		if err != nil || mc == nil {
+			msg := "no clients"
+			if err != nil {
+				msg = err.Error()
+			}
+			for _, d := range snapshot.WorkloadDomains {
+				p.unknown(c, d, "", "not tried: "+msg, false)
+			}
+			continue
+		}
+		if mc.Stacks == nil {
+			p.unknown(c, stacks, "cloudformation:DescribeStacks", "no CloudFormation client", false)
+		} else {
+			first := ""
+			ok, _ := p.probe(c, stacks, "cloudformation:DescribeStacks", false, func() (string, error) {
+				out, err := mc.Stacks.DescribeStacks(p.ctx, &cloudformation.DescribeStacksInput{})
+				if err != nil {
+					return "", err
+				}
+				if len(out.Stacks) == 0 {
+					return "no stack in " + region, nil
+				}
+				first = aws.ToString(out.Stacks[0].StackName)
+				return fmt.Sprintf("%d stack(s) on the first page in %s", len(out.Stacks), region), nil
+			})
+			if ok {
+				p.probe(c, stacks, "cloudformation:ListExports", false, func() (string, error) {
+					out, err := mc.Stacks.ListExports(p.ctx, &cloudformation.ListExportsInput{})
+					if err != nil {
+						return "", err
+					}
+					return fmt.Sprintf("%d export(s) on the first page", len(out.Exports)), nil
+				})
+			}
+			switch {
+			case !ok:
+			case first == "":
+				p.unknown(c, stacks, "cloudformation:ListStackResources", "not tried: no stack to list resources of", true)
+				p.unknown(c, stacks, "cloudformation:GetTemplate", "not tried: no stack to read the template of", true)
+			default:
+				p.probe(c, stacks, "cloudformation:ListStackResources", false, func() (string, error) {
+					out, err := mc.Stacks.ListStackResources(p.ctx, &cloudformation.ListStackResourcesInput{StackName: aws.String(first)})
+					if err != nil {
+						return "", err
+					}
+					return fmt.Sprintf("%d resource(s) on the first page of stack %s", len(out.StackResourceSummaries), first), nil
+				})
+				p.probe(c, stacks, "cloudformation:GetTemplate", false, func() (string, error) {
+					out, err := mc.Stacks.GetTemplate(p.ctx, &cloudformation.GetTemplateInput{StackName: aws.String(first)})
+					if err != nil {
+						return "", err
+					}
+					return fmt.Sprintf("template of stack %s read (%d bytes, not kept)", first, len(aws.ToString(out.TemplateBody))), nil
+				})
+			}
+			if ok {
+				p.unknown(c, stacks, "cloudformation:ListImports", "not tried: it needs an export name and answers with an error for an export nobody imports; the collector treats that answer as no importer", true)
+			}
+		}
+		// The resource sample: the Tagging API always works as the
+		// fallback; Resource Explorer is tried when the source allows it.
+		if mem.ResourceSource != snapshot.ResourceSourceResourceExplorer {
+			if mc.Tagging == nil {
+				p.unknown(c, resources, "tag:GetResources", "no Tagging API client", false)
+			} else {
+				p.probe(c, resources, "tag:GetResources", false, func() (string, error) {
+					out, err := mc.Tagging.GetResources(p.ctx, &resourcegroupstaggingapi.GetResourcesInput{ResourcesPerPage: aws.Int32(1)})
+					if err != nil {
+						return "", err
+					}
+					return fmt.Sprintf("%d resource(s) on the first page in %s", len(out.ResourceTagMappingList), region), nil
+				})
+			}
+		}
+		if mem.ResourceSource != snapshot.ResourceSourceTaggingAPI {
+			optional := mem.ResourceSource != snapshot.ResourceSourceResourceExplorer
+			if mc.ResourceExplorer == nil {
+				p.unknown(c, resources, "resource-explorer-2:ListIndexes", "no Resource Explorer client", optional)
+			} else {
+				p.explorer(c, mc, resources, optional)
+			}
+		}
+		if mc.Roles == nil {
+			p.unknown(c, policies, "iam:ListRoles", "no IAM client", false)
+		} else {
+			p.probe(c, policies, "iam:ListRoles", false, func() (string, error) {
+				out, err := mc.Roles.ListRoles(p.ctx, &iam.ListRolesInput{MaxItems: aws.Int32(1)})
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("%d role(s) on the first page", len(out.Roles)), nil
+			})
+		}
+		switch {
+		case !mem.BucketPolicies:
+			p.unknown(c, policies, "s3:GetBucketPolicy", "not tried: bucket policies are a billed read and billable.bucket_policies is off; the collector records them as skipped and the workload layer reads partially evaluated", true)
+		case mc.Buckets == nil:
+			p.unknown(c, policies, "s3:ListBuckets", "no S3 client", false)
+		default:
+			first := ""
+			ok, _ := p.probe(c, policies, "s3:ListBuckets", false, func() (string, error) {
+				out, err := mc.Buckets.ListBuckets(p.ctx, &s3.ListBucketsInput{MaxBuckets: aws.Int32(1)})
+				if err != nil {
+					return "", err
+				}
+				if len(out.Buckets) == 0 {
+					return "the account has no bucket", nil
+				}
+				first = aws.ToString(out.Buckets[0].Name)
+				return "first bucket read (billed as one LIST request)", nil
+			})
+			switch {
+			case !ok:
+			case first == "":
+				p.unknown(c, policies, "s3:GetBucketPolicy", "not tried: no bucket to read the policy of", true)
+			default:
+				p.probe(c, policies, "s3:GetBucketPolicy", false, func() (string, error) {
+					_, err := mc.Buckets.GetBucketPolicy(p.ctx, &s3.GetBucketPolicyInput{Bucket: aws.String(first)})
+					var apiErr smithy.APIError
+					if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchBucketPolicy" {
+						return "the first bucket has no policy (billed as one request)", nil
+					}
+					if err != nil {
+						return "", err
+					}
+					return "policy of the first bucket read (billed as one request, not kept)", nil
+				})
+			}
+		}
+	}
+}
+
+// explorer probes Resource Explorer: whether the account has an aggregator
+// index and, if so, whether its default view can be searched. With the
+// source on auto a missing index or a failed search is not blocking: the
+// collector falls back to the Tagging API.
+func (p *prober) explorer(c *Clients, mc *collector.MemberClients, domain string, optional bool) {
+	aggregator := ""
+	run := p.probe
+	if optional {
+		run = p.probeOptional
+	}
+	ok, _ := run(c, domain, "resource-explorer-2:ListIndexes", optional, func() (string, error) {
+		out, err := mc.ResourceExplorer.ListIndexes(p.ctx, &resourceexplorer2.ListIndexesInput{Type: retypes.IndexTypeAggregator})
+		if err != nil {
+			return "", err
+		}
+		for _, ix := range out.Indexes {
+			if ix.Type == retypes.IndexTypeAggregator {
+				aggregator = aws.ToString(ix.Region)
+			}
+		}
+		if aggregator == "" {
+			return "no aggregator index: the collector uses the Resource Groups Tagging API", nil
+		}
+		return "aggregator index in " + aggregator, nil
+	})
+	if !ok || aggregator == "" {
+		return
+	}
+	searcher := mc.ResourceExplorer
+	if aggregator != c.Region {
+		other, err := p.side.Member.Clients(p.ctx, c.ExpectedAccount, aggregator)
+		if err != nil || other == nil || other.ResourceExplorer == nil {
+			p.unknown(c, domain, "resource-explorer-2:Search", "not tried: no client for the aggregator Region "+aggregator, optional)
+			return
+		}
+		searcher = other.ResourceExplorer
+	}
+	run(c, domain, "resource-explorer-2:Search", optional, func() (string, error) {
+		out, err := searcher.Search(p.ctx, &resourceexplorer2.SearchInput{QueryString: aws.String(""), MaxResults: aws.Int32(1)})
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%d result(s) on the first page from the aggregator index in %s", len(out.Resources), aggregator), nil
+	})
+}
+
+// probeOptional runs a probe whose failure does not block: the outcome is
+// recorded as unknown with the reason, because the collector has another
+// way to get the same data.
+func (p *prober) probeOptional(c *Clients, domain, op string, optional bool, fn func() (string, error)) (bool, string) {
+	start := p.now()
+	var d string
+	_, err := collector.Retry(p.ctx, p.in.Retry, p.in.Sleep, func() (err error) {
+		d, err = fn()
+		return err
+	}, nil)
+	pr := Probe{Side: p.side.Name, Access: c.Label, Domain: domain, Operation: op, Region: c.Region, AccountID: c.ExpectedAccount, Millis: p.now().Sub(start).Milliseconds(), Optional: true}
+	if err == nil {
+		pr.Status, pr.Detail = Available, d
+	} else {
+		_, msg := collector.ClassifyError(err)
+		pr.Status, pr.Detail = Unknown, "not available ("+msg+"); the collector falls back to the Resource Groups Tagging API"
+	}
+	p.res.Probes = append(p.res.Probes, pr)
+	p.log("%s %s: %s %s", c.Label, op, pr.Status, pr.Detail)
+	return err == nil, pr.Detail
+}
+
 // sampleAccounts walks the tree breadth-first until n active accounts not
 // in exclude are found or the call budget runs out. Negative n means every
 // account within the budget.
@@ -1100,6 +1415,7 @@ func (p *prober) aggregate() []DomainResult {
 		worst := Available
 		var details []string
 		seenOps := map[string]bool{}
+		counted := 0
 		for _, pr := range probes {
 			if pr.Operation != "" && !seenOps[pr.Operation] {
 				seenOps[pr.Operation] = true
@@ -1109,6 +1425,7 @@ func (p *prober) aggregate() []DomainResult {
 			if s == Unknown && pr.Optional {
 				continue
 			}
+			counted++
 			if s.severity() > worst.severity() {
 				worst = s
 			}
@@ -1127,10 +1444,18 @@ func (p *prober) aggregate() []DomainResult {
 			worst = Unknown
 			details = []string{probes[0].Detail}
 		}
+		if counted == 0 && !unimplemented[d] {
+			// Nothing was actually tried: every probe of the domain was an
+			// optional one that had nothing to try against. The domain is
+			// unknown, not available, and nothing here blocks.
+			worst = Unknown
+			dr.Required = false
+			details = []string{probes[0].Detail}
+		}
 		dr.Status = worst
 		dr.Detail = strings.Join(details, "; ")
 		if dr.Status == Available {
-			dr.Detail = fmt.Sprintf("%d call(s) succeeded", len(probes))
+			dr.Detail = fmt.Sprintf("%d call(s) succeeded", counted)
 		}
 		out = append(out, dr)
 	}
@@ -1187,7 +1512,7 @@ func buildMatrix(sides []SideResult) Matrix {
 	for _, d := range evaluator.DescribeDomains() {
 		descriptions[d.Domain] = d
 	}
-	descriptions[MemberInspectionDomain] = evaluator.DomainDescription{Domain: MemberInspectionDomain, Why: "whether the member inspection role can be assumed; later milestones read IAM last-accessed data and networking state through it", Check: ""}
+	descriptions[MemberInspectionDomain] = evaluator.DomainDescription{Domain: MemberInspectionDomain, Why: "whether the member inspection role can be assumed; the workload inventory is read through it, and later IAM last-accessed data and networking state", Check: ""}
 	for _, d := range domainOrder() {
 		desc := descriptions[d]
 		row := Row{Domain: d, Why: desc.Why, Check: desc.Check, Source: cell(src, d)}

@@ -11,7 +11,7 @@ Order of work: create the roles, run `orgshift preflight --config orgshift.yaml`
 | `org-management` | `OrgshiftOrgRead` | The management account (<management-account-id>). | `org-management-permissions.json` |
 | `control-tower` | `OrgshiftControlTowerRead` | The management account (<management-account-id>), called in the landing zone's home region. | `control-tower-permissions.json` |
 | `identity-center` | `OrgshiftIdentityCenterRead` | The management account (<management-account-id>), called in the instance's region, or the Identity Center delegated administrator account (see below). | `identity-center-permissions.json` |
-| `member-inspection` | `OrgshiftMemberRead` | Every member account (deploy it with a StackSet or your account baseline). | none needed in this build |
+| `member-inspection` | `OrgshiftMemberRead` | Every member account (deploy it with a StackSet or your account baseline). | `member-inspection-permissions.json` |
 | `network` | `OrgshiftNetworkRead` | Each account that owns shared networking (<network-account-id>). | `network-permissions.json` |
 
 ## org-management: Organizations, account regions and the management account's shares
@@ -20,7 +20,7 @@ Order of work: create the roles, run `orgshift preflight --config orgshift.yaml`
 
 **Where it goes:** The management account (<management-account-id>). Organizations answers these calls only from the management account or a delegated administrator; see the alternative below.
 
-**What it reads:** Reads the organization, the OU tree, every policy type with its attachments, account tags, delegated administrators, trusted access, the enabled regions of every member account and the RAM shares the management account owns; assumes the member inspection and network roles.
+**What it reads:** Reads the organization, the OU tree, every policy type with its attachments, account tags, delegated administrators, trusted access, the enabled regions of every member account, the RAM shares the management account owns and the StackSets administered from it with their stack instances; assumes the member inspection and network roles.
 
 **Trust policy** (`org-management-trust.json`):
 
@@ -85,6 +85,16 @@ Order of work: create the roles, run `orgshift preflight --config orgshift.yaml`
       "Resource": "*"
     },
     {
+      "Sid": "StackSetsRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStackSet",
+        "cloudformation:ListStackInstances",
+        "cloudformation:ListStackSets"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "AssumeCollectorRoles",
       "Effect": "Allow",
       "Action": [
@@ -109,6 +119,7 @@ Order of work: create the roles, run `orgshift preflight --config orgshift.yaml`
 - `OrganizationsRead` (*): DescribeOrganization, ListRoots, ListPolicies, ListDelegatedAdministrators and ListAWSServiceAccessForOrganization take no resource. The others accept root, OU, account and policy ARNs, but the collector walks the whole tree and every policy, so a resource list would have to name every OU and policy and change whenever one is added. All eleven return existing state and cannot change it.
 - `AccountRegionsRead` (*): ListRegions is called for every member account; the action supports the account resource (arn:aws:account::<management-account-id>:account/o-<organization-id>/<member-id>), so replace * with arn:aws:account::<management-account-id>:account/o-*/* if you prefer a pattern. Calling it for other accounts also requires trusted access for account.amazonaws.com in the organization.
 - `OwnResourceSharesRead` (*): GetResourceShares with resourceOwner SELF takes no resource and lists only the shares this account owns; ListPrincipals and ListResources accept resource share ARNs, which are only known once GetResourceShares has answered. Nothing here can create, modify or accept a share.
+- `StackSetsRead` (*): ListStackSets takes no resource. DescribeStackSet and ListStackInstances accept StackSet ARNs (arn:aws:cloudformation:<region>:<management-account-id>:stackset/*), which are only known once ListStackSets has answered; replace * with that pattern if you prefer. The three return the settings and the stack instances of the StackSets administered from this account and cannot create, update or delete a StackSet or an instance.
 - `AssumeCollectorRoles` (arn:aws:iam::*:role/OrgshiftMemberRead, arn:aws:iam::<network-account-id>:role/OrgshiftNetworkRead): Scoped to the member inspection role name in any account of the same organization (aws:ResourceOrgID must equal the caller's organization) and to the network roles. The role in the target account still has to trust this one.
 
 **Delegated administrator alternative:** Organizations can delegate its read and policy operations to a member account with a resource-based delegation policy attached from the management account (aws organizations put-resource-policy). The example delegation policy below grants the tree and policy reads to OrgshiftOrgRead in a delegated account (<delegated-administrator-account-id>). Three things stay with the management account: ListDelegatedAdministrators, ListDelegatedServicesForAccount and ListAWSServiceAccessForOrganization are not documented as delegable (preflight reports them denied if so, and the collector records delegated_administrators and trusted_access as access_denied); account:ListRegions for other accounts needs the Account Management delegated administrator (account.amazonaws.com); and the management account's own RAM shares are listed only from the management account.
@@ -147,9 +158,6 @@ Example delegation policy (`org-management-delegation-policy.json`), attached fr
 |---|---|---|---|---|
 | `cloudtrail:DescribeTrails` | read | `organization_trails` |  | organization trails |
 | `cloudtrail:GetTrailStatus` | read | `organization_trails` |  | whether each organization trail is logging |
-| `cloudformation:ListStackSets` | read | `stack_sets` |  | service-managed StackSets |
-| `cloudformation:DescribeStackSet` | read | `stack_sets` |  | targets and auto-deployment of each StackSet |
-| `cloudformation:ListStackInstances` | read | `stack_sets` |  | the accounts and regions each StackSet is deployed to |
 | `cloudtrail:StartQuery` | read-billable | `usage.actions` | `billable.cloudtrail_lake (--with-cloudtrail-lake)` | one aggregated CloudTrail Lake query for actions in use |
 | `cloudtrail:GetQueryResults` | read-billable | `usage.actions` | `billable.cloudtrail_lake (--with-cloudtrail-lake)` | results of the Lake query |
 | `cloudtrail:DescribeQuery` | read-billable | `usage.actions` | `billable.cloudtrail_lake (--with-cloudtrail-lake)` | status and bytes scanned of the Lake query |
@@ -166,7 +174,7 @@ aws iam create-role --role-name OrgshiftOrgRead --assume-role-policy-document fi
 aws iam put-role-policy --role-name OrgshiftOrgRead --policy-name OrgshiftOrgRead --policy-document file://org-management-permissions.json
 ```
 
-**References:** https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsorganizations.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsaccountmanagement.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsresourceaccessmanager.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awssecuritytokenservice.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_delegate_policies.html, https://docs.aws.amazon.com/organizations/latest/userguide/security_iam_resource-based-policy-examples.html, https://docs.aws.amazon.com/accounts/latest/reference/using-orgs-trusted-access.html, https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-resourceorgid
+**References:** https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsorganizations.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsaccountmanagement.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsresourceaccessmanager.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awscloudformation.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awssecuritytokenservice.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_delegate_policies.html, https://docs.aws.amazon.com/organizations/latest/userguide/security_iam_resource-based-policy-examples.html, https://docs.aws.amazon.com/accounts/latest/reference/using-orgs-trusted-access.html, https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-resourceorgid
 
 ## control-tower: Control Tower landing zone, baselines and controls
 
@@ -340,7 +348,7 @@ aws iam put-role-policy --role-name OrgshiftIdentityCenterRead --policy-name Org
 
 **Where it goes:** Every member account (deploy it with a StackSet or your account baseline). It trusts arn:aws:iam::<management-account-id>:role/OrgshiftOrgRead.
 
-**What it reads:** Reads what only the account itself can see: IAM last-accessed data for actions in use, networking state for path reasoning, the shares the account receives. This build calls nothing in member accounts; preflight assumes the role to prove the trust works, and sts:GetCallerIdentity needs no permission, so no permissions policy is attached yet. The planned operations below are what M4 adds.
+**What it reads:** Reads the workload inventory of the account, which only the account itself can see: its CloudFormation stacks (status, tags, resource types and counts, output keys and export names, imports, termination protection), a sample of its resources with their tags, and the trust policies of its roles. Templates are read in memory for cross-account stack outputs, infrastructure identifiers and conditions on organization identity, and are never stored; output values and parameter values are not stored either. Bucket policies are a billed read behind an opt-in (below).
 
 **Trust policy** (`member-inspection-trust.json`):
 
@@ -360,7 +368,73 @@ aws iam put-role-policy --role-name OrgshiftIdentityCenterRead --policy-name Org
 }
 ```
 
-**Permissions policy:** none in this build. The role only has to exist and trust the collector; `sts:GetCallerIdentity` needs no permission.
+**Permissions policy** (`member-inspection-permissions.json`):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StacksRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:GetTemplate",
+        "cloudformation:ListExports",
+        "cloudformation:ListImports",
+        "cloudformation:ListStackResources",
+        "cloudformation:ListStacks"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ResourceSampleRead",
+      "Effect": "Allow",
+      "Action": [
+        "tag:GetResources",
+        "resource-explorer-2:ListIndexes",
+        "resource-explorer-2:Search"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RoleTrustPoliciesRead",
+      "Effect": "Allow",
+      "Action": [
+        "iam:ListRoles"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+**Why each statement is scoped the way it is:**
+
+- `StacksRead` (*): DescribeStacks without a stack name lists every stack of the Region, which also needs cloudformation:ListStacks; ListExports and ListImports take no resource. ListStackResources and GetTemplate accept stack ARNs (arn:aws:cloudformation:<region>:<account>:stack/*/*), which are only known once the stacks are listed, and the collector reads every stack. None of the six can create, update or delete a stack, and CloudFormation does not charge for them.
+- `ResourceSampleRead` (*): tag:GetResources and resource-explorer-2:ListIndexes take no resource. resource-explorer-2:Search is authorized on the view it searches (arn:aws:resource-explorer-2:<region>:<account>:view/*/*); the default view's ARN differs per account and Region, so a pattern would have to be maintained per account. They return ARNs, resource types and tags; Search and ListIndexes are only used when the account has an aggregator index. Resource Explorer is offered at no additional charge and AWS publishes no price for the Resource Groups Tagging API.
+- `RoleTrustPoliciesRead` (*): iam:ListRoles takes no resource. It returns every role with its trust policy, which the collector reads for conditions on aws:PrincipalOrgID, aws:PrincipalOrgPaths and aws:ResourceOrgID; it does not return permissions policies, last-used data or tags, and IAM is offered at no additional charge.
+
+**Billable opt-in, not attached by default** (`member-inspection-billable-opt-in.json`). AWS bills these reads, so the collector calls them only when the opt-in is on, and the permission is a separate policy to attach only then:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BucketPoliciesReadBilledByS3",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketPolicy",
+        "s3:ListAllMyBuckets"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+- `BucketPoliciesReadBilledByS3` (*): Only with billable.bucket_policies (--with-bucket-policies). s3:ListAllMyBuckets takes no resource; s3:GetBucketPolicy accepts bucket ARNs (arn:aws:s3:::*), and the collector reads the policy of every bucket in the workload Regions. S3 bills every request: one LIST request per account and one GET-class request per bucket. Neither can read an object or change a bucket.
 
 **Delegated administrator alternative:** Not applicable: the role lives in each member account. Accounts created by Organizations carry OrganizationAccountAccessRole and Control Tower accounts carry AWSControlTowerExecution, both full administrators; orgshift does not use them so its read-only scope stays explicit and auditable.
 
@@ -373,7 +447,6 @@ aws iam put-role-policy --role-name OrgshiftIdentityCenterRead --policy-name Org
 | `iam:GetServiceLastAccessedDetails` | read | `usage.actions` |  | read the last-accessed report |
 | `cloudtrail:LookupEvents` | read | `usage.actions` |  | management events of the last 90 days (free, slow) |
 | `config:SelectAggregateResourceConfig` | read-billable | `usage.tagged_resources` | `billable.config_queries (--with-config-queries)` | resource inventories from an aggregator |
-| `tag:GetResources` | read | `usage.tagged_resources` |  | a tagged resource sample for tag policy checks |
 | `ram:GetResourceShareAssociations` | read | `resource_shares` |  | shares the account receives |
 | `ec2:DescribeTransitGatewayAttachments` | read | `network_paths` |  | transit gateway attachments in use |
 | `ec2:DescribeTransitGatewayVpcAttachments` | read | `network_paths` |  | VPC attachments to shared transit gateways |
@@ -386,15 +459,18 @@ aws iam put-role-policy --role-name OrgshiftIdentityCenterRead --policy-name Org
 
 **Notes:**
 
-- Name the role in member_inspection.role_name; preflight assumes it in the configured accounts plus a sample.
+- Name the role in member_inspection.role_name and the accounts whose workloads are inventoried in member_inspection.accounts; preflight assumes the role there and in a sample of other accounts, and probes one page of each read in the named accounts.
+- The inventory is read in workload_regions. With resource_source auto, Resource Explorer is used when the account has an aggregator index and a default view in its Region; otherwise the Resource Groups Tagging API, which never returns resources that were never tagged.
 
 **Create it:**
 
 ```sh
 aws iam create-role --role-name OrgshiftMemberRead --assume-role-policy-document file://member-inspection-trust.json --description "orgshift read-only collector: Member account inspection" --max-session-duration 3600
+aws iam put-role-policy --role-name OrgshiftMemberRead --policy-name OrgshiftMemberRead --policy-document file://member-inspection-permissions.json
+# only for the billable opt-in: aws iam put-role-policy --role-name OrgshiftMemberRead --policy-name OrgshiftMemberReadBillableOptIn --policy-document file://member-inspection-billable-opt-in.json
 ```
 
-**References:** https://docs.aws.amazon.com/service-authorization/latest/reference/list_awssecuritytokenservice.html
+**References:** https://docs.aws.amazon.com/service-authorization/latest/reference/list_awssecuritytokenservice.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awscloudformation.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonresourcegrouptaggingapi.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsresourceexplorer.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsidentityandaccessmanagementiam.html, https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazons3.html
 
 ## network: Shares owned by a network account
 

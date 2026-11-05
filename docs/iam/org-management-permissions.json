@@ -38,6 +38,16 @@
       "Resource": "*"
     },
     {
+      "Sid": "StackSetsRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStackSet",
+        "cloudformation:ListStackInstances",
+        "cloudformation:ListStackSets"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "AssumeCollectorRoles",
       "Effect": "Allow",
       "Action": [

@@ -58,11 +58,16 @@ type Side struct {
 	// IdentityCenter says where the instance lives and, optionally, which
 	// credentials read it (the delegated administrator).
 	IdentityCenter *IdentityCenter `yaml:"identity_center,omitempty" json:"identity_center,omitempty"`
-	// WorkloadRegions are the regions the workloads run in; later
-	// milestones scope network-path reasoning to them.
+	// WorkloadRegions are the regions the workloads run in: the workload
+	// inventory of the inspected member accounts is read there (default:
+	// the management region), and later milestones scope network-path
+	// reasoning to them.
 	WorkloadRegions []string `yaml:"workload_regions,omitempty" json:"workload_regions,omitempty"`
+	// Workloads tunes the workload inventory.
+	Workloads *Workloads `yaml:"workloads,omitempty" json:"workloads,omitempty"`
 	// Skip lists coverage domains not to collect: enabled_regions,
-	// resource_shares, control_tower, identity_center.
+	// resource_shares, control_tower, identity_center, stack_sets,
+	// workloads.
 	Skip []string `yaml:"skip,omitempty" json:"skip,omitempty"`
 }
 
@@ -203,6 +208,25 @@ type Collection struct {
 type Billable struct {
 	CloudTrailLake bool `yaml:"cloudtrail_lake" json:"cloudtrail_lake"`
 	ConfigQueries  bool `yaml:"config_queries" json:"config_queries"`
+	// BucketPolicies reads the bucket policies of the inspected member
+	// accounts (s3:ListBuckets, s3:GetBucketPolicy). S3 bills every request:
+	// one LIST request per account and one GET-class request per bucket in
+	// the workload Regions, up to workloads.max_buckets.
+	BucketPolicies bool `yaml:"bucket_policies" json:"bucket_policies"`
+}
+
+// Workloads tunes the workload inventory read inside the accounts named
+// under member_inspection.accounts, in the workload_regions.
+type Workloads struct {
+	// ResourceSource is auto (Resource Explorer when the account has an
+	// aggregator index, otherwise the Resource Groups Tagging API),
+	// tagging-api or resource-explorer.
+	ResourceSource string `yaml:"resource_source,omitempty" json:"resource_source,omitempty"`
+	// Caps per account; zero means the collector's default.
+	MaxStacks    int `yaml:"max_stacks,omitempty" json:"max_stacks,omitempty"`
+	MaxResources int `yaml:"max_resources,omitempty" json:"max_resources,omitempty"`
+	MaxBuckets   int `yaml:"max_buckets,omitempty" json:"max_buckets,omitempty"`
+	MaxRoles     int `yaml:"max_roles,omitempty" json:"max_roles,omitempty"`
 }
 
 // Templates tunes the generated IAM templates.
@@ -226,7 +250,10 @@ const (
 )
 
 // SkippableDomains are the coverage domains Side.Skip may name.
-var SkippableDomains = []string{"enabled_regions", "resource_shares", "control_tower", "identity_center"}
+var SkippableDomains = []string{"enabled_regions", "resource_shares", "control_tower", "identity_center", "stack_sets", "workloads"}
+
+// ResourceSources are the values of workloads.resource_source.
+var ResourceSources = []string{"auto", "tagging-api", "resource-explorer"}
 
 // Load reads and validates a configuration file (YAML or JSON).
 func Load(path string) (*Config, error) {
@@ -395,6 +422,16 @@ func (s *Side) validate(prefix string, fail func(string, ...any)) {
 		}
 		if m.Sample != nil && *m.Sample < -1 {
 			fail("%s.member_inspection.sample must be -1 (all), 0 (none) or a count", prefix)
+		}
+	}
+	if w := s.Workloads; w != nil {
+		if w.ResourceSource != "" && !contains(ResourceSources, w.ResourceSource) {
+			fail("%s.workloads.resource_source %q is not one of %s", prefix, w.ResourceSource, strings.Join(ResourceSources, ", "))
+		}
+		for name, v := range map[string]int{"max_stacks": w.MaxStacks, "max_resources": w.MaxResources, "max_buckets": w.MaxBuckets, "max_roles": w.MaxRoles} {
+			if v < 0 {
+				fail("%s.workloads.%s must not be negative", prefix, name)
+			}
 		}
 	}
 	for _, r := range s.WorkloadRegions {

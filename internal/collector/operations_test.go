@@ -134,9 +134,19 @@ func TestCatalogSemantics(t *testing.T) {
 	}
 }
 
-// TestBillableReadsAreOffByDefault checks that no billable operation is
-// used by this build (none is implemented yet) and that every one of them
-// names the opt-in that will gate it.
+// gatedBillable are the billable reads this build can call. Each one is
+// behind an opt-in that is off by default, and a test proves the call is
+// not made without it: TestBucketPoliciesAreReadOnlyWithTheOptIn for the
+// S3 reads. A billable operation marked used that is not listed here fails
+// the build.
+var gatedBillable = map[string]string{
+	"s3:ListBuckets":     OptInBucketPolicies,
+	"s3:GetBucketPolicy": OptInBucketPolicies,
+}
+
+// TestBillableReadsAreOffByDefault checks that every billable operation
+// names its opt-in, that the only ones this build calls are the gated ones,
+// and that the others stay planned.
 func TestBillableReadsAreOffByDefault(t *testing.T) {
 	n := 0
 	for _, o := range Catalog {
@@ -144,15 +154,29 @@ func TestBillableReadsAreOffByDefault(t *testing.T) {
 			continue
 		}
 		n++
-		if o.Used {
-			t.Errorf("%s is billable and marked used; billable reads are not implemented in this build", o.Action())
-		}
 		if !strings.Contains(o.OptIn, "billable.") || !strings.Contains(o.OptIn, "--with-") {
 			t.Errorf("%s opt-in %q should name the configuration key and the flag", o.Action(), o.OptIn)
 		}
+		want, gated := gatedBillable[o.Action()]
+		switch {
+		case o.Used && !gated:
+			t.Errorf("%s is billable and marked used, but no test proves it is off without its opt-in; add it to gatedBillable with that test", o.Action())
+		case o.Used && o.OptIn != want:
+			t.Errorf("%s is gated by %q, expected %q", o.Action(), o.OptIn, want)
+		case !o.Used && gated:
+			t.Errorf("%s is listed as gated but marked planned", o.Action())
+		}
 	}
-	if n == 0 {
-		t.Error("the catalog should classify the planned CloudTrail Lake and Config queries as billable reads")
+	if n < 6 {
+		t.Errorf("the catalog should classify the S3 policy reads and the planned CloudTrail Lake and Config queries as billable reads, found %d", n)
+	}
+	if got := Billable(); len(got) != len(gatedBillable) {
+		t.Errorf("Billable() should list the %d gated reads, got %d", len(gatedBillable), len(got))
+	}
+	// A zero-value workload configuration has the opt-in off.
+	var w WorkloadOptions
+	if w.BucketPolicies || w.withDefaults().BucketPolicies {
+		t.Error("bucket policies must be off unless asked for")
 	}
 }
 
@@ -179,12 +203,32 @@ func TestVerbsAndSemantics(t *testing.T) {
 	if Semantics("StartQuery") != KindReadBillable || Allowed("StartQuery") {
 		t.Error("StartQuery is a planned billable read and not allowed in this build")
 	}
+	if Semantics("GetBucketPolicy") != KindReadBillable || IsReadOnly("GetBucketPolicy") || Semantics("ListBuckets") != KindReadBillable {
+		t.Error("the S3 policy reads are billable reads: callable, but only behind their opt-in")
+	}
+	for _, op := range []string{"DescribeStacks", "ListStackResources", "ListExports", "ListImports", "GetTemplate", "GetResources", "ListIndexes", "Search", "ListRoles", "ListStackSets", "DescribeStackSet", "ListStackInstances"} {
+		if !Allowed(op) || !IsReadOnly(op) || WriteVerb(op) {
+			t.Errorf("%s is a free read of the workload inventory", op)
+		}
+	}
+	for _, op := range []string{"CreateStack", "UpdateStack", "DeleteStack", "UpdateStackSet", "DeleteStackInstances", "CreateStackInstances", "PutBucketPolicy", "DeleteBucketPolicy", "UpdateAssumeRolePolicy", "TagResources", "UntagResources", "CreateIndex", "DeleteIndex", "CreateView"} {
+		if Allowed(op) || !WriteVerb(op) || Semantics(op) != KindWrite {
+			t.Errorf("%s must never be allowed", op)
+		}
+	}
 }
 
 func TestIAMActionsAndResponsibilities(t *testing.T) {
 	actions := IAMActions()
-	if len(actions) != 32 || actions[0] != "account:ListRegions" || actions[1] != "controlcatalog:GetControl" || actions[len(actions)-1] != "sts:AssumeRole" {
+	if len(actions) != 47 || actions[0] != "account:ListRegions" || actions[1] != "cloudformation:DescribeStackSet" || actions[len(actions)-1] != "tag:GetResources" {
 		t.Errorf("unexpected IAM action list (%d): %v", len(actions), actions)
+	}
+	// An operation authorized under another name is listed by that name.
+	if !containsString(actions, "s3:ListAllMyBuckets") || containsString(actions, "s3:ListBuckets") || !containsString(actions, "cloudformation:ListStacks") {
+		t.Errorf("IAM actions should use the names IAM authorizes: %v", actions)
+	}
+	if o, ok := Lookup("s3:ListAllMyBuckets"); !ok || o.Name != "ListBuckets" {
+		t.Errorf("Lookup by the IAM name: %+v", o)
 	}
 	if !sort.StringsAreSorted(actions) {
 		t.Error("actions should be sorted")
@@ -198,14 +242,17 @@ func TestIAMActionsAndResponsibilities(t *testing.T) {
 	if !containsString(org, "organizations:ListRoots") || !containsString(org, "ram:GetResourceShares") || !containsString(org, "sts:AssumeRole") || containsString(org, "sso:ListInstances") || containsString(org, "sts:GetCallerIdentity") {
 		t.Errorf("org-management actions: %v", org)
 	}
-	if planned := ActionsFor(RoleOrgManagement, true); !containsString(planned, "cloudformation:ListStackSets") || containsString(planned, "organizations:ListRoots") {
+	if !containsString(org, "cloudformation:ListStackSets") || !containsString(org, "cloudformation:ListStackInstances") || containsString(org, "cloudformation:DescribeStacks") {
+		t.Errorf("org-management reads the StackSets, not the stacks of member accounts: %v", org)
+	}
+	if planned := ActionsFor(RoleOrgManagement, true); !containsString(planned, "cloudtrail:DescribeTrails") || containsString(planned, "organizations:ListRoots") || containsString(planned, "cloudformation:ListStackSets") {
 		t.Errorf("planned org-management actions: %v", planned)
 	}
 	if net := ActionsFor(RoleNetwork, false); strings.Join(net, ",") != "ram:GetResourceShares,ram:ListPrincipals,ram:ListResources" {
 		t.Errorf("network actions: %v", net)
 	}
-	if m := ActionsFor(RoleMemberInspection, false); len(m) != 0 {
-		t.Errorf("nothing calls into member accounts yet: %v", m)
+	if m := ActionsFor(RoleMemberInspection, false); strings.Join(m, ",") != "cloudformation:DescribeStacks,cloudformation:GetTemplate,cloudformation:ListExports,cloudformation:ListImports,cloudformation:ListStackResources,cloudformation:ListStacks,iam:ListRoles,resource-explorer-2:ListIndexes,resource-explorer-2:Search,s3:GetBucketPolicy,s3:ListAllMyBuckets,tag:GetResources" {
+		t.Errorf("member inspection actions: %v", m)
 	}
 	if m := ActionsFor(RoleMemberInspection, true); !containsString(m, "iam:GetServiceLastAccessedDetails") || !containsString(m, "config:SelectAggregateResourceConfig") {
 		t.Errorf("planned member actions: %v", m)

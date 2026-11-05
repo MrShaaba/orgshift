@@ -60,6 +60,13 @@ type Template struct {
 	// DelegationPolicy is an example resource-based delegation policy for
 	// the org-management role.
 	DelegationPolicy json.RawMessage `json:"delegation_policy,omitempty"`
+	// OptIn are the statements for billable reads. They are in the
+	// permissions policy only when the configuration turns the opt-in on;
+	// otherwise they are rendered separately so the choice stays explicit.
+	OptIn []Statement `json:"opt_in,omitempty"`
+	// OptInPolicy is the opt-in statements as a policy of their own, when
+	// they are not part of the permissions policy.
+	OptInPolicy json.RawMessage `json:"opt_in_policy,omitempty"`
 	// Planned lists the operations later milestones add to this role; they
 	// are not in the permissions policy.
 	Planned    []collector.Operation `json:"planned"`
@@ -89,6 +96,8 @@ type context struct {
 	placeholder bool
 	sideName    string
 	orgName     string
+	// bucketPolicies is the billable.bucket_policies opt-in.
+	bucketPolicies bool
 }
 
 func (in Input) context() (context, error) {
@@ -106,6 +115,7 @@ func (in Input) context() (context, error) {
 		return c, err
 	}
 	c.placeholder = false
+	c.bucketPolicies = in.Config.Billable.BucketPolicies
 	c.sideName = name
 	c.orgName = side.Name
 	c.mgmt = side.Management.AccountID
@@ -149,6 +159,12 @@ const (
 	refCTAPI             = "https://docs.aws.amazon.com/controltower/latest/APIReference/Welcome.html"
 	refIdCDelegated      = "https://docs.aws.amazon.com/singlesignon/latest/userguide/delegated-admin.html"
 	refIAMConditionOrg   = "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-resourceorgid"
+
+	refSARCloudFormation   = "https://docs.aws.amazon.com/service-authorization/latest/reference/list_awscloudformation.html"
+	refSARTagging          = "https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonresourcegrouptaggingapi.html"
+	refSARResourceExplorer = "https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsresourceexplorer.html"
+	refSARIAM              = "https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsidentityandaccessmanagementiam.html"
+	refSARS3               = "https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazons3.html"
 )
 
 // Generate builds the five templates.
@@ -195,12 +211,30 @@ func (c context) template(r collector.Responsibility) (Template, error) {
 	return t, nil
 }
 
-// actions returns the used actions of a service for a responsibility.
+// actions returns the IAM actions of the free reads of a service that a
+// responsibility uses.
 func actions(r collector.Responsibility, service string) []string {
+	return actionsOfKind(r, service, collector.KindRead)
+}
+
+// billableActions returns the IAM actions of the billable reads of a
+// service that a responsibility uses behind an opt-in.
+func billableActions(r collector.Responsibility, service string) []string {
+	return actionsOfKind(r, service, collector.KindReadBillable)
+}
+
+func actionsOfKind(r collector.Responsibility, service string, kind collector.Kind) []string {
+	seen := map[string]bool{}
 	var out []string
 	for _, o := range collector.OperationsFor(r, false) {
-		if o.Service == service && o.Kind != collector.KindSession {
-			out = append(out, o.Action())
+		if o.Service != service || o.Kind != kind {
+			continue
+		}
+		for _, a := range o.IAM() {
+			if !seen[a] {
+				seen[a] = true
+				out = append(out, a)
+			}
 		}
 	}
 	sort.Strings(out)
@@ -218,7 +252,7 @@ func (c context) orgManagement() Template {
 		RoleName: roleName,
 		Title:    "Organizations, account regions and the management account's shares",
 		Account:  fmt.Sprintf("The management account (%s). Organizations answers these calls only from the management account or a delegated administrator; see the alternative below.", c.mgmt),
-		Purpose:  "Reads the organization, the OU tree, every policy type with its attachments, account tags, delegated administrators, trusted access, the enabled regions of every member account and the RAM shares the management account owns; assumes the member inspection and network roles.",
+		Purpose:  "Reads the organization, the OU tree, every policy type with its attachments, account tags, delegated administrators, trusted access, the enabled regions of every member account, the RAM shares the management account owns and the StackSets administered from it with their stack instances; assumes the member inspection and network roles.",
 		Statements: []Statement{
 			{Sid: "OrganizationsRead", Actions: actions(collector.RoleOrgManagement, "organizations"), Resource: []string{"*"},
 				Justification: "DescribeOrganization, ListRoots, ListPolicies, ListDelegatedAdministrators and ListAWSServiceAccessForOrganization take no resource. The others accept root, OU, account and policy ARNs, but the collector walks the whole tree and every policy, so a resource list would have to name every OU and policy and change whenever one is added. All eleven return existing state and cannot change it."},
@@ -226,6 +260,8 @@ func (c context) orgManagement() Template {
 				Justification: "ListRegions is called for every member account; the action supports the account resource (arn:aws:account::" + c.mgmt + ":account/o-<organization-id>/<member-id>), so replace * with arn:aws:account::" + c.mgmt + ":account/o-*/* if you prefer a pattern. Calling it for other accounts also requires trusted access for account.amazonaws.com in the organization."},
 			{Sid: "OwnResourceSharesRead", Actions: actions(collector.RoleOrgManagement, "ram"), Resource: []string{"*"},
 				Justification: "GetResourceShares with resourceOwner SELF takes no resource and lists only the shares this account owns; ListPrincipals and ListResources accept resource share ARNs, which are only known once GetResourceShares has answered. Nothing here can create, modify or accept a share."},
+			{Sid: "StackSetsRead", Actions: actions(collector.RoleOrgManagement, "cloudformation"), Resource: []string{"*"},
+				Justification: "ListStackSets takes no resource. DescribeStackSet and ListStackInstances accept StackSet ARNs (arn:aws:cloudformation:<region>:" + c.mgmt + ":stackset/*), which are only known once ListStackSets has answered; replace * with that pattern if you prefer. The three return the settings and the stack instances of the StackSets administered from this account and cannot create, update or delete a StackSet or an instance."},
 			{Sid: "AssumeCollectorRoles", Actions: []string{"sts:AssumeRole"}, Resource: assumable,
 				Condition:     map[string]any{"StringEquals": map[string]any{"aws:ResourceOrgID": "${aws:PrincipalOrgID}"}},
 				Justification: "Scoped to the member inspection role name in any account of the same organization (aws:ResourceOrgID must equal the caller's organization) and to the network roles. The role in the target account still has to trust this one."},
@@ -235,7 +271,7 @@ func (c context) orgManagement() Template {
 			"sts:GetCallerIdentity is called first to check that the credentials belong to account " + c.mgmt + "; it needs no permission.",
 			"The AWS managed policies ReadOnlyAccess and AWSOrganizationsReadOnlyAccess also cover these calls but are far broader.",
 		},
-		References: []string{refSAROrganizations, refSARAccount, refSARRAM, refSARSTS, refOrgDelegation, refOrgDelegationEx, refAccountTrusted, refIAMConditionOrg},
+		References: []string{refSAROrganizations, refSARAccount, refSARRAM, refSARCloudFormation, refSARSTS, refOrgDelegation, refOrgDelegationEx, refAccountTrusted, refIAMConditionOrg},
 	}
 	delegation := policy{Version: "2012-10-17", Statement: []policyStatement{{
 		Sid: "OrgshiftReadFromDelegatedAccount", Effect: "Allow",
@@ -293,15 +329,33 @@ func (c context) identityCenter() Template {
 
 func (c context) memberInspection() Template {
 	t := Template{
-		RoleName:               c.memberRole,
-		Title:                  "Member account inspection",
-		Account:                "Every member account (deploy it with a StackSet or your account baseline). It trusts " + c.orgRole() + ".",
-		Purpose:                "Reads what only the account itself can see: IAM last-accessed data for actions in use, networking state for path reasoning, the shares the account receives. This build calls nothing in member accounts; preflight assumes the role to prove the trust works, and sts:GetCallerIdentity needs no permission, so no permissions policy is attached yet. The planned operations below are what M4 adds.",
+		RoleName: c.memberRole,
+		Title:    "Member account inspection",
+		Account:  "Every member account (deploy it with a StackSet or your account baseline). It trusts " + c.orgRole() + ".",
+		Purpose:  "Reads the workload inventory of the account, which only the account itself can see: its CloudFormation stacks (status, tags, resource types and counts, output keys and export names, imports, termination protection), a sample of its resources with their tags, and the trust policies of its roles. Templates are read in memory for cross-account stack outputs, infrastructure identifiers and conditions on organization identity, and are never stored; output values and parameter values are not stored either. Bucket policies are a billed read behind an opt-in (below).",
+		Statements: []Statement{
+			{Sid: "StacksRead", Actions: actions(collector.RoleMemberInspection, "cloudformation"), Resource: []string{"*"},
+				Justification: "DescribeStacks without a stack name lists every stack of the Region, which also needs cloudformation:ListStacks; ListExports and ListImports take no resource. ListStackResources and GetTemplate accept stack ARNs (arn:aws:cloudformation:<region>:<account>:stack/*/*), which are only known once the stacks are listed, and the collector reads every stack. None of the six can create, update or delete a stack, and CloudFormation does not charge for them."},
+			{Sid: "ResourceSampleRead", Actions: append(actions(collector.RoleMemberInspection, "tag"), actions(collector.RoleMemberInspection, "resource-explorer-2")...), Resource: []string{"*"},
+				Justification: "tag:GetResources and resource-explorer-2:ListIndexes take no resource. resource-explorer-2:Search is authorized on the view it searches (arn:aws:resource-explorer-2:<region>:<account>:view/*/*); the default view's ARN differs per account and Region, so a pattern would have to be maintained per account. They return ARNs, resource types and tags; Search and ListIndexes are only used when the account has an aggregator index. Resource Explorer is offered at no additional charge and AWS publishes no price for the Resource Groups Tagging API."},
+			{Sid: "RoleTrustPoliciesRead", Actions: actions(collector.RoleMemberInspection, "iam"), Resource: []string{"*"},
+				Justification: "iam:ListRoles takes no resource. It returns every role with its trust policy, which the collector reads for conditions on aws:PrincipalOrgID, aws:PrincipalOrgPaths and aws:ResourceOrgID; it does not return permissions policies, last-used data or tags, and IAM is offered at no additional charge."},
+		},
+		OptIn: []Statement{
+			{Sid: "BucketPoliciesReadBilledByS3", Actions: billableActions(collector.RoleMemberInspection, "s3"), Resource: []string{"*"},
+				Justification: "Only with billable.bucket_policies (--with-bucket-policies). s3:ListAllMyBuckets takes no resource; s3:GetBucketPolicy accepts bucket ARNs (arn:aws:s3:::*), and the collector reads the policy of every bucket in the workload Regions. S3 bills every request: one LIST request per account and one GET-class request per bucket. Neither can read an object or change a bucket."},
+		},
 		DelegatedAdministrator: "Not applicable: the role lives in each member account. Accounts created by Organizations carry OrganizationAccountAccessRole and Control Tower accounts carry AWSControlTowerExecution, both full administrators; orgshift does not use them so its read-only scope stays explicit and auditable.",
 		Notes: []string{
-			"Name the role in member_inspection.role_name; preflight assumes it in the configured accounts plus a sample.",
+			"Name the role in member_inspection.role_name and the accounts whose workloads are inventoried in member_inspection.accounts; preflight assumes the role there and in a sample of other accounts, and probes one page of each read in the named accounts.",
+			"The inventory is read in workload_regions. With resource_source auto, Resource Explorer is used when the account has an aggregator index and a default view in its Region; otherwise the Resource Groups Tagging API, which never returns resources that were never tagged.",
 		},
-		References: []string{refSARSTS},
+		References: []string{refSARSTS, refSARCloudFormation, refSARTagging, refSARResourceExplorer, refSARIAM, refSARS3},
+	}
+	if c.bucketPolicies {
+		t.Statements = append(t.Statements, t.OptIn...)
+		t.OptIn = nil
+		t.Notes = append(t.Notes, "billable.bucket_policies is on in the configuration, so the S3 statement is part of the permissions policy.")
 	}
 	t.TrustPolicy = c.collectorTrust(c.memberExtID)
 	return t
@@ -370,17 +424,31 @@ func (c context) render(t *Template) error {
 		}
 		t.PermissionsPolicy = mustJSON(p)
 	}
+	if len(t.OptIn) > 0 {
+		p := policy{Version: "2012-10-17"}
+		for _, s := range t.OptIn {
+			var res any = s.Resource
+			if len(s.Resource) == 1 {
+				res = s.Resource[0]
+			}
+			p.Statement = append(p.Statement, policyStatement{Sid: s.Sid, Effect: "Allow", Action: s.Actions, Resource: res, Condition: s.Condition})
+		}
+		t.OptInPolicy = mustJSON(p)
+	}
 	id := string(t.ID)
 	t.Commands = []string{fmt.Sprintf("aws iam create-role --role-name %s --assume-role-policy-document file://%s-trust.json --description \"orgshift read-only collector: %s\" --max-session-duration 3600", t.RoleName, id, t.Title)}
 	if t.PermissionsPolicy != nil {
 		t.Commands = append(t.Commands, fmt.Sprintf("aws iam put-role-policy --role-name %s --policy-name %s --policy-document file://%s-permissions.json", t.RoleName, t.RoleName, id))
+	}
+	if t.OptInPolicy != nil {
+		t.Commands = append(t.Commands, fmt.Sprintf("# only for the billable opt-in: aws iam put-role-policy --role-name %s --policy-name %sBillableOptIn --policy-document file://%s-billable-opt-in.json", t.RoleName, t.RoleName, id))
 	}
 	return nil
 }
 
 // checkJustifications refuses a statement with Resource "*" and no reason.
 func checkJustifications(t Template) error {
-	for _, s := range t.Statements {
+	for _, s := range append(append([]Statement(nil), t.Statements...), t.OptIn...) {
 		for _, r := range s.Resource {
 			if r == "*" && strings.TrimSpace(s.Justification) == "" {
 				return fmt.Errorf("%s/%s grants Resource \"*\" without a justification", t.RoleName, s.Sid)
@@ -417,6 +485,9 @@ func Files(ts []Template, in Input) map[string][]byte {
 		}
 		if t.DelegationPolicy != nil {
 			out[id+"-delegation-policy.json"] = t.DelegationPolicy
+		}
+		if t.OptInPolicy != nil {
+			out[id+"-billable-opt-in.json"] = t.OptInPolicy
 		}
 	}
 	return out
@@ -474,6 +545,13 @@ func Markdown(ts []Template, in Input) string {
 			b.WriteString("\n")
 		} else {
 			b.WriteString("**Permissions policy:** none in this build. The role only has to exist and trust the collector; `sts:GetCallerIdentity` needs no permission.\n\n")
+		}
+		if t.OptInPolicy != nil {
+			fmt.Fprintf(&b, "**Billable opt-in, not attached by default** (`%s-billable-opt-in.json`). AWS bills these reads, so the collector calls them only when the opt-in is on, and the permission is a separate policy to attach only then:\n\n```json\n%s```\n\n", t.ID, t.OptInPolicy)
+			for _, s := range t.OptIn {
+				fmt.Fprintf(&b, "- `%s` (%s): %s\n", s.Sid, strings.Join(s.Resource, ", "), s.Justification)
+			}
+			b.WriteString("\n")
 		}
 		fmt.Fprintf(&b, "**Delegated administrator alternative:** %s\n\n", t.DelegatedAdministrator)
 		if t.DelegationPolicy != nil {

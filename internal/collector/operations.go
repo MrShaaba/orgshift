@@ -55,10 +55,9 @@ const (
 	// account or the Identity Center delegated administrator.
 	RoleIdentityCenter Responsibility = "identity-center"
 	// RoleMemberInspection is assumed in member accounts to read what only
-	// the account itself can see (IAM last-accessed, networking state,
-	// shares received). Nothing in this build calls into member accounts
-	// yet; the role exists so the trust is in place and preflight can test
-	// it.
+	// the account itself can see: its stacks, a resource sample and the
+	// policies tied to organization identity (the workload inventory), and
+	// later IAM last-accessed data and networking state.
 	RoleMemberInspection Responsibility = "member-inspection"
 	// RoleNetwork lists the RAM shares owned by a network account (RAM only
 	// shows the caller's own shares).
@@ -98,10 +97,22 @@ type Operation struct {
 	// that is a billable read, a Generate that is a read, an Assume that is
 	// a session). Required when the name does not start with a read verb.
 	Note string
+	// Actions are the IAM actions the call needs when they are not simply
+	// service:Name: s3:ListBuckets is authorized as s3:ListAllMyBuckets,
+	// and describing every stack needs cloudformation:ListStacks as well.
+	Actions []string
 }
 
-// Action renders the IAM action string.
+// Action renders the operation as service:Name.
 func (o Operation) Action() string { return o.Service + ":" + o.Name }
+
+// IAM returns the IAM actions the operation needs.
+func (o Operation) IAM() []string {
+	if len(o.Actions) > 0 {
+		return o.Actions
+	}
+	return []string{o.Action()}
+}
 
 // For reports whether the operation belongs to a responsibility.
 func (o Operation) For(r Responsibility) bool {
@@ -117,6 +128,7 @@ func (o Operation) For(r Responsibility) bool {
 const (
 	OptInCloudTrailLake = "billable.cloudtrail_lake (--with-cloudtrail-lake)"
 	OptInConfigQueries  = "billable.config_queries (--with-config-queries)"
+	OptInBucketPolicies = "billable.bucket_policies (--with-bucket-policies)"
 )
 
 // Domains that exist only in the catalog because the data they fill lives
@@ -148,6 +160,9 @@ const (
 	arnIAMEntity    = "arn:${Partition}:iam::${Account}:{role,user,group}/*"
 	arnResolverRule = "arn:${Partition}:route53resolver:${Region}:${Account}:resolver-rule/*"
 	arnMemberRole   = "arn:${Partition}:iam::*:role/${MemberInspectionRoleName}"
+	arnStack        = "arn:${Partition}:cloudformation:${Region}:${Account}:stack/*/*"
+	arnExplorerView = "arn:${Partition}:resource-explorer-2:${Region}:${Account}:view/*/*"
+	arnBucket       = "arn:${Partition}:s3:::*"
 )
 
 var (
@@ -211,16 +226,39 @@ var Catalog = []Operation{
 	{Service: "sts", Name: "AssumeRole", Kind: KindSession, Responsibilities: orgMgmt, Used: true, Purpose: "assume-role chains in the configuration and the member inspection and network roles", Resource: arnMemberRole,
 		Note: "issues temporary credentials for a role that already trusts the caller; AWS lists it as Write because it creates a session, but it changes no resource in any account"},
 
-	// Planned: Organizations services (M4, Section 5).
+	// CloudFormation StackSets administered from the management account.
+	{Service: "cloudformation", Name: "ListStackSets", Kind: KindRead, Responsibilities: orgMgmt, Domain: "stack_sets", Used: true, Purpose: "the StackSets administered from the management account"},
+	{Service: "cloudformation", Name: "DescribeStackSet", Kind: KindRead, Responsibilities: orgMgmt, Domain: "stack_sets", Used: true, Purpose: "permission model, target OUs, automatic deployment and RetainStacksOnAccountRemoval of each StackSet", Resource: arnStackSet},
+	{Service: "cloudformation", Name: "ListStackInstances", Kind: KindRead, Responsibilities: orgMgmt, Domain: "stack_sets", Used: true, Purpose: "the stack each StackSet has in each account and Region", Resource: arnStackSet},
+
+	// The workload inventory, read inside member accounts through the
+	// member inspection role. CloudFormation, IAM and Resource Explorer do
+	// not charge for these calls and AWS publishes no price for the
+	// Resource Groups Tagging API. S3 bills every request, so the two S3
+	// calls are billable reads behind an opt-in.
+	{Service: "cloudformation", Name: "DescribeStacks", Kind: KindRead, Responsibilities: member, Domain: "workloads.stacks", Used: true, Purpose: "every stack of a Region: status, tags, output keys and export names, parameters (read for infrastructure identifiers only), termination protection",
+		Actions: []string{"cloudformation:DescribeStacks", "cloudformation:ListStacks"}},
+	{Service: "cloudformation", Name: "ListStackResources", Kind: KindRead, Responsibilities: member, Domain: "workloads.stacks", Used: true, Purpose: "the resource types of each stack and how many of each", Resource: arnStack},
+	{Service: "cloudformation", Name: "ListExports", Kind: KindRead, Responsibilities: member, Domain: "workloads.stacks", Used: true, Purpose: "the exported output names of the account and Region"},
+	{Service: "cloudformation", Name: "ListImports", Kind: KindRead, Responsibilities: member, Domain: "workloads.stacks", Used: true, Purpose: "the stacks that import each export"},
+	{Service: "cloudformation", Name: "GetTemplate", Kind: KindRead, Responsibilities: member, Domain: "workloads.stacks", Used: true, Purpose: "the template of each stack, read in memory for cross-account stack outputs, infrastructure identifiers and conditions on organization identity; the template is never stored", Resource: arnStack},
+	{Service: "tag", Name: "GetResources", Kind: KindRead, Responsibilities: member, Domain: "workloads.resources", Used: true, Purpose: "a sample of the resources that are or were tagged, for tag policy checks and deployment provenance"},
+	{Service: "resource-explorer-2", Name: "ListIndexes", Kind: KindRead, Responsibilities: member, Domain: "workloads.resources", Used: true, Purpose: "whether the account has a Resource Explorer aggregator index, and in which Region"},
+	{Service: "resource-explorer-2", Name: "Search", Kind: KindRead, Responsibilities: member, Domain: "workloads.resources", Used: true, Purpose: "the resource sample from the aggregator index, when there is one (at most the first 1,000 results)", Resource: arnExplorerView,
+		Note: "a search over the Resource Explorer index: it returns the matching resources and changes nothing"},
+	{Service: "iam", Name: "ListRoles", Kind: KindRead, Responsibilities: member, Domain: "workloads.policies", Used: true, Purpose: "the trust policy of every role, read for conditions on the organization ID or path"},
+	{Service: "s3", Name: "ListBuckets", Kind: KindReadBillable, Responsibilities: member, Domain: "workloads.policies", OptIn: OptInBucketPolicies, Used: true, Purpose: "the buckets of the account with their Regions",
+		Actions: []string{"s3:ListAllMyBuckets"}, Note: "S3 bills it as a LIST request, so it is a billable read behind an opt-in"},
+	{Service: "s3", Name: "GetBucketPolicy", Kind: KindReadBillable, Responsibilities: member, Domain: "workloads.policies", OptIn: OptInBucketPolicies, Used: true, Purpose: "the policy of each bucket, read for conditions on the organization ID or path", Resource: arnBucket,
+		Note: "S3 bills every request that is not a DELETE or CANCEL; a policy read falls under GET and all other requests, so it is a billable read behind an opt-in"},
+
+	// Planned: Organizations services (Section 5).
 	{Service: "cloudtrail", Name: "DescribeTrails", Kind: KindRead, Responsibilities: orgMgmt, Domain: "organization_trails", Purpose: "organization trails", Resource: arnTrail},
 	{Service: "cloudtrail", Name: "GetTrailStatus", Kind: KindRead, Responsibilities: orgMgmt, Domain: "organization_trails", Purpose: "whether each organization trail is logging", Resource: arnTrail},
 	{Service: "config", Name: "DescribeConfigurationAggregators", Kind: KindRead, Responsibilities: member, Domain: "config_aggregators", Purpose: "organization Config aggregators in the audit account", Resource: arnAggregator},
-	{Service: "cloudformation", Name: "ListStackSets", Kind: KindRead, Responsibilities: orgMgmt, Domain: "stack_sets", Purpose: "service-managed StackSets"},
-	{Service: "cloudformation", Name: "DescribeStackSet", Kind: KindRead, Responsibilities: orgMgmt, Domain: "stack_sets", Purpose: "targets and auto-deployment of each StackSet", Resource: arnStackSet},
-	{Service: "cloudformation", Name: "ListStackInstances", Kind: KindRead, Responsibilities: orgMgmt, Domain: "stack_sets", Purpose: "the accounts and regions each StackSet is deployed to", Resource: arnStackSet},
 	{Service: "servicecatalog", Name: "SearchProvisionedProducts", Kind: KindRead, Responsibilities: ct, Domain: "control_tower.enrolled_accounts", Purpose: "Account Factory provisioned products, for enrolment provenance"},
 
-	// Planned: what only the member account can see (M4, Sections 5 and 8).
+	// Planned: what only the member account can see (Sections 5 and 8).
 	{Service: "iam", Name: "GenerateServiceLastAccessedDetails", Kind: KindRead, Responsibilities: member, Domain: domainUsageActions, Purpose: "start a last-accessed report for a role or user", Resource: arnIAMEntity,
 		Note: "AWS lists it at access level Read: it starts a report job about existing data and changes nothing in the account"},
 	{Service: "iam", Name: "GetServiceLastAccessedDetails", Kind: KindRead, Responsibilities: member, Domain: domainUsageActions, Purpose: "read the last-accessed report"},
@@ -231,7 +269,6 @@ var Catalog = []Operation{
 	{Service: "cloudtrail", Name: "DescribeQuery", Kind: KindReadBillable, Responsibilities: orgMgmt, Domain: domainUsageActions, OptIn: OptInCloudTrailLake, Purpose: "status and bytes scanned of the Lake query", Resource: arnEventStore},
 	{Service: "config", Name: "SelectAggregateResourceConfig", Kind: KindReadBillable, Responsibilities: member, Domain: domainUsageResources, OptIn: OptInConfigQueries, Purpose: "resource inventories from an aggregator", Resource: arnAggregator,
 		Note: "a SQL select over the aggregator; AWS bills each advanced query, so it is a billable read behind an opt-in"},
-	{Service: "tag", Name: "GetResources", Kind: KindRead, Responsibilities: member, Domain: domainUsageResources, Purpose: "a tagged resource sample for tag policy checks"},
 	{Service: "ram", Name: "GetResourceShareAssociations", Kind: KindRead, Responsibilities: member, Domain: "resource_shares", Purpose: "shares the account receives", Resource: arnRAMShare},
 	{Service: "ec2", Name: "DescribeTransitGatewayAttachments", Kind: KindRead, Responsibilities: netMember, Domain: domainNetworkPaths, Purpose: "transit gateway attachments in use"},
 	{Service: "ec2", Name: "DescribeTransitGatewayVpcAttachments", Kind: KindRead, Responsibilities: netMember, Domain: domainNetworkPaths, Purpose: "VPC attachments to shared transit gateways"},
@@ -243,11 +280,20 @@ var Catalog = []Operation{
 	{Service: "route53resolver", Name: "ListResolverRuleAssociations", Kind: KindRead, Responsibilities: member, Domain: domainNetworkPaths, Purpose: "Resolver rules associated with the account's VPCs", Resource: arnResolverRule},
 }
 
-// Lookup finds an operation by IAM action ("organizations:ListRoots").
+// Lookup finds an operation by IAM action ("organizations:ListRoots"),
+// including the actions an operation needs under another name
+// ("s3:ListAllMyBuckets" for s3:ListBuckets).
 func Lookup(action string) (Operation, bool) {
 	for _, o := range Catalog {
 		if o.Action() == action {
 			return o, true
+		}
+	}
+	for _, o := range Catalog {
+		for _, a := range o.IAM() {
+			if a == action {
+				return o, true
+			}
 		}
 	}
 	return Operation{}, false
@@ -310,19 +356,39 @@ func hasVerb(name string, verbs []string) bool {
 }
 
 // IsReadOnly reports whether an operation may be called by a read-only
-// collector: a used catalog entry of kind read or session.
+// collector without an opt-in: a catalog entry of kind read or session.
 func IsReadOnly(name string) bool {
 	k := Semantics(name)
 	return k == KindRead || k == KindSession
 }
 
-// IAMActions renders the actions this build calls that need an IAM
-// permission, sorted. sts:GetCallerIdentity needs none and is left out.
+// Billable returns the billable reads this build can call, each behind its
+// opt-in.
+func Billable() []Operation {
+	var out []Operation
+	for _, o := range Catalog {
+		if o.Used && o.Kind == KindReadBillable {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// IAMActions renders the IAM actions of the operations this build calls,
+// sorted, the opt-in billable ones included. sts:GetCallerIdentity needs no
+// permission and is left out.
 func IAMActions() []string {
+	seen := map[string]bool{}
 	var out []string
 	for _, o := range Catalog {
-		if o.Used && o.Name != "GetCallerIdentity" {
-			out = append(out, o.Action())
+		if !o.Used || o.Name == "GetCallerIdentity" {
+			continue
+		}
+		for _, a := range o.IAM() {
+			if !seen[a] {
+				seen[a] = true
+				out = append(out, a)
+			}
 		}
 	}
 	sort.Strings(out)
@@ -337,9 +403,11 @@ func ActionsFor(r Responsibility, planned bool) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, o := range OperationsFor(r, planned) {
-		if !seen[o.Action()] {
-			seen[o.Action()] = true
-			out = append(out, o.Action())
+		for _, a := range o.IAM() {
+			if !seen[a] {
+				seen[a] = true
+				out = append(out, a)
+			}
 		}
 	}
 	sort.Strings(out)

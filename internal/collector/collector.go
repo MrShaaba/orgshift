@@ -145,6 +145,14 @@ type Options struct {
 	// IdentityStore resolves assignment principals to user and group names.
 	// Optional; without it principals are recorded by ID only.
 	IdentityStore IdentityStoreAPI
+	// StackSets lists the StackSets administered from the management
+	// account with their instances. Optional; nil records the domain as
+	// skipped.
+	StackSets StackSetsAPI
+	// Workloads configures the inventory of member accounts (stacks, a
+	// resource sample, policies tied to organization identity). Optional;
+	// nil or no accounts records the workload domains as skipped.
+	Workloads *WorkloadOptions
 	// SkipReasons says why an optional client is nil, keyed by coverage
 	// domain ("--skip-ram", say). Domains without a reason are recorded as
 	// skipped with a generic note.
@@ -323,8 +331,11 @@ func (r *run) steps() []step {
 			reset: func() { s.ControlTower = nil }, run: ok(r.controlTower)},
 		step{name: "identity_center", title: "identity center", domains: []string{snapshot.DomainIdentityCenter}, checkpoint: true,
 			reset: func() { s.IdentityCenter = nil }, run: ok(r.identityCenter)},
-		step{name: "not_collected", title: "organization trails, Config aggregators, StackSets and workloads", domains: []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets,
-			snapshot.DomainWorkloadStacks, snapshot.DomainWorkloadResources, snapshot.DomainWorkloadPolicies},
+		step{name: "stack_sets", title: "StackSets", domains: []string{snapshot.DomainStackSets}, checkpoint: true,
+			reset: func() { s.StackSets = []snapshot.StackSet{} }, run: ok(r.stackSets)},
+		step{name: "workloads", title: "workload inventory of the member accounts", domains: snapshot.WorkloadDomains, checkpoint: true,
+			reset: func() { s.Workloads = nil }, run: ok(r.workloads)},
+		step{name: "not_collected", title: "organization trails and Config aggregators", domains: []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator},
 			reset: func() {}, run: ok(r.notCollected)},
 	)
 	return steps
@@ -1132,8 +1143,7 @@ func (r *run) regions() {
 
 // notCollected records the domains this collector version does not read.
 func (r *run) notCollected() {
-	for _, d := range []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets,
-		snapshot.DomainWorkloadStacks, snapshot.DomainWorkloadResources, snapshot.DomainWorkloadPolicies} {
+	for _, d := range []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator} {
 		r.record(snapshot.DomainCoverage{Domain: d, Status: snapshot.CoverageUnsupported, Reason: "not collected by this collector version; add the entries by hand (docs/snapshot.md) or wait for the collector that reads them (ROADMAP.md)"})
 	}
 }
@@ -1721,6 +1731,22 @@ func Summary(s *snapshot.Snapshot) string {
 	}
 	if ic := s.IdentityCenter; ic != nil {
 		out += fmt.Sprintf("; Identity Center with %d permission sets and %d account assignments", len(ic.PermissionSets), len(ic.Assignments))
+	}
+	if len(s.StackSets) > 0 {
+		instances := 0
+		for _, ss := range s.StackSets {
+			instances += len(ss.Instances)
+		}
+		out += fmt.Sprintf("; %d StackSets with %d stack instances", len(s.StackSets), instances)
+	}
+	if len(s.Workloads) > 0 {
+		stacks, resources, policies := 0, 0, 0
+		for _, w := range s.Workloads {
+			stacks += len(w.Stacks)
+			resources += len(w.Resources)
+			policies += len(w.ResourcePolicies)
+		}
+		out += fmt.Sprintf("; workload inventory of %d account(s): %d stacks, %d sampled resources, %d policies tied to organization identity", len(s.Workloads), stacks, resources, policies)
 	}
 	if gaps := s.CoverageGaps(); len(gaps) > 0 {
 		out += fmt.Sprintf("\ncoverage gaps (%d): %s", len(gaps), strings.Join(gaps, ", "))

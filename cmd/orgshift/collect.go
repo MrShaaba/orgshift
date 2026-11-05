@@ -38,6 +38,7 @@ func runCollect(args []string) error {
 	retries := fs.Int("retry-attempts", 0, "SDK attempts per call, adaptive retry mode (default from the configuration, 8)")
 	// Optional data sources that can cost money. Off by default, and in this
 	// version they only print the cost warning; see ROADMAP.md.
+	bucketPolicies := fs.Bool("with-bucket-policies", false, "OPT-IN, COSTS MONEY: read the bucket policies of the inspected member accounts; S3 bills one LIST request per account and one request per bucket")
 	cloudTrailLake := fs.Bool("with-cloudtrail-lake", false, "OPT-IN, COSTS MONEY: query CloudTrail Lake for actions in use (not implemented yet)")
 	configQueries := fs.Bool("with-config-queries", false, "OPT-IN, COSTS MONEY: run Config aggregator advanced queries for resource inventories (not implemented yet)")
 	fs.Usage = func() {
@@ -80,6 +81,9 @@ func runCollect(args []string) error {
 	if cfg.Billable.CloudTrailLake || cfg.Billable.ConfigQueries {
 		return errors.New("billable.cloudtrail_lake and billable.config_queries are not implemented in this version; set them to false (ROADMAP.md)")
 	}
+	if *bucketPolicies {
+		cfg.Billable.BucketPolicies = true
+	}
 	if *retries > 0 {
 		cfg.Collection.RetryAttempts = *retries
 	}
@@ -99,6 +103,9 @@ func runCollect(args []string) error {
 	}
 	for _, id := range sc.identities {
 		fmt.Fprintln(os.Stderr, "identity verified:", id)
+	}
+	if cfg.Billable.BucketPolicies {
+		fmt.Fprintln(os.Stderr, "billable opt-in: bucket policies are read (S3 bills one LIST request per inspected account and one request per bucket in the workload regions)")
 	}
 	opts := sc.collect
 	if !*noCheckpoint && cfg.Collection.Checkpointing() {
@@ -124,6 +131,15 @@ func runCollect(args []string) error {
 	fmt.Println("Next: add usage.actions (or use --last-accessed at simulate time) for the account you plan to move.")
 	if snap.ControlTower != nil {
 		fmt.Println("Control Tower: enrolled accounts were read from ListEnabledBaselines; whether Account Factory vended an account is not visible that way, so add provisioned_product by hand where it matters.")
+	}
+	switch n := len(snap.Workloads); {
+	case n > 0:
+		fmt.Printf("Workloads: the inventory of %d member account(s) was read; `orgshift workloads --snapshot %s` lists it with the deployment provenance.\n", n, *out)
+		if !cfg.Billable.BucketPolicies {
+			fmt.Println("Workloads: bucket policies were not read (a billed S3 read, off by default), so the workload layer reads partially evaluated; add --with-bucket-policies to read them.")
+		}
+	default:
+		fmt.Println("Workloads: no member account was inspected; name the accounts you plan to move under member_inspection.accounts to evaluate the workload layer.")
 	}
 	if snap.IdentityCenter != nil {
 		fmt.Println("Identity Center: assignments were listed for the accounts each permission set is provisioned in; principal names come from the identity store when identitystore:DescribeUser/DescribeGroup are allowed.")

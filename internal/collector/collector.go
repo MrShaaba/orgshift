@@ -323,7 +323,8 @@ func (r *run) steps() []step {
 			reset: func() { s.ControlTower = nil }, run: ok(r.controlTower)},
 		step{name: "identity_center", title: "identity center", domains: []string{snapshot.DomainIdentityCenter}, checkpoint: true,
 			reset: func() { s.IdentityCenter = nil }, run: ok(r.identityCenter)},
-		step{name: "not_collected", title: "organization trails, Config aggregators and StackSets", domains: []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets},
+		step{name: "not_collected", title: "organization trails, Config aggregators, StackSets and workloads", domains: []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets,
+			snapshot.DomainWorkloadStacks, snapshot.DomainWorkloadResources, snapshot.DomainWorkloadPolicies},
 			reset: func() {}, run: ok(r.notCollected)},
 	)
 	return steps
@@ -1131,7 +1132,8 @@ func (r *run) regions() {
 
 // notCollected records the domains this collector version does not read.
 func (r *run) notCollected() {
-	for _, d := range []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets} {
+	for _, d := range []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets,
+		snapshot.DomainWorkloadStacks, snapshot.DomainWorkloadResources, snapshot.DomainWorkloadPolicies} {
 		r.record(snapshot.DomainCoverage{Domain: d, Status: snapshot.CoverageUnsupported, Reason: "not collected by this collector version; add the entries by hand (docs/snapshot.md) or wait for the collector that reads them (ROADMAP.md)"})
 	}
 }

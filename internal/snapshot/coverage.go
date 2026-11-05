@@ -97,6 +97,7 @@ var AllDomains = []string{
 	DomainDelegatedAdmins, DomainTrustedAccess, DomainResourceShares,
 	DomainOrgTrails, DomainConfigAggregator, DomainStackSets,
 	DomainControlTower, DomainEnrolledAccounts, DomainIdentityCenter,
+	DomainWorkloadStacks, DomainWorkloadResources, DomainWorkloadPolicies,
 }
 
 // PolicyDomain returns the coverage domain of a policy type.
@@ -213,16 +214,30 @@ func (s *Snapshot) DomainStatus(domain, accountID string) CoverageStatus {
 		}
 		found = true
 	}
-	if !found && s.Coverage.AssertedComplete {
+	if !found && s.assertedFor(domain) {
 		return CoverageObserved
 	}
 	return status
 }
 
+// assertedFor reports whether the snapshot's completeness assertion covers
+// a domain. An assertion written into a schema version 1 or 2 document was
+// made before the workload inventory existed, so it does not cover the
+// workload domains.
+func (s *Snapshot) assertedFor(domain string) bool {
+	if s == nil || s.Coverage == nil || !s.Coverage.AssertedComplete {
+		return false
+	}
+	if IsWorkloadDomain(domain) && s.UpgradedFrom != 0 && s.UpgradedFrom < 3 {
+		return false
+	}
+	return true
+}
+
 // CoverageAsserted reports whether a domain's completeness rests on the
 // author's assertion rather than on a record.
 func (s *Snapshot) CoverageAsserted(domain string) bool {
-	return s != nil && s.Coverage != nil && s.Coverage.AssertedComplete && len(s.DomainRecords(domain)) == 0
+	return s.assertedFor(domain) && len(s.DomainRecords(domain)) == 0
 }
 
 // CoverageGaps lists the domains whose aggregated status is not complete,

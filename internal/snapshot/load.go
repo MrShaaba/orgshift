@@ -63,9 +63,12 @@ func Parse(data []byte) (*Snapshot, error) {
 }
 
 // Upgrade brings a snapshot written with an older schema version to the
-// current one. Version 1 had no coverage block; the upgraded snapshot keeps
-// Coverage nil, which the evaluator reports as unknown coverage, and
-// records the original version in UpgradedFrom.
+// current one and records the original version in UpgradedFrom. Version 1
+// had no coverage block; the upgraded snapshot keeps Coverage nil, which
+// the evaluator reports as unknown coverage. Version 2 had no workload
+// inventory; the upgraded snapshot has no workloads block and no records
+// for the workloads.* domains, which read as unknown even under a
+// completeness assertion, because the assertion predates them.
 func (s *Snapshot) Upgrade() {
 	if s.SchemaVersion >= SchemaVersion {
 		return

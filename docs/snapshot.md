@@ -1,4 +1,4 @@
-# Snapshot schema (version 2)
+# Snapshot schema (version 3)
 
 A snapshot is a JSON file that describes one AWS organization well enough for
 orgshift to simulate moves offline. It is produced by `orgshift collect`
@@ -8,9 +8,12 @@ never modified by `simulate` or `serve`; usage inputs passed at simulation
 time are merged in memory only.
 
 The loader rejects files with a `schema_version` newer than the build supports
-and files with unknown fields, so typos are caught early. Version 1 files are
-accepted and upgraded in memory: they have no `coverage` block, so every
-domain reads as unknown and simulations against them report that. Referential
+and files with unknown fields, so typos are caught early. Older files are
+accepted and upgraded in memory. Version 1 files have no `coverage` block, so
+every domain reads as unknown and simulations against them report that.
+Version 2 files have no `workloads` block and no records for the three
+`workloads.*` coverage domains, so those read as unknown, also under an
+`asserted_complete` assertion, which was made before they existed. Referential
 integrity is validated on load: every parent, policy target and usage key
 must exist, and every policy document must parse for its type.
 
@@ -21,7 +24,7 @@ human-readable contract.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `schema_version` | int | `2` for this version; `1` is accepted and upgraded. Required. |
+| `schema_version` | int | `3` for this version; `1` and `2` are accepted and upgraded. Required. |
 | `generated_at` | string | RFC 3339 timestamp. Informational, and the reference time for the four-day rule on created accounts. |
 | `source` | string | `collector`, `fixture` or `manual`. |
 | `organization` | object | See [Organization](#organization). |
@@ -38,6 +41,7 @@ human-readable contract.
 | `coverage` | object | See [Coverage](#coverage). Optional, but without it every domain is of unknown completeness. |
 | `control_tower` | object | See [Control Tower](#control-tower). Optional; absent when there is no landing zone (the coverage block says whether that was checked). |
 | `identity_center` | object | See [Identity Center](#identity-center). Optional; absent when there is no instance. |
+| `workloads` | object | Map of account ID to [Account workloads](#account-workloads): what was read inside the member accounts that were inspected. Optional. |
 | `usage` | object | Map of account ID to [Account usage](#account-usage). Optional. |
 
 ## Organization
@@ -111,6 +115,8 @@ AWS RAM shares as seen from the owning organization.
 | `permission_model` | `SERVICE_MANAGED` or `SELF_MANAGED`. Only service-managed StackSets follow OU membership. |
 | `auto_deployment`, `retain_stacks_on_account_removal` | Auto-deployment settings. |
 | `target_ous`, `target_accounts`, `regions` | Deployment targets. |
+| `id` | The StackSet ID. Optional. |
+| `instances` | The StackSet's deployments (version 3): `{account_id, region, stack_id, status, organizational_unit_id}`. `stack_id` is the ID of the stack in the target account and joins the instance to that account's `workloads.stacks`, which is how a stack is known to be a StackSet instance rather than guessed from its name. |
 
 ## Coverage
 
@@ -129,7 +135,7 @@ Each record:
 
 | Field | Notes |
 | --- | --- |
-| `domain` | One of `organization`, `tree`, `account_tags`, `enabled_regions`, `policies.scp`, `policies.rcp`, `policies.tag`, `policies.backup`, `delegated_administrators`, `trusted_access`, `resource_shares`, `organization_trails`, `config_aggregators`, `stack_sets`, `control_tower`, `control_tower.enrolled_accounts`, `identity_center`. |
+| `domain` | One of `organization`, `tree`, `account_tags`, `enabled_regions`, `policies.scp`, `policies.rcp`, `policies.tag`, `policies.backup`, `delegated_administrators`, `trusted_access`, `resource_shares`, `organization_trails`, `config_aggregators`, `stack_sets`, `control_tower`, `control_tower.enrolled_accounts`, `identity_center`, and the per-account workload domains `workloads.stacks`, `workloads.resources`, `workloads.policies`. |
 | `status` | `observed` (calls succeeded, items found), `empty` (calls succeeded, nothing there), `skipped` (a `--skip` flag), `unsupported` (this collector does not read the domain, or the API does not exist here), `partial` (some pages read, then a failure), `access_denied`, `error` (anything else, including a lookup in a region where the service does not answer). Only `observed` and `empty` mean the lists can be trusted. |
 | `account_id` | The account the calls were made from (shares) or about (regions, tags); empty for organization-wide calls. |
 | `region` | The endpoint region for regional domains. |
@@ -146,6 +152,52 @@ shares, StackSets and Control Tower; a cross-organization move also needs
 delegated administrators, trusted access, trails, Config aggregators and
 Identity Center on both sides. The result's `coverage` matrix lists every
 domain with its status on each side and whether it was required.
+
+## Account workloads
+
+`workloads.<account-id>` is what was read inside one member account through
+the member inspection role. It holds configuration facts only: no template
+bodies, no parameter or output values, no resource contents. Each inspected
+account has one coverage record per workload domain; an account without
+records was not inspected, whatever other accounts' records say.
+
+| Field | Notes |
+| --- | --- |
+| `regions` | The Regions that were inspected. |
+| `stacks` | CloudFormation stacks, see below. |
+| `resources` | A sample of the account's resources: `{arn, type, region, tags, stack}`. `type` uses the `service:type` notation of tag policies (`ec2:instance`, `s3:bucket`). `stack` is set when a stack lists the resource; the `aws:cloudformation:stack-name` tag, when the resource carries it, stays in `tags`. A sample by design: `resources_truncated` says the cap was reached. |
+| `resource_source` | `tagging-api` (the Resource Groups Tagging API returns resources that are tagged or were tagged once, never untagged ones), `resource-explorer` (returns untagged resources too and stops at the first 1,000 results of a query) or `manual`. |
+| `resource_policies` | The resource-based policies that reference organization identity, see below. Policies that do not are counted in `policies_inspected` and not kept. |
+| `collected_at` | RFC 3339. |
+
+Each stack:
+
+| Field | Notes |
+| --- | --- |
+| `name`, `id`, `region`, `status`, `description`, `tags`, `created_at`, `updated_at` | As returned by `DescribeStacks`. |
+| `termination_protection` | `EnableTerminationProtection`. |
+| `parent_id` | Set on nested stacks. |
+| `resource_types` | Count of the stack's resources per CloudFormation type (`{"AWS::IAM::Role": 3}`). |
+| `outputs` | `{key, export_name}`: output keys and export names. Output values are not stored. |
+| `imports` | `{export_name, exporting_stack}`: `Fn::ImportValue` dependencies, which CloudFormation limits to the same account and Region. |
+| `external_outputs` | `{stack_name, output_name, region, role_arn, account_id}`: `Fn::GetStackOutput` references, which can cross accounts and Regions through the role and are resolved at deploy time only. |
+| `references` | `{kind, id, account_id, via}`: identifiers of resources outside the stack that its parameters or template name (`subnet`, `transit-gateway`, `vpc`, `resolver-rule`, `prefix-list`, `arn`), with where each was found. Only identifiers are kept, never other parameter values. |
+| `stack_set` | `{name, id, evidence}` when the stack is linked to a StackSet: `evidence` is `stack-instance` (its ID is in the StackSet's instance list) or `stack-name` (its name starts with `StackSet-`, the form AWS's examples show, which is not a documented rule). |
+
+Each resource policy:
+
+| Field | Notes |
+| --- | --- |
+| `kind` | `s3-bucket-policy`, `iam-role-trust-policy` or `template-policy` (found in a stack's template). |
+| `resource_arn`, `resource`, `stack` | What the policy protects: an ARN, or for a template policy the logical ID and the stack. |
+| `source` | The operation it was read with. |
+| `document` | The policy as IAM JSON, for policies read from the service. Template policies can contain intrinsic functions and carry `conditions` only. |
+| `conditions` | The conditions on organization keys found in it: `{sid, effect, operator, key, values, dynamic}`. The keys are `aws:PrincipalOrgID`, `aws:PrincipalOrgPaths`, `aws:ResourceOrgID`, `aws:ResourceOrgPaths`, `aws:SourceOrgID` and `aws:SourceOrgPaths`; `dynamic` marks a value computed in a template. |
+
+Deployment provenance (Control Tower, a StackSet, a plain stack, a
+Terraform-style tag convention, unknown) is not stored: `orgshift workloads`
+and the evaluator compute it from this block every time and name the
+evidence for each classification.
 
 ## Control Tower
 
@@ -250,9 +302,9 @@ registered OUs, enrolled accounts and enabled controls; not Account Factory
 provenance), the Identity Center block (instance, permission sets with their
 policies and provisioned accounts, account assignments with principal names)
 and the coverage block for every domain. Organization trails, Config
-aggregators and StackSets are recorded as `unsupported` and can be added by
-hand; usage is left empty. Every failure is a coverage record, not an empty
-list.
+aggregators, StackSets and the workload inventory are recorded as
+`unsupported` by this collector version and can be added by hand; usage is
+left empty. Every failure is a coverage record, not an empty list.
 
 ## Example
 

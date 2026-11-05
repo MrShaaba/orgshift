@@ -140,6 +140,13 @@ func LarkspurPartial() *snapshot.Snapshot {
 	for _, d := range []string{snapshot.DomainOrgTrails, snapshot.DomainConfigAggregator, snapshot.DomainStackSets} {
 		replace(d, snapshot.DomainCoverage{Status: snapshot.CoverageUnsupported, Reason: "not collected by this collector version; add by hand (docs/snapshot.md)"})
 	}
+	// The member inspection role could not be assumed, so no account has a
+	// workload inventory.
+	s.Workloads = nil
+	for _, d := range snapshot.WorkloadDomains {
+		replace(d, snapshot.DomainCoverage{Status: snapshot.CoverageAccessDenied, Operations: []string{"sts:AssumeRole"},
+			Error: "AccessDenied: User: arn:aws:sts::111111111111:assumed-role/OrgshiftReadOnly/collect is not authorized to perform: sts:AssumeRole on resource: arn:aws:iam::111111111116:role/OrgshiftMemberRead"})
+	}
 	// Trusted access shows Control Tower is in use, which is what makes the
 	// empty landing zone lookup suspicious.
 	s.TrustedAccessServices = append(s.TrustedAccessServices, "controltower.amazonaws.com")
@@ -216,6 +223,7 @@ func completeCoverage(s *snapshot.Snapshot, region string) *snapshot.Coverage {
 		ic.Region = region
 	}
 	cov.Domains = append(cov.Domains, ct, enrolled, ic)
+	cov.Domains = append(cov.Domains, workloadCoverage(s)...)
 	return cov
 }
 
@@ -394,6 +402,8 @@ func Larkspur() *snapshot.Snapshot {
 	}
 	// Drawn after the usage block so the identifiers above keep their values.
 	s.IdentityCenter = larkspurIdentityCenter(g)
+	// Workloads are drawn last for the same reason.
+	larkspurWorkloads(g, s, tgw, subnetA, subnetB)
 	s.Coverage = completeCoverage(s, "us-east-1")
 	return s
 }
@@ -627,6 +637,7 @@ func Fernhill() *snapshot.Snapshot {
 			},
 		},
 	}
+	fernhillWorkloads(g, s)
 	s.Coverage = completeCoverage(s, "eu-west-1")
 	return s
 }

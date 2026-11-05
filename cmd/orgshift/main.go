@@ -19,6 +19,7 @@ Usage:
   orgshift simulate --from A.json [--to B.json] --ou OU --target-ou PARENT [flags]
   orgshift stages --scenario plan.yaml [--from A.json --to B.json] [--format text|json|markdown]
   orgshift scenario example | scenario check --scenario plan.yaml
+  orgshift workloads --snapshot A.json [--account ID] [--format text|json|markdown]
   orgshift serve [--from A.json --to B.json] [--fixtures] [--listen 127.0.0.1:8080]
   orgshift config example | config check --config orgshift.yaml
   orgshift iam-templates [--config orgshift.yaml] [--out docs/iam]
@@ -47,6 +48,8 @@ func main() {
 		err = runStages(os.Args[2:])
 	case "scenario":
 		err = runScenario(os.Args[2:])
+	case "workloads":
+		err = runWorkloads(os.Args[2:])
 	case "serve":
 		err = runServe(os.Args[2:])
 	case "collect":

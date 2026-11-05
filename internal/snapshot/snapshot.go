@@ -20,7 +20,14 @@ import (
 // collector could and could not inspect. A version 1 document is accepted
 // and treated as having unknown coverage for every domain, so an empty list
 // in it no longer reads as "nothing exists".
-const SchemaVersion = 2
+//
+// Version 3 (2026-11) added the workloads block (per account: CloudFormation
+// stacks, a resource sample and the resource policies that reference
+// organization identity), the three workloads.* coverage domains and the
+// instances of each StackSet. A version 2 document is accepted: it has no
+// workload inventory, so those domains read as unknown, and a completeness
+// assertion made before they existed does not cover them.
+const SchemaVersion = 3
 
 // PolicyType mirrors the policy type names used by AWS Organizations.
 type PolicyType string
@@ -83,6 +90,10 @@ type Snapshot struct {
 	// IdentityCenter describes the IAM Identity Center instance, its
 	// permission sets and account assignments, when there is one.
 	IdentityCenter *IdentityCenter `json:"identity_center,omitempty"`
+
+	// Workloads holds the workload inventory of the member accounts that
+	// were inspected, keyed by account ID. See AccountWorkloads.
+	Workloads map[string]*AccountWorkloads `json:"workloads,omitempty"`
 
 	// Usage holds per-account information that the evaluator needs about the
 	// account being moved: actions in use, inbound access from other
@@ -206,6 +217,7 @@ type ConfigAggregator struct {
 // affected by organization membership, but self-managed ones are kept too.
 type StackSet struct {
 	Name                         string   `json:"name"`
+	ID                           string   `json:"id,omitempty"`
 	AdministrationAccountID      string   `json:"administration_account_id"`
 	PermissionModel              string   `json:"permission_model"`
 	AutoDeployment               bool     `json:"auto_deployment"`
@@ -214,6 +226,10 @@ type StackSet struct {
 	TargetAccounts               []string `json:"target_accounts,omitempty"`
 	Regions                      []string `json:"regions,omitempty"`
 	Description                  string   `json:"description,omitempty"`
+	// Instances are the StackSet's deployments, one per account and Region
+	// (schema version 3). They link the StackSet to the stacks it created
+	// in member accounts.
+	Instances []StackInstance `json:"instances,omitempty"`
 }
 
 // AccountUsage is what the evaluator knows about how an account is used.

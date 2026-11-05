@@ -98,6 +98,7 @@ func (s *Snapshot) Validate() error {
 	}
 	s.validateControlTower(seen, fail)
 	s.validateIdentityCenter(seen, fail)
+	s.validateWorkloads(seen, fail)
 	s.validateCoverage(seen, fail)
 	// Cycles: every OU must reach the root.
 	ix := s.Index()
@@ -279,6 +280,113 @@ func (s *Snapshot) validateIdentityCenter(seen map[string]string, fail func(stri
 		}
 		if a.PrincipalID == "" {
 			fail("identity_center.account_assignments: an assignment on %s has no principal_id", a.AccountID)
+		}
+	}
+}
+
+// validateWorkloads checks the workload inventory: every key is an account
+// of the snapshot, stacks are named and unique per Region, resources carry
+// an ARN, kept policies are JSON and carry at least one organization
+// condition, and StackSet instances point at 12-digit accounts.
+func (s *Snapshot) validateWorkloads(seen map[string]string, fail func(string, ...any)) {
+	for id, w := range s.Workloads {
+		if seen[id] != "account" {
+			fail("workloads: %q is not an account in this snapshot", id)
+			continue
+		}
+		if w == nil {
+			fail("workloads.%s is null", id)
+			continue
+		}
+		switch w.ResourceSource {
+		case "", ResourceSourceTaggingAPI, ResourceSourceResourceExplorer, ResourceSourceManual:
+		default:
+			fail("workloads.%s: resource_source %q is not tagging-api, resource-explorer or manual", id, w.ResourceSource)
+		}
+		stacks := map[string]bool{}
+		for i, st := range w.Stacks {
+			if st.Name == "" || st.Region == "" {
+				fail("workloads.%s.stacks[%d]: name and region are required", id, i)
+				continue
+			}
+			key := st.Region + "/" + st.Name
+			if stacks[key] {
+				fail("workloads.%s.stacks: %s is listed twice in %s", id, st.Name, st.Region)
+			}
+			stacks[key] = true
+			for t, n := range st.ResourceTypes {
+				if t == "" || n < 0 {
+					fail("workloads.%s stack %s: resource type %q has count %d", id, st.Name, t, n)
+				}
+			}
+			for _, o := range st.Outputs {
+				if o.Key == "" {
+					fail("workloads.%s stack %s: an output has no key", id, st.Name)
+				}
+			}
+			for _, im := range st.Imports {
+				if im.ExportName == "" {
+					fail("workloads.%s stack %s: an import has no export_name", id, st.Name)
+				}
+			}
+			for _, ex := range st.ExternalOutputs {
+				if ex.StackName == "" || ex.OutputName == "" {
+					fail("workloads.%s stack %s: an external output needs stack_name and output_name", id, st.Name)
+				}
+				if ex.AccountID != "" && !accountIDRe.MatchString(ex.AccountID) {
+					fail("workloads.%s stack %s: external output account_id %q is not a 12 digit account id", id, st.Name, ex.AccountID)
+				}
+			}
+			for _, ref := range st.References {
+				if ref.Kind == "" || ref.ID == "" {
+					fail("workloads.%s stack %s: a reference needs kind and id", id, st.Name)
+				}
+			}
+			if ss := st.StackSet; ss != nil {
+				if ss.Evidence != StackSetEvidenceInstance && ss.Evidence != StackSetEvidenceName {
+					fail("workloads.%s stack %s: stack_set.evidence %q is not stack-instance or stack-name", id, st.Name, ss.Evidence)
+				}
+			}
+		}
+		for i, r := range w.Resources {
+			if r.ARN == "" {
+				fail("workloads.%s.resources[%d]: arn is required", id, i)
+			}
+		}
+		for i, p := range w.ResourcePolicies {
+			switch p.Kind {
+			case PolicyKindBucket, PolicyKindRoleTrust, PolicyKindTemplate:
+			default:
+				fail("workloads.%s.resource_policies[%d]: kind %q is not one of %s, %s, %s", id, i, p.Kind, PolicyKindBucket, PolicyKindRoleTrust, PolicyKindTemplate)
+			}
+			if p.ResourceARN == "" && p.Resource == "" {
+				fail("workloads.%s.resource_policies[%d]: resource_arn or resource is required", id, i)
+			}
+			if len(p.Document) > 0 {
+				if !json.Valid(p.Document) {
+					fail("workloads.%s.resource_policies[%d] (%s%s): document is not valid JSON", id, i, p.ResourceARN, p.Resource)
+				} else if _, err := policy.Parse(p.Document); err != nil {
+					fail("workloads.%s.resource_policies[%d] (%s%s): %v", id, i, p.ResourceARN, p.Resource, err)
+				}
+			}
+			if len(p.Document) == 0 && len(p.Conditions) == 0 {
+				fail("workloads.%s.resource_policies[%d] (%s%s): a kept policy needs a document or at least one organization condition", id, i, p.ResourceARN, p.Resource)
+			}
+			for _, c := range p.Conditions {
+				if !IsOrgConditionKey(c.Key) {
+					fail("workloads.%s.resource_policies[%d]: condition key %q is not an organization key", id, i, c.Key)
+				}
+			}
+		}
+	}
+	for _, ss := range s.StackSets {
+		for i, inst := range ss.Instances {
+			if !accountIDRe.MatchString(inst.AccountID) {
+				fail("stack_sets %s: instances[%d].account_id %q is not a 12 digit account id", ss.Name, i, inst.AccountID)
+			}
+			if inst.Region == "" {
+				fail("stack_sets %s: instances[%d] has no region", ss.Name, i)
+			}
 		}
 	}
 }

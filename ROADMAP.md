@@ -15,27 +15,158 @@ the summary says what to try.
   cross-organization paths: the scenario overlay and staged evaluation, the
   five layers, the transfer-procedure model, the impact categories and
   declared critical operations, end-to-end fixtures, CLI and UI.
-- **M4 and later:** Section 5 beyond Organizations, Control Tower and
-  Identity Center; then Section 8; then the rest.
+- **M4 (done, 2026-11-05):** the workload layer. A read-only workload
+  inventory of member accounts, deployment provenance with its evidence,
+  the Workloads check, the workload layer evaluated at every stage and the
+  recreate strategy listing what must be redeployed; fixtures, CLI and UI.
+- **Later:** Section 8, the network paths behind the validation stages;
+  Section 9; then the rest of Section 5 and the items below.
 
-## Next up: about 35 hours
+## Next up: about 44 hours
 
 Remaining work, sized. Details for each item are in the sections below.
 
 | Item | Hours |
 | --- | --- |
-| M4: workload inventory and deployment provenance, so the workload layer and the recreate strategy are evaluated rather than only reported | 8 |
 | Section 8: network-path reasoning behind the validation stages | 6 |
-| Section 9: stable finding identifiers, severities and redaction | 3 |
+| Workload dependency graph across accounts | 5 |
+| Snapshot diff: two snapshots of one organization taken at different times | 4 |
 | Actions in use from CloudTrail and CloudTrail Lake | 4 |
-| IAM Access Analyzer policy validation | 3 |
 | Backup policy and AI opt-out policy comparison | 4 |
-| Smaller items | 7 |
-| **Total** | **35** |
+| Workload inventory follow-ups (delegated-administrator StackSets, more resource policies, Account Factory provenance) | 4 |
+| Section 9: stable finding identifiers, severities and redaction | 3 |
+| HTML report bundle | 3 |
+| Identity Center group-membership import | 3 |
+| IAM Access Analyzer policy validation | 3 |
+| Smaller items | 4.5 |
+| **Total** | **43.5** |
 
 Hard rule for the development sessions: never run `orgshift collect`, the
 AWS CLI or any AWS SDK call against a real account; fixtures and mocks only.
 Live collection is run by the owner. The server on 8080 is left alone.
+
+### M4 outcome
+
+Workload inventory (read-only collection):
+
+- Snapshot schema 3 adds `workloads`, a per-account block, and three
+  coverage domains recorded per inspected account: `workloads.stacks`,
+  `workloads.resources` and `workloads.policies`. Version 2 files load
+  without it, and a completeness assertion made at version 2 does not
+  cover the new domains. `stack_sets` gains each StackSet's stack
+  instances.
+- For every account under `member_inspection.accounts` the collector
+  assumes the member inspection role and reads, per workload Region: the
+  CloudFormation stacks (status, tags, resource types and counts, output
+  keys and export names, imports, termination protection), a resource
+  sample with tags, and the role trust policies. From the management
+  account it reads the StackSets administered there with their permission
+  model, target OUs, automatic deployment and
+  `RetainStacksOnAccountRemoval` settings and their stack instances.
+- The resource sample comes from Resource Explorer when the account has an
+  aggregator index and its default view can be searched, otherwise from the
+  Resource Groups Tagging API; `resource_source` records which, and a
+  fallback says why.
+- Templates are parsed in memory (JSON or YAML with the short forms of the
+  intrinsic functions) for `Fn::GetStackOutput` references, identifiers of
+  infrastructure taken from outside the stack and policy conditions on
+  organization identity. Template bodies, output values and parameter
+  values are never stored; a test looks for them in the snapshot.
+- Every new operation is in the catalog, the IAM templates and
+  docs/permissions.md, and the catalog tests still refuse any write. All
+  calls are free except two: S3 bills every request, so `s3:ListBuckets`
+  and `s3:GetBucketPolicy` are billable reads behind
+  `billable.bucket_policies` / `--with-bucket-policies`, off by default.
+  Off, no S3 client is built and no S3 call is made (tested), the policies
+  domain carries a `skipped` record and the layer reads partially
+  evaluated. The member role's default policy does not grant the S3
+  actions; they are a separate opt-in policy.
+- The preflight probes one page of each read inside the named accounts and
+  the StackSet reads in the management account; the billed reads only with
+  the opt-in.
+
+Deployment provenance (`internal/workload`):
+
+- Every stack and sampled resource is classified as Control Tower or
+  Account Factory, a service-managed StackSet, a self-managed StackSet, a
+  StackSet whose permission model is unknown, a plain stack, a
+  Terraform-style tag convention, or unknown. Each classification names its
+  evidence and a confidence: an instance record is a fact (high), a stack
+  name or a tag is a convention (medium), and unknown is a valid answer
+  that the reports keep visible (low). Provenance is computed from the
+  snapshot each time, never stored.
+
+Evaluation of the workload layer:
+
+- A `workloads` check on the verdict board (`result_schema_version` 4, the
+  `workload-behaviour` model dated 2026-11-05) reports: service-managed
+  StackSet instances that are deleted, retained or left in an undocumented
+  state when the account leaves the organization or the StackSet's target
+  OUs; self-managed and unidentified StackSets; imports between stacks;
+  `Fn::GetStackOutput` references to other accounts, with the
+  `sts:AssumeRole` call they imply evaluated against the SCP and RCP chains
+  as a derived operation; stacks on subnets or transit gateways of RAM
+  shares the account loses (a blocker when the stack keeps creating
+  resources there, such as an Auto Scaling group); bucket and trust
+  policies evaluated with the policy engine before and after the move (a
+  Deny that starts applying to the account's own principals is NO-GO), and
+  conditions found in templates. The tag check uses the collected sample.
+- The three workload domains are in the coverage matrix and required on the
+  source side of a cross-organization move, so the layer reads evaluated,
+  partially evaluated or not evaluated and a GO is not issued without the
+  inventory. Inside one organization a missing inventory is said, not
+  required.
+- Stage reports (`stages_schema_version` 2) carry the layer's level and
+  what the Workloads check found at every stage. The inventory travels with
+  the account into the destination state without the stacks a StackSet
+  deletes on leaving, so later stages check each new position against what
+  is left. A relocation stage lists what has to be brought into the other
+  account.
+- Strategy comparison: the recreate strategy carries a redeployment plan
+  from the inventory, grouped by provenance (redeployable from a template
+  or pipeline, recreated by Control Tower or a StackSet, manual or unknown)
+  with counts, the dependencies that constrain a redeployment (import
+  order, cross-account outputs, networking from outside the template,
+  stateful resources, policies tied to the organization) and the unknowns.
+  It is an inventory with counts, not an estimate of effort.
+- The runbook has steps for each workload finding: keep or replace an
+  instance before its StackSet deletes it, move a stack off shared
+  networking, change a bucket or trust policy and close the transition
+  afterwards, decide where a cross-account output comes from.
+
+Fixtures, CLI and UI:
+
+- Larkspur and Fernhill carry planted workload problems: a service-managed
+  StackSet instance that is deleted on leaving, a cross-stack export, a
+  cross-account stack output, a bucket policy on `aws:PrincipalOrgID` that
+  locks the account out, an app with an Auto Scaling group on shared
+  subnets, resources without the cost-center tag, Terraform-tagged
+  resources, Control Tower baseline stacks and a StackSet instance nobody
+  in the organization administers. Golden tests and one assertion per
+  problem cover them; a third scenario fixture exercises the recreate
+  strategy.
+- `orgshift workloads --snapshot FILE [--account ID]` prints the inventory
+  and the provenance (text, JSON, Markdown).
+- The result page has a Workloads panel and the stage page one per stage,
+  with the redeployment table on the recreate strategy.
+
+Checked against the documentation and recorded in docs/aws-behaviour.md.
+Three things could not be confirmed there and are reported as such rather
+than assumed: what a StackSet does with an instance when automatic
+deployment is off, the answer of `ListImports` for an export nobody
+imports, and the S3 error code for a bucket without a policy.
+
+Not done, and where it is listed:
+
+- The collection code has only run against mocks, as the hard rule
+  requires. The first run against a real account is the owner's; the
+  preflight shows what is denied before anything is collected.
+- StackSets administered by a CloudFormation delegated administrator, KMS,
+  SQS, SNS and other resource policies, and Account Factory provenance:
+  "Workload inventory follow-ups" below.
+- Dependencies between accounts (which accounts have to move together):
+  "Workload dependency graph" below.
+- Network paths behind the shared subnets and transit gateways: Section 8.
 
 ### M1 outcome
 
@@ -141,10 +272,10 @@ Policy and impact evaluation (Section 7):
   not an IAM grant, which policy elements are not evaluated, what tag
   policies do and do not do, what the RAM model covers.
 
-Left for later milestones: workload inventory and deployment provenance
-behind the recreate strategy and the workload layer (M4); network-path
-reasoning behind the validation stage (Section 8); stable finding
-identifiers and redaction (Section 9).
+Left for later milestones at the time: workload inventory and deployment
+provenance behind the recreate strategy and the workload layer (done in
+M4); network-path reasoning behind the validation stage (Section 8); stable
+finding identifiers and redaction (Section 9).
 
 ### M2 outcome
 
@@ -223,6 +354,72 @@ Done since the first pass:
   Organizations, RAM, Control Tower and Identity Center; CloudTrail Lake
   import and Access Analyzer validation would add steps of their own.
 
+## Section 8: network-path reasoning behind the validation stages (6 h)
+
+- Read, through the member and network roles, the transit gateway
+  attachments, VPCs and subnets (shared ones included), route tables,
+  peerings, prefix lists and Resolver rule associations the catalog already
+  lists as planned.
+- Join them with the workload inventory: which stack's resources sit in
+  which subnet, which routes leave through a shared transit gateway, which
+  names resolve through a shared Resolver rule.
+- Report per stage which paths exist before and after, so the validation
+  stage lists paths to test instead of a generic reminder.
+
+## Workload dependency graph across accounts (5 h)
+
+- Build a graph from the inventories of several accounts: imports and
+  exports, `Fn::GetStackOutput` roles, resource policies that name another
+  account or the organization, shared subnets and transit gateways with
+  their owners, and the inbound access of the usage block.
+- Answer which accounts have to move together, in what order, and which
+  edges break when only one of them moves; mark edges that rest on a
+  convention or on missing evidence.
+- `orgshift graph --snapshot FILE [--account ID] --format text|json|dot`
+  and a view in the UI.
+
+## Snapshot diff: two snapshots taken at different times (4 h)
+
+- `orgshift diff --old A.json --new B.json` for two snapshots of the same
+  organization: the tree, policy documents and attachments, shares,
+  StackSets and instances, Control Tower and Identity Center, the workload
+  inventory (stacks that appeared or went, policy conditions that changed)
+  and coverage that got better or worse.
+- Say which earlier verdicts the changes invalidate, so a plan that was GO
+  last week is re-simulated only where something moved.
+- Text, JSON and Markdown, and an exit code for use in a schedule.
+
+## HTML report bundle (3 h)
+
+- `--format html --out DIR` on `simulate` and `stages`: one self-contained
+  page (styles embedded, no server, no external requests) with the verdict
+  board, coverage, the workload panel, the runbook and the diff, for
+  reviewers who do not run the tool.
+- Reuse the UI templates so the bundle and the UI cannot drift.
+- Goes with the redaction of Section 9: account IDs and names masked on
+  request.
+
+## Identity Center group-membership import (3 h)
+
+- Import group memberships (`identitystore:ListGroupMemberships` through
+  the identity-center role, or a CSV or SCIM export) so the Identity Center
+  check lists the people who lose access, not only the groups.
+- Match users between the two identity stores by user name or email where
+  the operator asks for it, and report who has no counterpart in the
+  destination.
+- The identity store calls are free; the catalog entries come first.
+
+## Workload inventory follow-ups (4 h)
+
+- StackSets administered by a CloudFormation delegated administrator:
+  `CallAs` DELEGATED_ADMIN through an access block of their own. (1 h)
+- More resource policies read from the service for conditions on
+  organization identity: KMS key policies, SQS, SNS, Secrets Manager, ECR
+  and Lambda. Each call is classified in the catalog first, and any the
+  service bills goes behind an opt-in. (2 h)
+- Account Factory provenance with `servicecatalog:SearchProvisionedProducts`,
+  so "Control Tower or Account Factory" is told apart. (1 h)
+
 ## Actions in use from CloudTrail and CloudTrail Lake (opt-in, cost warning) (4 h)
 
 - `orgshift collect --with-cloudtrail-lake --event-data-store … --days 90`
@@ -258,15 +455,20 @@ Done since the first pass:
   the chain display so nothing attached is invisible, even before they are
   evaluated.
 
-## Smaller items (7 h)
+## Section 9: stable finding identifiers, severities and redaction (3 h)
 
-- Collect organization trails, Config aggregators and StackSets in
-  `orgshift collect` (free `Describe`/`List` calls, with the allowlist test
-  extended). Until then the coverage block records them as unsupported. (3 h)
-- Collect a tagged resource sample with `tag:GetResources` for tag policy
-  checks. (1.5 h)
+- A stable identifier per finding, derived from the check, the kind of
+  finding and its subject, so two runs can be compared and a finding can be
+  acknowledged.
+- A severity next to the status, and redaction of account IDs, names and
+  ARNs in exports on request.
+
+## Smaller items (4.5 h)
+
+- Collect organization trails and Config aggregators in `orgshift collect`
+  (free `Describe` calls, with the catalog test extended). Until then the
+  coverage block records them as unsupported. StackSets and the tagged
+  resource sample, which were on this list, are collected since M4. (2 h)
 - Evaluate `aws:SourceVpc`, `aws:SourceIp` and `aws:CalledVia` conditions
   when the usage entry supplies them, instead of returning REVIEW. (2 h)
 - A `--fail-on review` switch for CI so a REVIEW can be made blocking. (0.5 h)
-- Stable finding identifiers and severities on every finding (Section 9 of
-  the brief; counted in the Section 9 line above).

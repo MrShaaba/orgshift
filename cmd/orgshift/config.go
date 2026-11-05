@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/MrShaaba/orgshift/internal/config"
 )
@@ -61,12 +62,33 @@ func runConfig(args []string) error {
 			}
 			if m := side.MemberInspection; m != nil {
 				fmt.Printf("  member inspection: role %s, %d configured account(s), sample %d\n", m.RoleName, len(m.Accounts), m.MemberSample())
+				switch {
+				case side.Skipped("workloads"):
+					fmt.Println("  workload inventory: skipped")
+				case len(m.Accounts) == 0:
+					fmt.Println("  workload inventory: no account named under member_inspection.accounts, so none is inspected")
+				default:
+					regions := side.WorkloadRegions
+					if len(regions) == 0 {
+						regions = []string{side.Management.Region}
+					}
+					source := "auto"
+					if w := side.Workloads; w != nil && w.ResourceSource != "" {
+						source = w.ResourceSource
+					}
+					fmt.Printf("  workload inventory: accounts %s in %s, resource sample from %s\n", strings.Join(m.Accounts, ", "), strings.Join(regions, ", "), source)
+				}
 			}
 			if len(side.Skip) > 0 {
 				fmt.Printf("  skipped domains: %v\n", side.Skip)
 			}
 		}
 		fmt.Printf("collection: concurrency %d, retry attempts %d, timeout %s, checkpoint %t\n", cfg.Collection.Concurrency, cfg.Collection.RetryAttempts, cfg.Collection.Timeout, cfg.Collection.Checkpointing())
+		if cfg.Billable.BucketPolicies {
+			fmt.Println("billable: bucket policies are read (S3 bills one LIST request per inspected account and one request per bucket in the workload regions)")
+		} else {
+			fmt.Println("billable: nothing billed is read; bucket policies stay unread and the workload layer reads partially evaluated (billable.bucket_policies or --with-bucket-policies)")
+		}
 		if cfg.Billable.CloudTrailLake || cfg.Billable.ConfigQueries {
 			fmt.Println("billable: an opt-in is on; these data sources are not implemented in this version and collect refuses to run with them")
 		}

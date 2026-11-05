@@ -54,7 +54,7 @@ jobs:
           ./orgshift scenario example > /tmp/plan.yaml
           ./orgshift scenario check --scenario /tmp/plan.yaml
           ./orgshift stages --scenario /tmp/fx/scenario-payments-to-fernhill.yaml --format json --out /tmp/stages.json || test $? -eq 3
-          grep -q '"stages_schema_version": 1' /tmp/stages.json
+          grep -q '"stages_schema_version": 2' /tmp/stages.json
           grep -q '"id": "legacy"' /tmp/stages.json
           grep -q '"category": "declared-impact"' /tmp/stages.json
           grep -q '"source": "declared"' /tmp/stages.json
@@ -76,6 +76,29 @@ jobs:
           if ./orgshift collect --profile nope --out /tmp/never.json; then exit 1; fi
           if ./orgshift preflight; then exit 1; fi
           test ! -e /tmp/never.json
+      - name: workload layer smoke test (fixtures only)
+        run: |
+          ./orgshift workloads --snapshot /tmp/fx/larkspur-holdings.json | grep -q '3 account(s) with a workload inventory'
+          ./orgshift workloads --snapshot /tmp/fx/larkspur-holdings.json --account 111111111115 --format json --out /tmp/workloads.json
+          grep -q '"kind": "stackset-service-managed"' /tmp/workloads.json
+          # the planted workload problems come out of the workloads check of the payments move
+          grep -q '"result_schema_version": 4' /tmp/result.json
+          grep -q '"id": "workloads"' /tmp/result.json
+          grep -q '"evaluation": "evaluated"' /tmp/result.json
+          grep -q "denies the account's own principals after the move" /tmp/result.json
+          grep -q 'is deleted when the account leaves the organization' /tmp/result.json
+          grep -q 'sits on 2 subnets shared through larkspur-core-network' /tmp/result.json
+          grep -q '"source": "workload"' /tmp/result.json
+          # the recreate strategy lists what must be redeployed, by provenance
+          ./orgshift stages --scenario /tmp/fx/scenario-payments-recreate.yaml --format json --out /tmp/recreate.json || test $? -eq 2
+          grep -q '"redeploy": {' /tmp/recreate.json
+          grep -q 'Workload relocation: 8 stack(s)' /tmp/recreate.json
+          # without an inventory the layer is not evaluated, and says so
+          ./orgshift simulate --from /tmp/fx/larkspur-holdings-partial.json --to /tmp/fx/fernhill-group.json --account 111111111115 --target-ou ou-fern-pay1 --format json --out /tmp/noinv.json || test $? -eq 3
+          grep -q '"evaluation": "not-evaluated"' /tmp/noinv.json
+          # the billed S3 reads are not in the member role's default policy
+          if grep -q 's3:' /tmp/iam/member-inspection-permissions.json; then exit 1; fi
+          grep -q 's3:GetBucketPolicy' /tmp/iam/member-inspection-billable-opt-in.json
       - name: fuzz smoke test
         run: |
           go test ./internal/policy -run '^$' -fuzz FuzzParseAndApply -fuzztime 20s

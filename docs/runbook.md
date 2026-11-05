@@ -115,7 +115,20 @@ routine steps such as the move itself. `kind` is one of `blocker`,
 `policy-change`, `decision`, `input`, `tags`, `resource-share`,
 `delegated-admin`, `logging`, `stackset`, `trusted-access`,
 `prerequisite`, `control-tower`, `identity-center`,
-`organizational-unit`, `move`, `check` and `rollback`.
+`organizational-unit`, `workload`, `resource-policy`, `move`, `check` and
+`rollback`.
+
+The Workloads check adds steps of its own (check `workloads`): before the
+move, keep or replace a stack before its StackSet deletes it, move a stack
+that keeps creating resources off shared networking, change a bucket or
+trust policy so it names the destination organization, and decide where a
+stack reads a cross-account output from; with what does not travel, plan
+the stacks that only sit on shared networking; afterwards, confirm what
+became of the StackSet instance, adopt the stacks a StackSet left behind,
+take the former organization out of the policies that were widened for the
+transition and check that the cross-account output still resolves. A
+missing workload inventory is a collection step that names the account to
+add under `member_inspection.accounts`.
 
 An OU runbook has the same shape with an `ou_id`/`ou_name` subject, its
 step IDs prefixed `ou-`, and an `accounts` list holding one account

@@ -187,10 +187,116 @@ Source: [AWS IAM Identity Center and AWS Organizations](https://docs.aws.amazon.
   the instruction to confirm in IAM after the move, since the page does not
   name those roles.
 
+## Workloads (model `workload-behaviour`, version 2026-11-05)
+
+What the Workloads check and the workload inventory rely on. Checked on
+2026-11-05.
+
+StackSets. Sources:
+[AutoDeployment](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_AutoDeployment.html),
+[Enable or disable automatic deployments](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-manage-auto-deployment.html),
+[ListStackSets](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_ListStackSets.html),
+[ListStackInstances](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_ListStackInstances.html).
+
+- With automatic deployment enabled on a service-managed StackSet, "if an
+  account is removed from a target organization or OU, StackSets deletes
+  stack instances from the account". With `RetainStacksOnAccountRemoval`
+  true the stack resources are retained and the stacks leave the StackSet;
+  with false they are deleted. orgshift reports a deleted instance as
+  REVIEW (declared impact) with the resource types it contains, and a
+  retained one as informational.
+- What happens to the instances when automatic deployment is **off** is not
+  stated. orgshift reports it as REVIEW (potential impact, "not
+  documented") and never assumes either outcome.
+- The stack name form `StackSet-<name>-<id>` appears in AWS's examples and
+  is not a documented rule. A stack is a StackSet instance for orgshift
+  when its ID is in the StackSet's instance list (high confidence); a match
+  by name alone is medium confidence and says so.
+- From the management account with `CallAs` SELF (the default),
+  `ListStackSets` "returns all StackSets in the management account".
+  StackSets created by a CloudFormation delegated administrator are not in
+  that list; orgshift does not read them yet.
+
+Cross-stack references. Sources:
+[Exporting stack output values](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-exports.html),
+[Fn::GetStackOutput](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html),
+[ListImports](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_ListImports.html).
+
+- `Export` and `Fn::ImportValue`: "cross-stack references are limited to
+  the same account and Region", and the exporting stack cannot be deleted
+  nor its exported output changed while another stack imports it. So an
+  import never points at another account: orgshift reports imports as
+  informational (they move with the account and fix the redeployment
+  order), and notes when an import would block a StackSet from deleting its
+  instance.
+- `Fn::GetStackOutput` reads an output of a stack in another account or
+  Region through an IAM role and is "resolved at stack create or update
+  time"; it is a weak reference with no referential integrity. orgshift
+  reports a cross-account one as REVIEW (potential impact) on a move
+  between organizations and evaluates the `sts:AssumeRole` call it implies
+  against the SCP and RCP chains. The page says nothing about
+  organizations; the trust policy of the role, which lives in the other
+  account, is not read.
+- `ListImports` for an export that no stack imports is not documented. The
+  service answers with a `ValidationError`; the collector reads that as
+  "no importer" and treats any other error as a failure of the domain.
+
+The inventory itself. Sources:
+[DescribeStacks](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_DescribeStacks.html),
+[GetTemplate](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_GetTemplate.html),
+[GetResources](https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html),
+[Resource Explorer Search](https://docs.aws.amazon.com/resource-explorer/latest/apireference/API_Search.html),
+[ListRoles](https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListRoles.html),
+[GetRole](https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetRole.html),
+[ListBuckets](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListBuckets.html).
+
+- `DescribeStacks` without a stack name describes every stack and
+  "requires `ListStacks` and `DescribeStacks` permissions"; the member role
+  grants both.
+- `GetTemplate` returns the processed template by default. The collector
+  parses it in memory and stores only derived facts.
+- The Resource Groups Tagging API "returns all the tagged or previously
+  tagged resources" of a Region and does not return untagged resources. A
+  resource created outside CloudFormation that never carried a tag is
+  therefore missing from the sample, and the reports say so.
+- Resource Explorer `Search` "can return only the first 1,000 results"; a
+  sample of 1,000 is marked truncated. It needs an index (an aggregator
+  index for all Regions) and a view; without a default view in the
+  aggregator's Region the search fails and the collector falls back to the
+  Tagging API, recording why.
+- `ListRoles` returns each role with its trust policy and omits
+  `PermissionsBoundary`, `RoleLastUsed` and `Tags`. IAM returns policies
+  URL-encoded (RFC 3986), which the collector decodes.
+- `ListBuckets` returns each bucket's Region, which is where its policy is
+  read. The error code for a bucket without a policy
+  (`NoSuchBucketPolicy`) could not be confirmed on the S3 error page, which
+  did not render when it was checked; the collector treats that code as "no
+  policy" and any other error as a failure.
+
+Cost. Sources: [S3 pricing](https://aws.amazon.com/s3/pricing/),
+[S3 usage report](https://docs.aws.amazon.com/AmazonS3/latest/userguide/aws-usage-report-understand.html),
+[CloudFormation pricing](https://aws.amazon.com/cloudformation/pricing/),
+[IAM FAQ](https://aws.amazon.com/iam/faqs/),
+[Resource Explorer pricing](https://aws.amazon.com/resourceexplorer/pricing/).
+
+- S3 charges per request by request type; "DELETE and CANCEL requests are
+  free". LIST requests are in the PUT, COPY, POST, LIST class and
+  everything else is "GET and all other non-Tier1 requests". Nothing says a
+  bucket-policy read is exempt, so `ListBuckets` and `GetBucketPolicy` are
+  classified as billable reads and are off by default.
+- CloudFormation charges handler operations of third-party registry
+  extensions and hooks; its read API calls are not on the price list.
+- "IAM is offered at no additional charge." "AWS Resource Explorer is
+  offered at no additional charge."
+- No price and no statement of charge was found for the Resource Groups
+  Tagging API on its documentation pages; it is treated as free.
+
 ## Not yet verified
 
 These are reported as REVIEW with the reason, never as fine:
 
+- What a service-managed StackSet does with an account's instances when
+  the account leaves and automatic deployment is off (above).
 - Data-plane behaviour of the RAM resource types listed as unverified above.
 - Whether the policy inheritance of an account sitting at the target root
   between accepting the invitation and the move into its OU matters for the

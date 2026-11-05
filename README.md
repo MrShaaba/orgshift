@@ -56,6 +56,21 @@ offline and reports:
   aggregation, StackSets, trusted access gaps, the standalone-account
   prerequisites, and the account tags and management role AWS deletes or
   keeps.
+- **Workloads**: for the accounts you name, the collector reads the
+  workload inventory inside the account: CloudFormation stacks, the
+  StackSet instances that target it, a resource sample and the policies
+  conditioned on the organization. Every stack and resource is classified
+  by how it was deployed (Control Tower or Account Factory, a
+  service-managed or self-managed StackSet, a plain stack, a Terraform-style
+  tag convention, or unknown), and every classification names the evidence
+  it rests on. The Workloads check then says what a move does to them:
+  StackSet instances that are deleted or left behind when the account
+  leaves, stacks that read outputs of stacks in other accounts, bucket and
+  trust policies tied to `aws:PrincipalOrgID`, `aws:PrincipalOrgPaths` or
+  `aws:ResourceOrgID`, stacks on subnets or transit gateways shared through
+  RAM, and the tag-policy compliance of the sample at the destination. The
+  layer reads evaluated, partially evaluated or not evaluated according to
+  what was collected, and `orgshift workloads` prints the inventory.
 - **Staged migrations**: a scenario overlay (`orgshift stages`) describes
   the migration as proposed states across five layers kept separate
   (membership, OU placement, Control Tower governance, network, workload),
@@ -64,8 +79,11 @@ offline and reports:
   findings cover the standalone window, what a proposed OU inherits,
   enrollment prerequisites and management-account constraints from the
   official transfer procedure, and the transfer strategy is compared with
-  creating destination accounts and migrating the workloads. See
-  [docs/stages.md](docs/stages.md).
+  creating destination accounts and migrating the workloads: for that
+  strategy the report lists what must be redeployed, grouped by provenance
+  (redeployable from a template or pipeline, recreated by Control Tower or
+  a StackSet, manual or unknown) with counts and the unknowns called out.
+  See [docs/stages.md](docs/stages.md).
 - **Impact categories**: every finding says whether it is a known
   restriction, an impact on a declared or observed operation, a potential
   impact needing context, an unsupported evaluation or missing evidence,
@@ -207,6 +225,16 @@ go build -o orgshift ./cmd/orgshift
 # proposed Transitional OU, registration and enrollment, then tightening
 ./orgshift stages --scenario fixtures/scenario-fernhill-sandbox-staged.yaml
 
+# the recreate strategy for the same account: it stays, a new account is
+# vended in Fernhill, and the relocation stage lists what must be redeployed
+./orgshift stages --scenario fixtures/scenario-payments-recreate.yaml
+
+# the workload inventory of the payments account with the deployment
+# provenance of every stack and resource; without --account, the accounts
+# that have an inventory
+./orgshift workloads --snapshot fixtures/larkspur-holdings.json --account 111111111115
+./orgshift workloads --snapshot fixtures/larkspur-holdings.json
+
 # declare operations the account must keep performing on a single move
 ./orgshift scenario example > plan.yaml
 ./orgshift simulate --from fixtures/larkspur-holdings.json --to fixtures/fernhill-group.json \
@@ -228,7 +256,10 @@ migration runbook instead.
 Load two snapshots (or the fixtures), pick the account and the target OU,
 and the page shows the verdict board with expandable explanations (a check
 whose evidence is incomplete carries an "evidence incomplete" pill), the
-collection coverage matrix, the migration runbook as a checklist (ticks are
+collection coverage matrix, the workload panel (how much of the layer was
+evaluated, how the inventory would be redeployed, every stack with who
+deployed it and on what evidence, the resource sample and the policies tied
+to the organization), the migration runbook as a checklist (ticks are
 remembered by the browser, the "Export runbook" button writes it as
 Markdown), the two organization trees side by side with the policy chain
 highlighted and the account drawn at its future position, the "what changes"
@@ -244,8 +275,9 @@ account.
 
 The third panel stages a migration from a scenario file: the timeline of
 stages with a verdict for each, the current and proposed hierarchy side by
-side (proposed OUs marked), and every stage's layers, findings and full
-transition board.
+side (proposed OUs marked), and every stage's layers, findings, workload
+panel and full transition board. The recreate strategy carries the table of
+what must be redeployed.
 
 ![A staged migration: seven stages from Larkspur Holdings into Fernhill Group, the first blocking stage named, and the current and proposed hierarchies](docs/screenshot-stages.png)
 
@@ -299,12 +331,26 @@ has every option.
    is retried with backoff, and a checkpoint next to the output lets a rerun
    restore the completed steps and read only what was denied or cut short.
    Every domain the collector could not read ends up in the snapshot's
-   `coverage` block, and the command prints the gaps. Optional data sources
-   that cost money (CloudTrail Lake, Config advanced queries) are behind
-   opt-ins that are off by default and refused until they are implemented.
+   `coverage` block, and the command prints the gaps.
+
+   For the accounts under `member_inspection.accounts` (name the ones you
+   plan to move) the collector also reads the workload inventory through
+   the member inspection role, in `workload_regions`, and from the
+   management account the StackSets with their stack instances. Templates
+   are read in memory and never stored; stack output values and parameter
+   values are not stored either. Everything it calls there is free except
+   the bucket policies: S3 bills every request, so they are read only with
+   `billable.bucket_policies: true` or `--with-bucket-policies` (one LIST
+   request per account, one request per bucket). Without them the workload
+   layer reads partially evaluated. The other data sources that cost money
+   (CloudTrail Lake, Config advanced queries) stay behind opt-ins that are
+   refused until they are implemented.
+   `./orgshift workloads --snapshot snapshots/source.json` lists what was
+   read.
 
 5. Tell orgshift what the account does. Add `usage.<account-id>.actions`,
-   `inbound_access` and `tagged_resources` to the source snapshot (the format
+   `inbound_access` and, for accounts without a collected workload
+   inventory, `tagged_resources` to the source snapshot (the format
    is in [docs/snapshot.md](docs/snapshot.md)), or import an IAM last-accessed
    export:
 
@@ -365,11 +411,24 @@ has every option.
   are versioned models checked against the AWS documentation on a date
   recorded in every result; services and behaviours added later are not
   covered until the model is updated.
+- Deployment provenance is evidence, not proof. A stack listed as an
+  instance by its StackSet is a fact; a stack name that starts with
+  `StackSet-` or a tag that says Terraform is a convention and is reported
+  at medium confidence; a resource with no trace of how it was made is
+  "unknown", which stays visible instead of being guessed.
+- The workload layer covers the inventory of the inspected account only.
+  The Tagging API never returns resources that were never tagged, Resource
+  Explorer stops at 1,000 results, and of resource policies only bucket
+  policies (opt-in), role trust policies and policies declared in templates
+  are read, for conditions on organization identity. What happens to a
+  service-managed StackSet instance when automatic deployment is off is not
+  documented by AWS and is reported as such.
 
 ## Repository layout
 
 ```
-cmd/orgshift          CLI: fixtures, simulate, stages, scenario, serve, config, iam-templates, preflight, collect
+cmd/orgshift          CLI: fixtures, simulate, stages, scenario, workloads, serve, config, iam-templates, preflight, collect
+internal/workload     workload inventory view: deployment provenance with its evidence, redeployment plan by provenance group
 internal/scenario     scenario overlay: stages across five layers, derived states, staged evaluation, strategy comparison
 internal/config       onboarding configuration (YAML or JSON): access per side, regions, collection options
 internal/awsaccess    credentials from profiles, Identity Center sessions and assume-role chains; identity check
@@ -377,13 +436,13 @@ internal/iamtemplates IAM role templates per collector responsibility, generated
 internal/preflight    permission preflight: the cheapest read per domain, reported as a coverage matrix
 internal/snapshot     versioned snapshot schema, coverage model, loader, validation
 internal/policy       IAM policy parsing and tri-state statement matching (fuzzed)
-internal/evaluator    effective policies, RCP and RAM models, coverage requirements, tag policies, cross-org checks, verdict
+internal/evaluator    effective policies, RCP, RAM and workload models, coverage requirements, tag policies, cross-org and workload checks, verdict
 internal/fixtures     the Larkspur Holdings and Fernhill Group generator, plus the partial collection of Larkspur
 internal/runbook      migration runbook built from a result: collect, fix, re-create, move, check, roll back
 internal/report       JSON, Markdown and text rendering, runbook Markdown
 internal/usage        actions-in-use files and IAM last-accessed import
 internal/web          html/template + HTMX UI, embedded static files
-internal/collector    read-only AWS collector behind an operation catalog, with bounded concurrency, retries, checkpoints and coverage
+internal/collector    read-only AWS collector behind an operation catalog, with bounded concurrency, retries, checkpoints and coverage; the workload inventory of member accounts
 docs/                 onboarding, stages, snapshot schema, permissions, IAM templates, runbook, AWS behaviour references, screenshot
 ```
 

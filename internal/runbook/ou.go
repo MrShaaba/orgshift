@@ -114,7 +114,10 @@ func (ob *ouBuilder) phaseText(id string) (title, intro string) {
 		return "Before the move: create the new OU tree", "Organizations cannot move an OU, so the tree is built again under the new parent with the same attachments before any account moves."
 	case PhaseMove:
 		if ob.cross {
-			return "The move", "Each account leaves on its own and joins the target organization; its runbook has the exact sequence. Once it has accepted the invitation, move it into its new OU."
+			if ob.res.Subject.TransferMethod == evaluator.TransferLeaveAndRejoin {
+				return "The move", "Each account leaves on its own, is standalone until it accepts the invitation, and joins the target organization at its root. Once it has accepted, move it into its new OU."
+			}
+			return "The move", "Each account is transferred on its own: the target organization invites it and it accepts, which takes it out of the source organization and into the target root in one step. Once it has accepted, move it into its new OU."
 		}
 		return "The move", "Move the accounts one by one into the new OUs. Each account's runbook lists what changes for it."
 	case PhaseAfter:
@@ -267,9 +270,15 @@ func (ob *ouBuilder) moveSteps() {
 		for _, a := range ob.res.Accounts {
 			names = append(names, fmt.Sprintf("%s (%s)", a.AccountName, a.AccountID))
 		}
-		ob.add(PhaseMove, Step{Kind: KindMove, Title: fmt.Sprintf("Move the %d account(s) one by one: invite, leave, accept", len(ob.res.Accounts)), Where: ob.dstMgmt + ", then each account",
-			Detail:   "Follow the move phase of each account runbook below, in whatever order limits the standalone time. Accounts: " + orNone(strings.Join(names, ", ")) + ".",
-			Commands: []string{"aws organizations invite-account-to-organization --target Id=<account ID>,Type=ACCOUNT", "aws organizations leave-organization   # inside each account, or remove-account-from-organization from the source management account", "aws organizations accept-handshake --handshake-id <handshake ID>   # inside each account"}})
+		if ob.res.Subject.TransferMethod == evaluator.TransferLeaveAndRejoin {
+			ob.add(PhaseMove, Step{Kind: KindMove, Title: fmt.Sprintf("Move the %d account(s) one by one: invite, leave, accept", len(ob.res.Accounts)), Where: ob.dstMgmt + ", then each account",
+				Detail:   "An OU is never transferred; each account is, here by leaving the source organization (or being removed from it), running standalone, and then accepting the invitation, which puts it at the destination root. Run the three commands for each account, in whatever order keeps the standalone interval and the time at the destination root short; each account runbook below has what must be settled before and checked after. Accounts: " + orNone(strings.Join(names, ", ")) + ".",
+				Commands: []string{"aws organizations invite-account-to-organization --target Id=<account ID>,Type=ACCOUNT", "aws organizations leave-organization   # inside each account, or remove-account-from-organization from the source management account", "aws organizations accept-handshake --handshake-id <handshake ID>   # inside each account"}})
+		} else {
+			ob.add(PhaseMove, Step{Kind: KindMove, Title: fmt.Sprintf("Transfer the %d account(s) one by one: invite, accept", len(ob.res.Accounts)), Where: ob.dstMgmt + ", then each account",
+				Detail:   "An OU is never transferred; each account is, by direct transfer: the destination invites it and it accepts, which takes it out of the source organization and into the destination root without a standalone interval. Run the two commands for each account, in whatever order limits the time accounts spend at the destination root; each account runbook below has what must be settled before and checked after. Accounts: " + orNone(strings.Join(names, ", ")) + ".",
+				Commands: []string{"aws organizations invite-account-to-organization --target Id=<account ID>,Type=ACCOUNT", "aws organizations accept-handshake --handshake-id <handshake ID>   # inside each account; needs organizations:LeaveOrganization there"}})
+		}
 		for _, a := range ob.accounts {
 			ou := ob.ouByID(a.ParentID)
 			if ou == nil {

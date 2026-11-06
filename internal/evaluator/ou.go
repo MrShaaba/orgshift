@@ -17,6 +17,9 @@ type OUInput struct {
 	OUID string
 	// TargetParentID is the root or OU the moved OU ends up under.
 	TargetParentID string
+	// TransferMethod is how each account changes organization when the move
+	// is between organizations; see Input.TransferMethod.
+	TransferMethod string
 }
 
 // OUResult is the outcome of one simulated OU move: the OU's own findings
@@ -45,8 +48,12 @@ type OUSubject struct {
 	TargetPath     []snapshot.Node `json:"target_path"`
 	SourceParentID string          `json:"source_parent_id"`
 	TargetParentID string          `json:"target_parent_id"`
-	NestedOUs      int             `json:"nested_ous"`
-	Accounts       int             `json:"accounts"`
+	// TransferMethod is how the accounts change organization (cross_org
+	// only). An account that is the source's management account has a
+	// procedure of its own, named in its result.
+	TransferMethod string `json:"transfer_method,omitempty"`
+	NestedOUs      int    `json:"nested_ous"`
+	Accounts       int    `json:"accounts"`
 }
 
 // AccountRollup is one row of the per-account table.
@@ -88,6 +95,9 @@ type OUAttachment struct {
 func EvaluateOU(in OUInput) (*OUResult, error) {
 	if in.From == nil {
 		return nil, fmt.Errorf("a source snapshot is required")
+	}
+	if err := ValidTransferMethod(in.TransferMethod); err != nil {
+		return nil, err
 	}
 	to := in.To
 	if to == nil {
@@ -137,6 +147,12 @@ func EvaluateOU(in OUInput) (*OUResult, error) {
 		},
 		Findings: []Finding{}, Accounts: []AccountRollup{}, Attachments: []OUAttachment{},
 	}
+	if crossOrg {
+		res.Subject.TransferMethod = TransferDirect
+		if in.TransferMethod != "" {
+			res.Subject.TransferMethod = in.TransferMethod
+		}
+	}
 	if !crossOrg && ou.ParentID == in.TargetParentID {
 		res.Notes = append(res.Notes, "The target parent is the OU's current parent; the simulation compares the OU with itself.")
 	}
@@ -157,7 +173,7 @@ func EvaluateOU(in OUInput) (*OUResult, error) {
 		}
 		targetPath := append(append([]snapshot.Node(nil), parentPath...), inside...)
 		targetPath = append(targetPath, snapshot.Node{ID: a.ID, Name: a.Name, Kind: snapshot.KindAccount})
-		r, err := evaluateMove(move{from: in.From, to: to, fromIx: fromIx, toIx: toIx, account: a, targetPath: targetPath, fresh: fresh})
+		r, err := evaluateMove(move{from: in.From, to: to, fromIx: fromIx, toIx: toIx, account: a, targetPath: targetPath, fresh: fresh, method: in.TransferMethod})
 		if err != nil {
 			return nil, fmt.Errorf("account %s: %w", a.ID, err)
 		}

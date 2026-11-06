@@ -75,7 +75,9 @@ func TestSimulateHTMXAndFullPage(t *testing.T) {
 	if resp.StatusCode != 200 || strings.Contains(body, "<html") {
 		t.Fatalf("htmx response should be a partial: %d", resp.StatusCode)
 	}
-	for _, want := range []string{"NO-GO", "Fernhill-EU-Only-Regions", "after the move", "What changes", "Export JSON", "larkspur-core-network"} {
+	for _, want := range []string{"NO-GO", "Fernhill-EU-Only-Regions", "after the move", "What changes", "Export JSON", "larkspur-core-network",
+		`<span class="pill" title="direct transfer (invite, accept; no standalone interval)">direct</span>`, "A source SCP denies organizations:LeaveOrganization, which blocks the transfer",
+		"The account lands at the destination root first", "Transfer eligibility: 1 requirement(s) cannot be confirmed from the snapshots"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("result missing %q", want)
 		}
@@ -280,7 +282,7 @@ func TestRunbookInTheUI(t *testing.T) {
 		t.Fatalf("simulate: %d", resp.StatusCode)
 	}
 	for _, want := range []string{
-		"<h2>Migration runbook <span class=\"muted small\">73 steps:",
+		"<h2>Migration runbook <span class=\"muted small\">74 steps:",
 		`<details class="phase" open>`,
 		"<strong>Before the move: fix the blockers and make the decisions</strong>",
 		`<li class="step nogo" data-step="before-1">`,

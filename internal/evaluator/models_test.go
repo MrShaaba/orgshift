@@ -306,7 +306,7 @@ func TestCrossOrgConstraintsFromTheRemovalRules(t *testing.T) {
 		return strings.Contains(f.Title, "tag(s) on the account are deleted") && f.Status == StatusInfo
 	})
 	find(t, res, "org-services", func(f Finding) bool {
-		return strings.Contains(f.Title, "IAM role Organizations created") && f.Status == StatusInfo
+		return strings.Contains(f.Title, "OrganizationAccountAccessRole stays in the account") && f.Status == StatusReview
 	})
 
 	// A freshly created account cannot leave for four days.
@@ -324,13 +324,14 @@ func TestCrossOrgConstraintsFromTheRemovalRules(t *testing.T) {
 	if age.Status != StatusNoGo || !strings.Contains(age.Detail, "2026-01-03T12:00:00Z") {
 		t.Errorf("young account: %+v", age)
 	}
-	// Unknown creation date: REVIEW. Invited accounts: nothing.
+	// Unknown creation date: one of the requirements that cannot be
+	// confirmed. Invited accounts: nothing.
 	unknown := fixtures.Larkspur()
 	for i := range unknown.Accounts {
 		unknown.Accounts[i].JoinedAt = ""
 	}
 	res, _ = Evaluate(Input{From: unknown, To: f, AccountID: fixtures.LarkspurPaymentsProd, TargetOUID: fixtures.FernhillPaymentsOU})
-	if a := find(t, res, "org-services", func(f Finding) bool { return strings.Contains(f.Title, "creation date is not in the snapshot") }); a.Status != StatusReview {
+	if a := find(t, res, "org-services", func(f Finding) bool { return strings.HasPrefix(f.Title, "Transfer eligibility:") }); a.Status != StatusReview || !strings.Contains(a.Detail, "is at least four days old (the snapshot has no joined_at for it)") {
 		t.Errorf("unknown date: %+v", a)
 	}
 	invited := fixtures.Larkspur()
@@ -339,7 +340,7 @@ func TestCrossOrgConstraintsFromTheRemovalRules(t *testing.T) {
 	}
 	res, _ = Evaluate(Input{From: invited, To: f, AccountID: fixtures.LarkspurPaymentsProd, TargetOUID: fixtures.FernhillPaymentsOU})
 	for _, fd := range check(res, "org-services").Findings {
-		if strings.HasPrefix(fd.Title, "The account was created") || strings.Contains(fd.Title, "IAM role Organizations created") {
+		if strings.HasPrefix(fd.Title, "The account was created") || strings.Contains(fd.Title, "OrganizationAccountAccessRole stays") {
 			t.Errorf("invited accounts are not subject to the four-day rule or the created role: %+v", fd)
 		}
 	}

@@ -209,8 +209,13 @@ func (b *builder) phaseText(id string) (title, intro string) {
 		return "Before the move: re-create what does not travel",
 			"Shares, delegations, permission sets and stacks that are scoped to the account's current position do not follow it. Prepare the replacements now so nothing is interrupted."
 	case PhaseMove:
-		if b.cross {
+		switch {
+		case b.cross && b.method() == evaluator.TransferLeaveAndRejoin:
 			return "The move", "Run these in order. Between leaving and accepting the invitation the account is standalone, with no SCPs and no organization features; keep that window short."
+		case b.cross && b.method() == evaluator.TransferManagementAccount:
+			return "The move", "Only after every member account has gone and the organization is deleted: the former management account is standalone and accepts the invitation like any other account."
+		case b.cross:
+			return "The move", "A direct transfer: the destination invites, the account accepts, and that acceptance takes it out of its organization and into the destination's root in one step. It is never standalone. Run the move into the target OU straight after."
 		}
 		return "The move", "One Organizations call, or the Account Factory flow when Control Tower governs the account."
 	case PhaseAfter:
@@ -437,24 +442,44 @@ func (b *builder) moveSteps() {
 		}
 		dropped = " Policies attached directly to the account are detached when it leaves: " + strings.Join(names, ", ") + " (re-attaching them is part of the rollback)."
 	}
+	method := b.method()
+	inviteDetail := "The invitation (a handshake) is valid for 15 days. Nothing changes for the account until it accepts."
+	if method == evaluator.TransferLeaveAndRejoin {
+		inviteDetail = "The invitation (a handshake) is valid for 15 days. Send it before the account leaves so the standalone window is short."
+	}
 	b.add(PhaseMove, Step{Kind: KindMove, Title: fmt.Sprintf("Invite the account into %s", orgLabel(s.TargetOrg)),
-		Detail:   "The invitation (a handshake) is valid for 15 days. Send it before the account leaves so the standalone window is short.",
+		Detail:   inviteDetail,
 		Where:    b.targetMgmt(),
 		Commands: []string{fmt.Sprintf("aws organizations invite-account-to-organization --target Id=%s,Type=ACCOUNT --notes \"Move of %s planned with orgshift\"", b.acct, s.AccountName)}})
-	b.add(PhaseMove, Step{Kind: KindMove, Title: fmt.Sprintf("Leave %s", orgLabel(s.SourceOrg)),
-		Detail: "Run leave-organization from inside the account, or remove it from the management account (which SCPs do not restrict). Both need the standalone prerequisites to be in place. From this moment no SCP, RCP or tag policy of the source applies, organization-scoped shares stop reaching the account and Identity Center deletes its assignments and roles." + dropped,
-		Where:  fmt.Sprintf("%s, or %s", b.accountWhere(), b.sourceMgmt()),
-		Commands: []string{
-			"aws organizations leave-organization   # run inside the account",
-			fmt.Sprintf("aws organizations remove-account-from-organization --account-id %s   # alternative, run by the management account", b.acct),
-		}})
-	b.add(PhaseMove, Step{Kind: KindMove, Title: "Accept the invitation",
-		Detail: fmt.Sprintf("The account joins %s at its root with the AWS managed default policies attached. Everything on the verdict board that applies at the target position applies from the next step on.", orgLabel(s.TargetOrg)),
-		Where:  b.accountWhere(),
-		Commands: []string{
-			"aws organizations list-handshakes-for-account --query \"Handshakes[?State=='OPEN'].[Id,Action]\" --output table",
-			"aws organizations accept-handshake --handshake-id <handshake ID from the previous command>",
-		}})
+	switch method {
+	case evaluator.TransferLeaveAndRejoin:
+		b.add(PhaseMove, Step{Kind: KindMove, Title: fmt.Sprintf("Leave %s", orgLabel(s.SourceOrg)),
+			Detail: "Run leave-organization from inside the account, or remove it from the management account (which SCPs do not restrict). Both need the standalone prerequisites to be in place. From this moment no SCP, RCP or tag policy of the source applies, organization-scoped shares stop reaching the account and Identity Center deletes its roles in it." + dropped,
+			Where:  fmt.Sprintf("%s, or %s", b.accountWhere(), b.sourceMgmt()),
+			Commands: []string{
+				"aws organizations leave-organization   # run inside the account",
+				fmt.Sprintf("aws organizations remove-account-from-organization --account-id %s   # alternative, run by the management account", b.acct),
+			}})
+		b.add(PhaseMove, Step{Kind: KindMove, Title: "Accept the invitation",
+			Detail: fmt.Sprintf("The account joins %s at its root with the AWS managed default policies attached. Everything on the verdict board that applies at the target position applies from the next step on.", orgLabel(s.TargetOrg)),
+			Where:  b.accountWhere(),
+			Commands: []string{
+				"aws organizations list-handshakes-for-account --query \"Handshakes[?State=='OPEN'].[Id,Action]\" --output table",
+				"aws organizations accept-handshake --handshake-id <handshake ID from the previous command>",
+			}})
+	default:
+		accept := fmt.Sprintf("Accepting is the transfer: the account leaves %s and joins %s at its root in the same step, with the AWS managed default policies attached. It does not run leave-organization and is never standalone, but the principal that accepts needs organizations:LeaveOrganization as well as organizations:AcceptHandshake, and no SCP of the source may deny it. From this moment no SCP, RCP or tag policy of the source applies, organization-scoped shares stop reaching the account and Identity Center deletes its roles in it.", orgLabel(s.SourceOrg), orgLabel(s.TargetOrg))
+		if method == evaluator.TransferManagementAccount {
+			accept = fmt.Sprintf("The former management account, standalone since its organization was deleted, joins %s at its root as a member account with the AWS managed default policies attached. SCPs apply to it from this moment, for the first time.", orgLabel(s.TargetOrg))
+		}
+		b.add(PhaseMove, Step{Kind: KindMove, Title: "Accept the invitation: the account changes organization",
+			Detail: accept + dropped,
+			Where:  b.accountWhere(),
+			Commands: []string{
+				"aws organizations list-handshakes-for-account --query \"Handshakes[?State=='OPEN'].[Id,Action]\" --output table",
+				"aws organizations accept-handshake --handshake-id <handshake ID from the previous command>",
+			}})
+	}
 	if dst != targetRoot {
 		b.add(PhaseMove, Step{Kind: KindMove, Title: fmt.Sprintf("Move the account from the root to %s", nodeLabel(s.TargetPath, dst)),
 			Detail:   "Until this call the account sits at the target root with only the policies attached there.",
@@ -504,20 +529,23 @@ func (b *builder) rollbackSteps() {
 		b.add(PhaseRollback, b.chainStep())
 		return
 	}
-	leaveDetail := "Leave the target organization the same way the account left the source, or have the target management account remove it."
+	denyNote := ""
 	if denies := b.leaveDenies(false); len(denies) > 0 {
 		var names []string
 		for _, d := range denies {
 			names = append(names, fmt.Sprintf("%s / %s at %s", d.PolicyName, d.Statement, d.Level))
 		}
-		leaveDetail += " The target chain denies organizations:LeaveOrganization (" + strings.Join(names, "; ") + "), so use remove-account-from-organization from the target management account."
+		denyNote = " The target chain denies organizations:LeaveOrganization (" + strings.Join(names, "; ") + "): that blocks a direct transfer back, so lift it for the principal that accepts, or have the target management account remove the account, which makes it standalone first and needs the standalone-account information."
 	}
-	b.add(PhaseRollback, Step{Kind: KindRollback, Title: fmt.Sprintf("Leave %s again", orgLabel(s.TargetOrg)), Detail: leaveDetail,
-		Where: fmt.Sprintf("%s, or %s", b.accountWhere(), b.targetMgmt()),
-		Commands: []string{"aws organizations leave-organization   # run inside the account",
-			fmt.Sprintf("aws organizations remove-account-from-organization --account-id %s   # alternative, run by the target management account", b.acct)}})
-	b.add(PhaseRollback, Step{Kind: KindRollback, Title: fmt.Sprintf("Re-invite the account into %s and accept", orgLabel(s.SourceOrg)),
-		Detail: "The account comes back at the source root with the AWS managed defaults only.",
+	if b.method() == evaluator.TransferLeaveAndRejoin {
+		b.add(PhaseRollback, Step{Kind: KindRollback, Title: fmt.Sprintf("Leave %s again", orgLabel(s.TargetOrg)),
+			Detail: "Leave the target organization the same way the account left the source, or have the target management account remove it." + denyNote,
+			Where:  fmt.Sprintf("%s, or %s", b.accountWhere(), b.targetMgmt()),
+			Commands: []string{"aws organizations leave-organization   # run inside the account",
+				fmt.Sprintf("aws organizations remove-account-from-organization --account-id %s   # alternative, run by the target management account", b.acct)}})
+	}
+	b.add(PhaseRollback, Step{Kind: KindRollback, Title: fmt.Sprintf("Have %s invite the account back, and accept", orgLabel(s.SourceOrg)),
+		Detail: "The way back is another transfer: the source management account invites, the account accepts and comes back at the source root with the AWS managed defaults only. The same eligibility requirements apply in this direction, and the principal that accepts needs organizations:LeaveOrganization in the target." + denyNote,
 		Where:  fmt.Sprintf("%s, then %s", b.sourceMgmt(), b.accountWhere()),
 		Commands: []string{fmt.Sprintf("aws organizations invite-account-to-organization --target Id=%s,Type=ACCOUNT", b.acct),
 			"aws organizations list-handshakes-for-account --query \"Handshakes[?State=='OPEN'].[Id,Action]\" --output table",

@@ -410,30 +410,8 @@ func (b *builder) orgServiceSteps(c evaluator.Check) {
 				Detail: f.Detail + " Only for the integrations the account relies on; enabling trusted access is an organization-wide setting.", Commands: cmds})
 		case strings.HasPrefix(f.Title, "In the target, "):
 			targetAdmins = append(targetAdmins, strings.TrimPrefix(f.Title, "In the target, "))
-		case strings.HasPrefix(f.Title, "Account is the management account"):
-			b.add(PhaseBefore, Step{Kind: KindBlocker, Status: f.Status, Title: "Stop: the management account cannot leave its organization", Check: c.ID, Finding: f.Title,
-				Detail: f.Detail + " There is no runbook for this move; pick a member account or plan the deletion of the source organization separately."})
-		case strings.HasPrefix(f.Title, "The account was created"):
-			b.add(PhaseBefore, Step{Kind: KindBlocker, Status: f.Status, Title: "Wait until the account is four days old, or confirm its creation date", Check: c.ID, Finding: f.Title, Where: b.sourceMgmt(),
-				Detail:   f.Detail + " Organizations rejects the removal of an account it created until four days have passed; invited accounts are not affected.",
-				Commands: []string{fmt.Sprintf("aws organizations describe-account --account-id %s --query \"Account.[JoinedMethod,JoinedTimestamp]\"", b.acct)}, Evidence: f.Evidence})
-		case strings.HasPrefix(f.Title, "Standalone account prerequisites"):
-			b.add(PhaseBefore, Step{Kind: KindPrerequisite, Status: f.Status, Title: "Make the account able to stand alone", Check: c.ID, Finding: f.Title, Where: b.accountWhere() + ", signed in as root or an administrator",
-				Detail: f.Detail + " Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
-				Commands: []string{
-					"aws account get-contact-information",
-					"aws account get-alternate-contact --alternate-contact-type BILLING",
-					"# console: Billing and Cost Management → Payment preferences; Account → Identity verification; Support → Support plan",
-				}})
-			for _, ev := range b.leaveDenies(true) {
-				b.add(PhaseBefore, Step{Kind: KindPolicy, Status: evaluator.StatusReview, Title: fmt.Sprintf("Lift the deny on organizations:LeaveOrganization in SCP %s / %s, or let the management account remove the account", ev.PolicyName, ev.Statement), Check: c.ID, Finding: f.Title, Where: b.sourceMgmt(),
-					Detail:  fmt.Sprintf("SCP %s (%s) is attached at %s and denies organizations:LeaveOrganization without a condition, so leave-organization run from inside the account fails. Either detach the policy or edit the statement for the duration of the move and put it back afterwards, or run remove-account-from-organization from the management account, which SCPs do not restrict.", ev.PolicyName, ev.PolicyID, ev.Level),
-					Actions: []string{"organizations:LeaveOrganization"},
-					Commands: []string{
-						fmt.Sprintf("aws organizations describe-policy --policy-id %s --query Content --output text", ev.PolicyID),
-						fmt.Sprintf("aws organizations remove-account-from-organization --account-id %s   # the alternative that needs no policy change", b.acct),
-					}, Evidence: []evaluator.Evidence{ev}})
-			}
+		case hasEvidence(f, evaluator.EvidenceTransfer):
+			b.transferStep(c, f)
 		}
 	}
 	if len(srcTrails)+len(dstTrails) > 0 {
@@ -755,4 +733,109 @@ func (b *builder) createPermissionSetCommands(src *snapshot.IdentityCenter, srcE
 		cmds = append(cmds, fmt.Sprintf("aws sso-admin put-permissions-boundary-to-permission-set --instance-arn %s --permission-set-arn %s --permissions-boundary <%s>", dstARN, psARN, ps.PermissionsBoundary))
 	}
 	return cmds
+}
+
+// transferStep turns one finding about the transfer procedure into its
+// step. The findings carry an evidence entry that says which part of the
+// procedure they are about (evaluator.Transfer* constants).
+func (b *builder) transferStep(c evaluator.Check, f evaluator.Finding) {
+	ev := firstEvidence(f, evaluator.EvidenceTransfer)
+	s := b.res.Subject
+	switch ev.Reference {
+	case evaluator.TransferProcedure:
+		switch ev.Note {
+		case evaluator.TransferManagementAccount:
+			b.add(PhaseBefore, Step{Kind: KindBlocker, Status: f.Status, Title: "Stop: a management account moves only after its organization is emptied and deleted", Check: c.ID, Finding: f.Title,
+				Detail: f.Detail + " There is no runbook for this move as a single account move: migrate or remove every member account first (each one has a runbook of its own), delete the organization, and then run the invitation and acceptance steps below for the standalone account.",
+				Commands: []string{
+					"aws organizations list-accounts --query \"Accounts[?Status=='ACTIVE'].[Id,Name]\" --output table   # every member has to be gone first",
+					"# after the last member has left: aws organizations delete-organization   (run by the management account; irreversible)",
+				}, Evidence: f.Evidence})
+		case evaluator.TransferLeaveAndRejoin:
+			b.add(PhaseBefore, Step{Kind: KindPrerequisite, Status: f.Status, Title: "Make the account able to stand alone", Check: c.ID, Finding: f.Title, Where: b.accountWhere() + ", signed in as root or an administrator",
+				Detail: f.Detail + " Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console. A direct transfer needs none of this.",
+				Commands: []string{
+					"aws account get-contact-information",
+					"aws account get-alternate-contact --alternate-contact-type BILLING",
+					"# console: Billing and Cost Management → Payment preferences; Account → Identity verification; Support → Support plan",
+				}, Evidence: f.Evidence})
+		}
+	case evaluator.TransferLeavePermission:
+		policyEv := firstEvidence(f, "policy-statement")
+		title := "Settle organizations:LeaveOrganization for the principal that accepts the invitation"
+		cmds := []string{}
+		if policyEv != nil {
+			title = fmt.Sprintf("Lift the deny on organizations:LeaveOrganization in SCP %s / %s for the transfer", policyEv.PolicyName, policyEv.Statement)
+			cmds = append(cmds, fmt.Sprintf("aws organizations describe-policy --policy-id %s --query Policy.Content --output text > %s.json", policyEv.PolicyID, policyEv.PolicyID),
+				fmt.Sprintf("# except the principal that accepts the invitation in the statement (or detach the policy for the transfer), then: aws organizations update-policy --policy-id %s --content file://%s.json", policyEv.PolicyID, policyEv.PolicyID),
+				"# put the statement back in the source organization once the account has left; it no longer applies to this account")
+		}
+		if b.method() == evaluator.TransferLeaveAndRejoin {
+			if policyEv != nil {
+				title = fmt.Sprintf("Lift the deny on organizations:LeaveOrganization in SCP %s / %s, or have the management account remove the account", policyEv.PolicyName, policyEv.Statement)
+			}
+			cmds = append(cmds, fmt.Sprintf("aws organizations remove-account-from-organization --account-id %s   # the alternative for leave-and-rejoin: removal by the management account, which SCPs do not restrict", b.acct))
+		}
+		b.add(PhaseBefore, Step{Kind: KindPolicy, Status: f.Status, Title: title, Check: c.ID, Finding: f.Title, Where: b.sourceMgmt(),
+			Detail: f.Detail, Actions: []string{"organizations:LeaveOrganization"}, Commands: cmds, Evidence: f.Evidence})
+	case evaluator.TransferRootLanding:
+		if f.Status != evaluator.StatusReview {
+			return
+		}
+		b.add(PhaseBefore, Step{Kind: KindDecision, Status: f.Status, Title: "Plan the interval at the destination root: accept and move in one change", Check: c.ID, Finding: f.Title, Where: b.targetMgmt(),
+			Detail:   f.Detail + " The move step that follows the acceptance in this runbook closes the interval; have the destination management account ready to run it as soon as the account has joined.",
+			Evidence: f.Evidence})
+	case evaluator.TransferOrgAge:
+		b.add(PhaseBefore, Step{Kind: KindBlocker, Status: f.Status, Title: "Wait until the destination organization is seven days old", Check: c.ID, Finding: f.Title, Where: b.targetMgmt(),
+			Detail: f.Detail, Evidence: f.Evidence})
+	case evaluator.TransferSellerOfRecord:
+		b.add(PhaseBefore, Step{Kind: KindBlocker, Status: f.Status, Title: "Stop: the Seller of Record of the account and of the destination differ", Check: c.ID, Finding: f.Title,
+			Detail:   f.Detail + " Compare the legal entity on a recent invoice of the account with one of the destination management account; AWS Support can say whether and how an account changes Seller of Record.",
+			Commands: []string{"# console: Billing and Cost Management → Bills → the invoice header names the selling entity, in both the account and the destination management account"}, Evidence: f.Evidence})
+	case evaluator.TransferAccountStatus:
+		b.add(PhaseBefore, Step{Kind: KindBlocker, Status: f.Status, Title: "Stop: a closed or suspended account cannot be migrated", Check: c.ID, Finding: f.Title, Where: b.sourceMgmt(),
+			Detail:   f.Detail,
+			Commands: []string{fmt.Sprintf("aws organizations describe-account --account-id %s --query Account.Status", b.acct)}, Evidence: f.Evidence})
+	case evaluator.TransferAccountAge:
+		b.add(PhaseBefore, Step{Kind: KindBlocker, Status: f.Status, Title: "Wait until the account is four days old", Check: c.ID, Finding: f.Title, Where: b.sourceMgmt(),
+			Detail:   f.Detail,
+			Commands: []string{fmt.Sprintf("aws organizations describe-account --account-id %s --query \"Account.[JoinedMethod,JoinedTimestamp]\"", b.acct)}, Evidence: f.Evidence})
+	case evaluator.TransferRootMFA:
+		b.add(PhaseBefore, Step{Kind: KindDecision, Status: f.Status, Title: "Decide whether the root user changes hands, and remove its MFA device if it does", Check: c.ID, Finding: f.Title, Where: b.accountWhere() + ", signed in as the root user",
+			Detail: f.Detail,
+			Commands: []string{
+				"aws iam get-account-summary --query SummaryMap.AccountMFAEnabled   # 1 means the root user has an MFA device",
+				"# console, as the root user: Security credentials → Multi-factor authentication → remove the device; the new owner registers its own after the migration",
+			}, Evidence: f.Evidence})
+	case evaluator.TransferUnconfirmed:
+		if f.Status != evaluator.StatusReview {
+			return
+		}
+		b.add(PhaseBefore, Step{Kind: KindInput, Status: f.Status, Title: "Confirm the transfer eligibility requirements the snapshots do not show", Check: c.ID, Finding: f.Title,
+			Detail: f.Detail + " Record what you find in the snapshots (organization.created_at and organization.seller_of_record on both sides, root_mfa_enabled on the account) and simulate again, so the next result says confirmed instead of unknown.",
+			Commands: []string{
+				fmt.Sprintf("aws organizations describe-account --account-id %s --query \"Account.[Status,JoinedMethod,JoinedTimestamp]\"", b.acct),
+				"aws iam get-account-summary --query SummaryMap.AccountMFAEnabled   # inside the account",
+				"# console: Billing and Cost Management → Bills → the invoice header names the Seller of Record, in the account and in the destination management account",
+			}, Evidence: f.Evidence})
+	case evaluator.TransferAccessRole:
+		if f.Status != evaluator.StatusReview {
+			return
+		}
+		b.add(PhaseAfter, Step{Kind: KindPrerequisite, Status: f.Status, Title: fmt.Sprintf("Delete the role that lets %s into the account, and give %s its own", mgmtID(b.from), orgLabel(s.TargetOrg)), Check: c.ID, Finding: f.Title, Where: b.accountWhere(),
+			Detail: f.Detail + " Look at the role's trust policy first: delete it only when it trusts the former management account and nothing else depends on it.",
+			Commands: []string{
+				"aws iam get-role --role-name OrganizationAccountAccessRole --query Role.AssumeRolePolicyDocument",
+				"aws iam list-attached-role-policies --role-name OrganizationAccountAccessRole",
+				"# detach its policies, then: aws iam delete-role --role-name OrganizationAccountAccessRole",
+			}, Evidence: f.Evidence})
+	}
+}
+
+// method is the transfer method the result was evaluated with.
+func (b *builder) method() string {
+	if m := b.res.Subject.TransferMethod; m != "" {
+		return m
+	}
+	return evaluator.TransferDirect
 }

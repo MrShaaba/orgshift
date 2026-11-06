@@ -41,6 +41,18 @@ jobs:
           ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --to /tmp/fx/fernhill-group.json --account 111111111115 --target-ou ou-fern-pay1 --format runbook --out /tmp/runbook.md || test $? -eq 3
           grep -q '^## 3. The move' /tmp/runbook.md
           grep -q 'aws organizations move-account --account-id 111111111115 --source-parent-id r-fern --destination-parent-id ou-fern-pay1' /tmp/runbook.md
+          # the transfer procedure: direct by default (invite, accept, no standalone interval), leave-and-rejoin only when asked for
+          grep -q '"transfer_method": "direct"' /tmp/result.json
+          grep -q '"version": "2026-11-05"' /tmp/result.json
+          grep -q 'A source SCP denies organizations:LeaveOrganization, which blocks the transfer' /tmp/result.json
+          grep -q 'The account lands at the destination root first' /tmp/result.json
+          grep -q 'Transfer eligibility: 1 requirement(s) cannot be confirmed from the snapshots' /tmp/result.json
+          grep -q 'Accept the invitation: the account changes organization' /tmp/runbook.md
+          if grep -q 'aws organizations leave-organization' /tmp/runbook.md; then exit 1; fi
+          ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --to /tmp/fx/fernhill-group.json --account 111111111115 --target-ou ou-fern-pay1 --transfer-method leave-and-rejoin --format runbook --out /tmp/runbook-leave.md || test $? -eq 3
+          grep -q 'aws organizations leave-organization' /tmp/runbook-leave.md
+          grep -q 'Make the account able to stand alone' /tmp/runbook-leave.md
+          if ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --to /tmp/fx/fernhill-group.json --account 111111111115 --target-ou ou-fern-pay1 --transfer-method teleport > /dev/null 2>&1; then exit 1; fi
           # a complete snapshot gives GO on this move; the partially collected copy of the same organization must not
           ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --account 111111111116 --target-ou ou-lark-prod --format json --out /tmp/go.json
           grep -q '"complete": true' /tmp/go.json
@@ -58,7 +70,8 @@ jobs:
           grep -q '"id": "legacy"' /tmp/stages.json
           grep -q '"category": "declared-impact"' /tmp/stages.json
           grep -q '"source": "declared"' /tmp/stages.json
-          grep -q 'Between leaving the source and accepting the invitation' /tmp/stages.json
+          grep -q 'invitation and is never standalone' /tmp/stages.json
+          if grep -q 'Between leaving the source and accepting the invitation' /tmp/stages.json; then exit 1; fi
           ./orgshift stages --scenario /tmp/fx/scenario-fernhill-sandbox-staged.yaml --format markdown --out /tmp/stages.md || test $? -eq 3
           grep -q '^## Strategies compared' /tmp/stages.md
           ./orgshift simulate --from /tmp/fx/larkspur-holdings.json --to /tmp/fx/fernhill-group.json --account 111111111115 --target-ou ou-fern-pay1 --critical-operations /tmp/plan.yaml --format json --out /tmp/declared.json || test $? -eq 3

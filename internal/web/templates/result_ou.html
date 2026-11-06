@@ -16,7 +16,7 @@
   </div>
   <div class="grid2 subject">
     <div><h4>From</h4><div>{{$s.SourceOrg.Name}} <code>{{$s.SourceOrg.ID}}</code></div><div class="path">{{parentPath $s.SourcePath}}</div></div>
-    <div><h4>To</h4><div>{{$s.TargetOrg.Name}} <code>{{$s.TargetOrg.ID}}</code>{{if $s.CrossOrg}} <span class="pill warn">different organization</span>{{end}}</div><div class="path">{{parentPath $s.TargetPath}}</div></div>
+    <div><h4>To</h4><div>{{$s.TargetOrg.Name}} <code>{{$s.TargetOrg.ID}}</code>{{if $s.CrossOrg}} <span class="pill warn">different organization</span>{{end}}{{if $s.TransferMethod}} <span class="pill" title="{{transferLabel $s.TransferMethod}}">{{$s.TransferMethod}}</span>{{end}}</div><div class="path">{{parentPath $s.TargetPath}}</div></div>
   </div>
   <p class="muted small">The OU carries {{plural $s.NestedOUs "nested OU" "nested OUs"}} and {{plural $s.Accounts "account" "accounts"}}. Every account was evaluated at its new position; the OU verdict is the worst account verdict.</p>
 </section>

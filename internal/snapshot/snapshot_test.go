@@ -69,6 +69,7 @@ func TestValidateRejectsBrokenReferences(t *testing.T) {
 		"bad policy json":   func(s *Snapshot) { s.Policies[0].Document = json.RawMessage(`{`) },
 		"unknown type":      func(s *Snapshot) { s.Policies[0].Type = "FANCY_POLICY" },
 		"usage non-account": func(s *Snapshot) { s.Usage = map[string]*AccountUsage{"ou-test-aaaa": {}} },
+		"creation date":     func(s *Snapshot) { s.Organization.CreatedAt = "last spring" },
 		"ou cycle": func(s *Snapshot) {
 			s.OUs[0].ParentID = "ou-test-bbbb"
 		},

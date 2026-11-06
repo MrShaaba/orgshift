@@ -44,6 +44,7 @@
     ],
     "source_parent_id": "r-lark",
     "target_parent_id": "ou-fern-bu",
+    "transfer_method": "direct",
     "nested_ous": 2,
     "accounts": 3
   },
@@ -100,8 +101,8 @@
       "account_name": "larkspur-data-prod",
       "relative_path": "Workloads / Production",
       "verdict": "NO-GO",
-      "blocking": 9,
-      "review": 16,
+      "blocking": 10,
+      "review": 18,
       "info": 19,
       "blocking_titles": [
         "athena:StartQueryExecution becomes denied after the move",
@@ -112,7 +113,8 @@
         "s3:GetObject becomes denied after the move",
         "s3:PutObject becomes denied after the move",
         "s3:PutObject by arn:aws:iam::111111111115:role/SettlementExporter becomes denied after the move",
-        "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule"
+        "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
+        "A source SCP denies organizations:LeaveOrganization, which blocks the transfer"
       ],
       "result": {
         "tool": "orgshift",
@@ -190,10 +192,11 @@
           "declared_operations": 0,
           "derived_operations": 0,
           "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
-          "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-lark-work/ou-lark-prod/"
+          "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-lark-work/ou-lark-prod/",
+          "transfer_method": "direct"
         },
         "verdict": "NO-GO",
-        "summary": "Moving larkspur-data-prod (111111111118) from Root / Workloads / Production to Root / Business Units / Workloads / Production (organization o-larkspur0001 to o-fernhill0001): NO-GO. 9 blocking finding(s) and 16 to review.",
+        "summary": "Moving larkspur-data-prod (111111111118) from Root / Workloads / Production to Root / Business Units / Workloads / Production (organization o-larkspur0001 to o-fernhill0001): NO-GO. 10 blocking finding(s) and 18 to review.",
         "coverage": {
           "same_snapshot": false,
           "complete": true,
@@ -1088,9 +1091,44 @@
           {
             "id": "org-services",
             "title": "Organization services",
-            "status": "REVIEW",
-            "summary": "Cross-organization move: 6 item(s) to settle before the account leaves.",
+            "status": "NO-GO",
+            "summary": "Cross-organization move by direct transfer: 9 item(s) to settle before the account changes organization.",
             "findings": [
+              {
+                "status": "NO-GO",
+                "category": "declared-impact",
+                "confidence": "high",
+                "title": "A source SCP denies organizations:LeaveOrganization, which blocks the transfer",
+                "detail": "Accepting the invitation needs organizations:LeaveOrganization, because accepting moves the account out of its organization, and in o-larkspur0001 it is denied by Larkspur-Baseline-Guardrails, DenyLeaveOrganization, attached at root Root (r-lark). An SCP in the source organization that denies it blocks the transfer even when the account's own IAM policy allows it. Lift the deny for the principal that accepts the invitation, for the duration of the transfer. Removal by the source management account is not part of a direct transfer: it is the leave-and-rejoin procedure, with a standalone interval and the standalone-account prerequisites.",
+                "action": "organizations:LeaveOrganization",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "leave-organization",
+                    "note": "direct"
+                  },
+                  {
+                    "kind": "policy-statement",
+                    "side": "source",
+                    "level": "root Root (r-lark)",
+                    "policy_id": "p-lark0001",
+                    "policy_name": "Larkspur-Baseline-Guardrails",
+                    "policy_type": "SCP",
+                    "statement": "DenyLeaveOrganization",
+                    "statement_json": {
+                      "Sid": "DenyLeaveOrganization",
+                      "Effect": "Deny",
+                      "Action": [
+                        "organizations:LeaveOrganization"
+                      ],
+                      "Resource": "*"
+                    }
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
+                ]
+              },
               {
                 "status": "REVIEW",
                 "category": "potential-impact",
@@ -1118,6 +1156,24 @@
                     "reference": "arn:aws:cloudtrail:us-east-1:111111111114:trail/larkspur-org-trail",
                     "note": "bucket larkspur-cloudtrail-archive, home region us-east-1"
                   }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "high",
+                "title": "OrganizationAccountAccessRole stays in the account: 111111111111 keeps administrator access until it is deleted",
+                "detail": "The account was created in the source organization, which created an IAM role (OrganizationAccountAccessRole unless another name was given) that the source management account can assume. When an account leaves an organization, any IAM role that was created to give the organization's management account access is not deleted. To end that access from the former organization's management account, delete the role by hand; the destination management account needs a role of its own, since Organizations does not create one for an invited account.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "access-role",
+                    "note": "joined_method: CREATED"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html",
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
                 ]
               },
               {
@@ -1159,12 +1215,35 @@
               {
                 "status": "REVIEW",
                 "category": "potential-impact",
-                "confidence": "medium",
-                "title": "Standalone account prerequisites and invitation",
-                "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02.",
+                "confidence": "high",
+                "title": "The account lands at the destination root first: 4 policy(ies) of the target path do not apply until it is moved into OU Production (ou-lark-prod)",
+                "detail": "A migrated account is added to the root of the new organization; it reaches OU Production (ou-lark-prod) only when the destination management account moves it there. Until then only the policies attached to the root apply. Not in force during that interval: SCP Fernhill-EU-Only-Regions at OU Business Units (ou-fern-bu); SCP aws-guardrails-kjwqpf at OU Business Units (ou-fern-bu); RCP Fernhill-Block-External-Principals at OU Business Units (ou-fern-bu); BACKUP Fernhill-Core-Backups at OU Business Units (ou-fern-bu). OU Business Units (ou-fern-bu) is registered with Control Tower; at the root the account is not governed and cannot be enrolled. Of the actions in use, 7 are allowed at the root and denied at the target position, so the account can still perform them in the interval: athena:StartQueryExecution, ec2:CreateTransitGatewayVpcAttachment, ec2:RunInstances, glue:StartJobRun, kms:Decrypt, s3:GetObject, s3:PutObject. 1 inbound request(s) that the target position denies are still admitted at the root: s3:PutObject by arn:aws:iam::111111111115:role/SettlementExporter. Move the account in the same change as the acceptance, and treat anything done in between as done without the target OU's guardrails. The verdict board evaluates the target position; this finding is the root position.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "root-landing",
+                    "note": "SCP Fernhill-EU-Only-Regions at OU Business Units (ou-fern-bu)\nSCP aws-guardrails-kjwqpf at OU Business Units (ou-fern-bu)\nRCP Fernhill-Block-External-Principals at OU Business Units (ou-fern-bu)\nBACKUP Fernhill-Core-Backups at OU Business Units (ou-fern-bu)"
+                  }
+                ],
                 "references": [
-                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
-                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "missing-evidence",
+                "confidence": "low",
+                "title": "Transfer eligibility: 2 requirement(s) cannot be confirmed from the snapshots",
+                "detail": "The snapshots do not say whether 2 requirement(s) of the migration are met, and none of them is assumed: the Seller of Record of the account matches the destination organization's, or the move fails (set organization.seller_of_record in both snapshots, from the invoices); the root user has no MFA device registered (AWS asks for one to be removed before a migration to a new owner; set root_mfa_enabled on the account, from the IAM account summary). Confirmed from the snapshots: the destination organization is older than seven days (created 2021-06-01T08:30:00Z, from organization.created_at); the account is active; the account was created more than four days ago; the account is not a delegated administrator.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "unconfirmed-eligibility",
+                    "note": "the Seller of Record of the account matches the destination organization's, or the move fails (set organization.seller_of_record in both snapshots, from the invoices)\nthe root user has no MFA device registered (AWS asks for one to be removed before a migration to a new owner; set root_mfa_enabled on the account, from the IAM account summary)"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
                 ]
               },
               {
@@ -1186,6 +1265,24 @@
                     "side": "target",
                     "reference": "fernhill-org-aggregator"
                   }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "informational",
+                "confidence": "high",
+                "title": "Direct transfer: 222222222221 invites the account and the account accepts; it is never standalone",
+                "detail": "With a direct account transfer the destination management account 222222222221 sends an invitation and the account accepts it: the account does not leave o-larkspur0001 first and does not operate as a standalone account in between, so the standalone-account information (payment method, verified contact details, support plan) is not a prerequisite. Accepting needs the organizations:LeaveOrganization permission, because accepting moves the account out of its current organization. The invitation has to be answered within 15 days. On acceptance the account is added to the root of o-fernhill0001, the policies attached there apply at once and those of o-larkspur0001 stop applying; the tags on the account are not carried over, organization-level reports and billing history stay with o-larkspur0001, and Reserved Instances and Savings Plans move with the account. The older sequence (leave or be removed, run standalone, then accept) is a separate procedure with its own prerequisites: evaluate it with the leave-and-rejoin method. Transfer procedure model 2026-11-05.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "procedure",
+                    "note": "direct"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html",
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
                 ]
               },
               {
@@ -1244,16 +1341,6 @@
                 "confidence": "high",
                 "title": "The 2 tag(s) on the account are deleted when it leaves: managed-by, team",
                 "detail": "Organizations deletes every tag attached to the account itself when it leaves. Anything that selects accounts by these tags (cost allocation, automation, SCP conditions on aws:PrincipalTag do not use them, but Organizations tag policies and reporting do) no longer sees the account. Re-tag it in the target organization.",
-                "references": [
-                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
-                ]
-              },
-              {
-                "status": "INFO",
-                "category": "informational",
-                "confidence": "high",
-                "title": "The IAM role Organizations created for the source management account is not deleted on leaving",
-                "detail": "Because the account was created in the organization, Organizations created an IAM role (usually OrganizationAccountAccessRole) that the source management account can assume. Leaving does not delete it; delete it by hand if that access should end, and expect the target management account to need a role of its own.",
                 "references": [
                   "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
                 ]
@@ -3805,9 +3892,9 @@
           },
           {
             "id": "transfer-procedure",
-            "version": "2026-11-02",
-            "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
-            "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html",
+            "note": "Three procedures, kept apart. Direct transfer: the destination invites and the account accepts; it does not leave first and is never standalone, but it needs organizations:LeaveOrganization and a source SCP that denies it blocks the transfer; the account lands at the destination root. Leave or remove, then rejoin: the account needs the standalone-account information (verified contact details, payment method, support plan) or the removal fails with ConstraintViolationException, and is outside any organization until it accepts an invitation. Management account: remove every member, delete the organization (which deletes every organization policy; a Control Tower landing zone has to be decommissioned first), then accept the invitation as a standalone account. Eligibility: the destination organization is at least seven days old; the Seller of Record of the account matches the destination's or the move fails; the account is not a delegated administrator; root MFA is removed when the owner changes; closed or suspended accounts cannot be migrated; an account created in an organization waits four days; the IAM role that gives the former management account access is not deleted. Invitations: 15 days to answer, root policies apply at once on acceptance, OrganizationAccountAccessRole is not created for invited accounts; account tags are not carried over; organization-level reports and history stay behind. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
           },
           {
             "id": "workload-behaviour",
@@ -3817,10 +3904,11 @@
           }
         ],
         "categories": {
-          "declared-impact": 11,
+          "declared-impact": 12,
           "informational": 15,
           "known-restriction": 3,
-          "potential-impact": 14,
+          "missing-evidence": 1,
+          "potential-impact": 15,
           "unsupported-evaluation": 1
         },
         "limitations": [
@@ -3838,14 +3926,15 @@
       "account_name": "larkspur-payments-dev",
       "relative_path": "Workloads / Development",
       "verdict": "NO-GO",
-      "blocking": 4,
-      "review": 12,
+      "blocking": 5,
+      "review": 14,
       "info": 16,
       "blocking_titles": [
         "ec2:CreateVpc becomes denied after the move",
         "ec2:RunInstances becomes denied after the move",
         "lambda:* becomes denied after the move",
-        "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule"
+        "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
+        "A source SCP denies organizations:LeaveOrganization, which blocks the transfer"
       ],
       "result": {
         "tool": "orgshift",
@@ -3923,10 +4012,11 @@
           "declared_operations": 0,
           "derived_operations": 0,
           "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-dev/",
-          "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-lark-work/ou-lark-dev/"
+          "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-lark-work/ou-lark-dev/",
+          "transfer_method": "direct"
         },
         "verdict": "NO-GO",
-        "summary": "Moving larkspur-payments-dev (111111111116) from Root / Workloads / Development to Root / Business Units / Workloads / Development (organization o-larkspur0001 to o-fernhill0001): NO-GO. 4 blocking finding(s) and 12 to review.",
+        "summary": "Moving larkspur-payments-dev (111111111116) from Root / Workloads / Development to Root / Business Units / Workloads / Development (organization o-larkspur0001 to o-fernhill0001): NO-GO. 5 blocking finding(s) and 14 to review.",
         "coverage": {
           "same_snapshot": false,
           "complete": true,
@@ -4520,9 +4610,44 @@
           {
             "id": "org-services",
             "title": "Organization services",
-            "status": "REVIEW",
-            "summary": "Cross-organization move: 6 item(s) to settle before the account leaves.",
+            "status": "NO-GO",
+            "summary": "Cross-organization move by direct transfer: 9 item(s) to settle before the account changes organization.",
             "findings": [
+              {
+                "status": "NO-GO",
+                "category": "declared-impact",
+                "confidence": "high",
+                "title": "A source SCP denies organizations:LeaveOrganization, which blocks the transfer",
+                "detail": "Accepting the invitation needs organizations:LeaveOrganization, because accepting moves the account out of its organization, and in o-larkspur0001 it is denied by Larkspur-Baseline-Guardrails, DenyLeaveOrganization, attached at root Root (r-lark). An SCP in the source organization that denies it blocks the transfer even when the account's own IAM policy allows it. Lift the deny for the principal that accepts the invitation, for the duration of the transfer. Removal by the source management account is not part of a direct transfer: it is the leave-and-rejoin procedure, with a standalone interval and the standalone-account prerequisites.",
+                "action": "organizations:LeaveOrganization",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "leave-organization",
+                    "note": "direct"
+                  },
+                  {
+                    "kind": "policy-statement",
+                    "side": "source",
+                    "level": "root Root (r-lark)",
+                    "policy_id": "p-lark0001",
+                    "policy_name": "Larkspur-Baseline-Guardrails",
+                    "policy_type": "SCP",
+                    "statement": "DenyLeaveOrganization",
+                    "statement_json": {
+                      "Sid": "DenyLeaveOrganization",
+                      "Effect": "Deny",
+                      "Action": [
+                        "organizations:LeaveOrganization"
+                      ],
+                      "Resource": "*"
+                    }
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
+                ]
+              },
               {
                 "status": "REVIEW",
                 "category": "potential-impact",
@@ -4550,6 +4675,24 @@
                     "reference": "arn:aws:cloudtrail:us-east-1:111111111114:trail/larkspur-org-trail",
                     "note": "bucket larkspur-cloudtrail-archive, home region us-east-1"
                   }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "high",
+                "title": "OrganizationAccountAccessRole stays in the account: 111111111111 keeps administrator access until it is deleted",
+                "detail": "The account was created in the source organization, which created an IAM role (OrganizationAccountAccessRole unless another name was given) that the source management account can assume. When an account leaves an organization, any IAM role that was created to give the organization's management account access is not deleted. To end that access from the former organization's management account, delete the role by hand; the destination management account needs a role of its own, since Organizations does not create one for an invited account.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "access-role",
+                    "note": "joined_method: CREATED"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html",
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
                 ]
               },
               {
@@ -4591,12 +4734,35 @@
               {
                 "status": "REVIEW",
                 "category": "potential-impact",
-                "confidence": "medium",
-                "title": "Standalone account prerequisites and invitation",
-                "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02.",
+                "confidence": "high",
+                "title": "The account lands at the destination root first: 4 policy(ies) of the target path do not apply until it is moved into OU Development (ou-lark-dev)",
+                "detail": "A migrated account is added to the root of the new organization; it reaches OU Development (ou-lark-dev) only when the destination management account moves it there. Until then only the policies attached to the root apply. Not in force during that interval: SCP Fernhill-EU-Only-Regions at OU Business Units (ou-fern-bu); SCP aws-guardrails-kjwqpf at OU Business Units (ou-fern-bu); RCP Fernhill-Block-External-Principals at OU Business Units (ou-fern-bu); BACKUP Fernhill-Core-Backups at OU Business Units (ou-fern-bu). OU Business Units (ou-fern-bu) is registered with Control Tower; at the root the account is not governed and cannot be enrolled. Of the actions in use, 3 are allowed at the root and denied at the target position, so the account can still perform them in the interval: ec2:CreateVpc, ec2:RunInstances, lambda:*. Move the account in the same change as the acceptance, and treat anything done in between as done without the target OU's guardrails. The verdict board evaluates the target position; this finding is the root position.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "root-landing",
+                    "note": "SCP Fernhill-EU-Only-Regions at OU Business Units (ou-fern-bu)\nSCP aws-guardrails-kjwqpf at OU Business Units (ou-fern-bu)\nRCP Fernhill-Block-External-Principals at OU Business Units (ou-fern-bu)\nBACKUP Fernhill-Core-Backups at OU Business Units (ou-fern-bu)"
+                  }
+                ],
                 "references": [
-                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
-                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "missing-evidence",
+                "confidence": "low",
+                "title": "Transfer eligibility: 2 requirement(s) cannot be confirmed from the snapshots",
+                "detail": "The snapshots do not say whether 2 requirement(s) of the migration are met, and none of them is assumed: the Seller of Record of the account matches the destination organization's, or the move fails (set organization.seller_of_record in both snapshots, from the invoices); the root user has no MFA device registered (AWS asks for one to be removed before a migration to a new owner; set root_mfa_enabled on the account, from the IAM account summary). Confirmed from the snapshots: the destination organization is older than seven days (created 2021-06-01T08:30:00Z, from organization.created_at); the account is active; the account was created more than four days ago; the account is not a delegated administrator.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "unconfirmed-eligibility",
+                    "note": "the Seller of Record of the account matches the destination organization's, or the move fails (set organization.seller_of_record in both snapshots, from the invoices)\nthe root user has no MFA device registered (AWS asks for one to be removed before a migration to a new owner; set root_mfa_enabled on the account, from the IAM account summary)"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
                 ]
               },
               {
@@ -4618,6 +4784,24 @@
                     "side": "target",
                     "reference": "fernhill-org-aggregator"
                   }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "informational",
+                "confidence": "high",
+                "title": "Direct transfer: 222222222221 invites the account and the account accepts; it is never standalone",
+                "detail": "With a direct account transfer the destination management account 222222222221 sends an invitation and the account accepts it: the account does not leave o-larkspur0001 first and does not operate as a standalone account in between, so the standalone-account information (payment method, verified contact details, support plan) is not a prerequisite. Accepting needs the organizations:LeaveOrganization permission, because accepting moves the account out of its current organization. The invitation has to be answered within 15 days. On acceptance the account is added to the root of o-fernhill0001, the policies attached there apply at once and those of o-larkspur0001 stop applying; the tags on the account are not carried over, organization-level reports and billing history stay with o-larkspur0001, and Reserved Instances and Savings Plans move with the account. The older sequence (leave or be removed, run standalone, then accept) is a separate procedure with its own prerequisites: evaluate it with the leave-and-rejoin method. Transfer procedure model 2026-11-05.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "procedure",
+                    "note": "direct"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html",
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
                 ]
               },
               {
@@ -4676,16 +4860,6 @@
                 "confidence": "high",
                 "title": "The 2 tag(s) on the account are deleted when it leaves: managed-by, team",
                 "detail": "Organizations deletes every tag attached to the account itself when it leaves. Anything that selects accounts by these tags (cost allocation, automation, SCP conditions on aws:PrincipalTag do not use them, but Organizations tag policies and reporting do) no longer sees the account. Re-tag it in the target organization.",
-                "references": [
-                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
-                ]
-              },
-              {
-                "status": "INFO",
-                "category": "informational",
-                "confidence": "high",
-                "title": "The IAM role Organizations created for the source management account is not deleted on leaving",
-                "detail": "Because the account was created in the organization, Organizations created an IAM role (usually OrganizationAccountAccessRole) that the source management account can assume. Leaving does not delete it; delete it by hand if that access should end, and expect the target management account to need a role of its own.",
                 "references": [
                   "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
                 ]
@@ -7109,9 +7283,9 @@
           },
           {
             "id": "transfer-procedure",
-            "version": "2026-11-02",
-            "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
-            "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html",
+            "note": "Three procedures, kept apart. Direct transfer: the destination invites and the account accepts; it does not leave first and is never standalone, but it needs organizations:LeaveOrganization and a source SCP that denies it blocks the transfer; the account lands at the destination root. Leave or remove, then rejoin: the account needs the standalone-account information (verified contact details, payment method, support plan) or the removal fails with ConstraintViolationException, and is outside any organization until it accepts an invitation. Management account: remove every member, delete the organization (which deletes every organization policy; a Control Tower landing zone has to be decommissioned first), then accept the invitation as a standalone account. Eligibility: the destination organization is at least seven days old; the Seller of Record of the account matches the destination's or the move fails; the account is not a delegated administrator; root MFA is removed when the owner changes; closed or suspended accounts cannot be migrated; an account created in an organization waits four days; the IAM role that gives the former management account access is not deleted. Invitations: 15 days to answer, root policies apply at once on acceptance, OrganizationAccountAccessRole is not created for invited accounts; account tags are not carried over; organization-level reports and history stay behind. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
           },
           {
             "id": "workload-behaviour",
@@ -7121,10 +7295,11 @@
           }
         ],
         "categories": {
-          "declared-impact": 5,
+          "declared-impact": 6,
           "informational": 14,
           "known-restriction": 1,
-          "potential-impact": 11,
+          "missing-evidence": 1,
+          "potential-impact": 12,
           "unsupported-evaluation": 1
         },
         "limitations": [
@@ -7142,8 +7317,8 @@
       "account_name": "larkspur-payments-prod",
       "relative_path": "Workloads / Production",
       "verdict": "NO-GO",
-      "blocking": 23,
-      "review": 23,
+      "blocking": 24,
+      "review": 26,
       "info": 26,
       "blocking_titles": [
         "cloudwatch:PutMetricData becomes denied after the move",
@@ -7167,6 +7342,7 @@
         "s3:ListBucket by 999999999999 becomes denied after the move",
         "sts:AssumeRole by arn:aws:iam::111111111118:role/DataPlatformIngest becomes denied after the move",
         "Networking share larkspur-core-network is lost: ec2:Subnet, ec2:TransitGateway, route53resolver:ResolverRule",
+        "A source SCP denies organizations:LeaveOrganization, which blocks the transfer",
         "Bucket policy of arn:aws:s3:::larkspur-payments-settlement-files denies the account's own principals after the move",
         "Stack payments-api sits on 2 subnets shared through larkspur-core-network, which the account loses"
       ],
@@ -7247,10 +7423,11 @@
           "declared_operations": 0,
           "derived_operations": 1,
           "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
-          "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-lark-work/ou-lark-prod/"
+          "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-lark-work/ou-lark-prod/",
+          "transfer_method": "direct"
         },
         "verdict": "NO-GO",
-        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root / Business Units / Workloads / Production (organization o-larkspur0001 to o-fernhill0001): NO-GO. 23 blocking finding(s) and 23 to review.",
+        "summary": "Moving larkspur-payments-prod (111111111115) from Root / Workloads / Production to Root / Business Units / Workloads / Production (organization o-larkspur0001 to o-fernhill0001): NO-GO. 24 blocking finding(s) and 26 to review.",
         "coverage": {
           "same_snapshot": false,
           "complete": true,
@@ -8922,9 +9099,44 @@
           {
             "id": "org-services",
             "title": "Organization services",
-            "status": "REVIEW",
-            "summary": "Cross-organization move: 6 item(s) to settle before the account leaves.",
+            "status": "NO-GO",
+            "summary": "Cross-organization move by direct transfer: 10 item(s) to settle before the account changes organization.",
             "findings": [
+              {
+                "status": "NO-GO",
+                "category": "declared-impact",
+                "confidence": "high",
+                "title": "A source SCP denies organizations:LeaveOrganization, which blocks the transfer",
+                "detail": "Accepting the invitation needs organizations:LeaveOrganization, because accepting moves the account out of its organization, and in o-larkspur0001 it is denied by Larkspur-Baseline-Guardrails, DenyLeaveOrganization, attached at root Root (r-lark). An SCP in the source organization that denies it blocks the transfer even when the account's own IAM policy allows it. Lift the deny for the principal that accepts the invitation, for the duration of the transfer. Removal by the source management account is not part of a direct transfer: it is the leave-and-rejoin procedure, with a standalone interval and the standalone-account prerequisites.",
+                "action": "organizations:LeaveOrganization",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "leave-organization",
+                    "note": "direct"
+                  },
+                  {
+                    "kind": "policy-statement",
+                    "side": "source",
+                    "level": "root Root (r-lark)",
+                    "policy_id": "p-lark0001",
+                    "policy_name": "Larkspur-Baseline-Guardrails",
+                    "policy_type": "SCP",
+                    "statement": "DenyLeaveOrganization",
+                    "statement_json": {
+                      "Sid": "DenyLeaveOrganization",
+                      "Effect": "Deny",
+                      "Action": [
+                        "organizations:LeaveOrganization"
+                      ],
+                      "Resource": "*"
+                    }
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
+                ]
+              },
               {
                 "status": "REVIEW",
                 "category": "potential-impact",
@@ -8952,6 +9164,24 @@
                     "reference": "arn:aws:cloudtrail:us-east-1:111111111114:trail/larkspur-org-trail",
                     "note": "bucket larkspur-cloudtrail-archive, home region us-east-1"
                   }
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "high",
+                "title": "OrganizationAccountAccessRole stays in the account: 111111111111 keeps administrator access until it is deleted",
+                "detail": "The account was created in the source organization, which created an IAM role (OrganizationAccountAccessRole unless another name was given) that the source management account can assume. When an account leaves an organization, any IAM role that was created to give the organization's management account access is not deleted. To end that access from the former organization's management account, delete the role by hand; the destination management account needs a role of its own, since Organizations does not create one for an invited account.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "access-role",
+                    "note": "joined_method: CREATED"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html",
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
                 ]
               },
               {
@@ -8993,12 +9223,52 @@
               {
                 "status": "REVIEW",
                 "category": "potential-impact",
-                "confidence": "medium",
-                "title": "Standalone account prerequisites and invitation",
-                "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02.",
+                "confidence": "high",
+                "title": "The account lands at the destination root first: 4 policy(ies) of the target path do not apply until it is moved into OU Production (ou-lark-prod)",
+                "detail": "A migrated account is added to the root of the new organization; it reaches OU Production (ou-lark-prod) only when the destination management account moves it there. Until then only the policies attached to the root apply. Not in force during that interval: SCP Fernhill-EU-Only-Regions at OU Business Units (ou-fern-bu); SCP aws-guardrails-kjwqpf at OU Business Units (ou-fern-bu); RCP Fernhill-Block-External-Principals at OU Business Units (ou-fern-bu); BACKUP Fernhill-Core-Backups at OU Business Units (ou-fern-bu). OU Business Units (ou-fern-bu) is registered with Control Tower; at the root the account is not governed and cannot be enrolled. Of the actions in use, 15 are allowed at the root and denied at the target position, so the account can still perform them in the interval: cloudwatch:PutMetricData, dynamodb:*, ec2:CreateTransitGatewayVpcAttachment, ec2:CreateVpc, ec2:DescribeInstances, ec2:RunInstances, ec2:TerminateInstances, kms:Decrypt, lambda:InvokeFunction, logs:CreateLogGroup, rds:CreateDBInstance, rds:DescribeDBInstances, s3:GetObject, s3:PutObject, secretsmanager:GetSecretValue. 4 inbound request(s) that the target position denies are still admitted at the root: kms:Decrypt by arn:aws:iam::111111111118:role/DataPlatformIngest; s3:GetObject by 999999999999; s3:ListBucket by 999999999999; sts:AssumeRole by arn:aws:iam::111111111118:role/DataPlatformIngest. Move the account in the same change as the acceptance, and treat anything done in between as done without the target OU's guardrails. The verdict board evaluates the target position; this finding is the root position.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "root-landing",
+                    "note": "SCP Fernhill-EU-Only-Regions at OU Business Units (ou-fern-bu)\nSCP aws-guardrails-kjwqpf at OU Business Units (ou-fern-bu)\nRCP Fernhill-Block-External-Principals at OU Business Units (ou-fern-bu)\nBACKUP Fernhill-Core-Backups at OU Business Units (ou-fern-bu)"
+                  }
+                ],
                 "references": [
-                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
-                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "potential-impact",
+                "confidence": "high",
+                "title": "The root user has MFA registered: remove it before the migration if the account changes owner",
+                "detail": "If the account has MFA registered for the root user, AWS asks for it to be removed before the migration; otherwise the new owner might not be able to sign in as the root user. When the same people keep the root credentials after the move, the device can stay: decide which case this is. If the root email address is to change to the new owner's after the migration, the destination organization has to use all features; otherwise change it before migrating.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "root-mfa",
+                    "note": "root_mfa_enabled: true"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
+                ]
+              },
+              {
+                "status": "REVIEW",
+                "category": "missing-evidence",
+                "confidence": "low",
+                "title": "Transfer eligibility: 1 requirement(s) cannot be confirmed from the snapshots",
+                "detail": "The snapshots do not say whether 1 requirement(s) of the migration are met, and none of them is assumed: the Seller of Record of the account matches the destination organization's, or the move fails (set organization.seller_of_record in both snapshots, from the invoices). Confirmed from the snapshots: the destination organization is older than seven days (created 2021-06-01T08:30:00Z, from organization.created_at); the account is active; the account was created more than four days ago; the account is not a delegated administrator.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "unconfirmed-eligibility",
+                    "note": "the Seller of Record of the account matches the destination organization's, or the move fails (set organization.seller_of_record in both snapshots, from the invoices)"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
                 ]
               },
               {
@@ -9020,6 +9290,24 @@
                     "side": "target",
                     "reference": "fernhill-org-aggregator"
                   }
+                ]
+              },
+              {
+                "status": "INFO",
+                "category": "informational",
+                "confidence": "high",
+                "title": "Direct transfer: 222222222221 invites the account and the account accepts; it is never standalone",
+                "detail": "With a direct account transfer the destination management account 222222222221 sends an invitation and the account accepts it: the account does not leave o-larkspur0001 first and does not operate as a standalone account in between, so the standalone-account information (payment method, verified contact details, support plan) is not a prerequisite. Accepting needs the organizations:LeaveOrganization permission, because accepting moves the account out of its current organization. The invitation has to be answered within 15 days. On acceptance the account is added to the root of o-fernhill0001, the policies attached there apply at once and those of o-larkspur0001 stop applying; the tags on the account are not carried over, organization-level reports and billing history stay with o-larkspur0001, and Reserved Instances and Savings Plans move with the account. The older sequence (leave or be removed, run standalone, then accept) is a separate procedure with its own prerequisites: evaluate it with the leave-and-rejoin method. Transfer procedure model 2026-11-05.",
+                "evidence": [
+                  {
+                    "kind": "transfer",
+                    "reference": "procedure",
+                    "note": "direct"
+                  }
+                ],
+                "references": [
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html",
+                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
                 ]
               },
               {
@@ -9078,16 +9366,6 @@
                 "confidence": "high",
                 "title": "The 2 tag(s) on the account are deleted when it leaves: managed-by, team",
                 "detail": "Organizations deletes every tag attached to the account itself when it leaves. Anything that selects accounts by these tags (cost allocation, automation, SCP conditions on aws:PrincipalTag do not use them, but Organizations tag policies and reporting do) no longer sees the account. Re-tag it in the target organization.",
-                "references": [
-                  "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
-                ]
-              },
-              {
-                "status": "INFO",
-                "category": "informational",
-                "confidence": "high",
-                "title": "The IAM role Organizations created for the source management account is not deleted on leaving",
-                "detail": "Because the account was created in the organization, Organizations created an IAM role (usually OrganizationAccountAccessRole) that the source management account can assume. Leaving does not delete it; delete it by hand if that access should end, and expect the target management account to need a role of its own.",
                 "references": [
                   "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
                 ]
@@ -11860,9 +12138,9 @@
           },
           {
             "id": "transfer-procedure",
-            "version": "2026-11-02",
-            "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html",
-            "note": "Removing a member account: standalone-account information (verified contact details, payment method, support plan) or ConstraintViolationException; created accounts wait four days; no delegated administrator; tags deleted; the role Organizations created is kept; cost data stays with the management account. Invitations: one organization at a time, 15 days to answer, root and OU policies apply at once on acceptance, the organization trail applies automatically, OrganizationAccountAccessRole is not created for invited accounts. Management account: leaves only by deleting the organization after every member is removed, which deletes every organization policy; a Control Tower landing zone has to be decommissioned first, which cannot be undone. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own; enrolling deploys the baseline StackSets, enables Config and applies the OU's SCPs; existing VPCs are left alone; account-level CloudTrail trails duplicate the organization trail. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
+            "version": "2026-11-05",
+            "reference": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html",
+            "note": "Three procedures, kept apart. Direct transfer: the destination invites and the account accepts; it does not leave first and is never standalone, but it needs organizations:LeaveOrganization and a source SCP that denies it blocks the transfer; the account lands at the destination root. Leave or remove, then rejoin: the account needs the standalone-account information (verified contact details, payment method, support plan) or the removal fails with ConstraintViolationException, and is outside any organization until it accepts an invitation. Management account: remove every member, delete the organization (which deletes every organization policy; a Control Tower landing zone has to be decommissioned first), then accept the invitation as a standalone account. Eligibility: the destination organization is at least seven days old; the Seller of Record of the account matches the destination's or the move fails; the account is not a delegated administrator; root MFA is removed when the owner changes; closed or suspended accounts cannot be migrated; an account created in an organization waits four days; the IAM role that gives the former management account access is not deleted. Invitations: 15 days to answer, root policies apply at once on acceptance, OrganizationAccountAccessRole is not created for invited accounts; account tags are not carried over; organization-level reports and history stay behind. Control Tower enrollment: from an unregistered OU of the same organization, with an AWSControlTowerExecution role trusting the management account and no AWS Config recorder or delivery channel of the account's own. Verified against https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html, https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html, https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html and https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html."
           },
           {
             "id": "workload-behaviour",
@@ -11872,10 +12150,11 @@
           }
         ],
         "categories": {
-          "declared-impact": 29,
+          "declared-impact": 30,
           "informational": 16,
           "known-restriction": 9,
-          "potential-impact": 17,
+          "missing-evidence": 1,
+          "potential-impact": 19,
           "unsupported-evaluation": 1
         },
         "limitations": [

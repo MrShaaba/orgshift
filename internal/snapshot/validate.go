@@ -29,6 +29,11 @@ func (s *Snapshot) Validate() error {
 	if s.Root.ID == "" {
 		fail("root.id is required")
 	}
+	if s.Organization.CreatedAt != "" {
+		if _, err := time.Parse(time.RFC3339, s.Organization.CreatedAt); err != nil {
+			fail("organization.created_at %q is not an RFC 3339 timestamp", s.Organization.CreatedAt)
+		}
+	}
 	seen := map[string]string{s.Root.ID: "root"}
 	for _, ou := range s.OUs {
 		if ou.ID == "" {

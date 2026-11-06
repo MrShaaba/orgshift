@@ -35,9 +35,17 @@ writes to AWS.
    allowed, delegated administration to hand over, the organization trail
    or Config aggregator the account owns, Control Tower unenrolment,
    references to the `AWSReservedSSO_*` roles to find, stale permission
-   sets to deprovision, the standalone prerequisites, and any unconditional
-   deny on `organizations:LeaveOrganization` found in the source SCP chain
-   (lift it, or let the management account remove the account).
+   sets to deprovision, and the transfer itself: a deny on
+   `organizations:LeaveOrganization` in the source SCP chain (a blocker for
+   a direct transfer, with the statement as evidence; with leave-and-rejoin
+   the management account can remove the account instead), the plan for
+   the interval at the destination root, the root MFA decision, each
+   eligibility requirement that is not met (organization younger than seven
+   days, Seller of Record mismatch, closed or suspended account, created
+   account younger than four days) as a blocker of its own, and one step
+   listing the requirements the snapshots cannot confirm. The standalone
+   prerequisites appear only with the leave-and-rejoin method. A management
+   account gets a single stop step: it has no single-account runbook.
 2. **Before the move: re-create what does not travel.** RAM shares
    re-shared with the account ID directly (with external principals
    allowed for a different organization), the account's own shares offered
@@ -48,17 +56,23 @@ writes to AWS.
    later enrolment needs.
 3. **The move.** Inside one organization a single `move-account`, or the
    Account Factory update flow when Control Tower governs the account.
-   Across organizations: invite from the target, leave the source (or be
-   removed by its management account), accept the handshake, move from the
-   target root into the target OU.
+   Across organizations, by direct transfer (the default): invite from the
+   target, accept the handshake inside the account (which takes it out of
+   the source and into the target root in one step; no
+   `leave-organization`), move from the target root into the target OU.
+   With `--transfer-method leave-and-rejoin`: invite, leave the source (or
+   be removed by its management account), accept, move.
 4. **After the move: checks.** The account's parent and the policies that
    reach it, share invitations to accept, CloudTrail and Config coverage,
    Control Tower enrolment and the controls that start applying, Identity
    Center assignments to create (with the identity store lookups per user
    or group), references to the old roles to update, the flagged requests
    to exercise, and a fresh collect-and-simulate that should come back GO.
-5. **Rollback.** Built from the source side of the result: move back (or
-   leave, re-invite, accept, move), re-attach the policies that were
+5. **Rollback.** Built from the source side of the result: move back (or,
+   across organizations, have the source invite the account back and
+   accept: another direct transfer, blocked by a deny on
+   `organizations:LeaveOrganization` in the target's chain, which the step
+   names when there is one), re-attach the policies that were
    attached directly to the account, re-create the Identity Center
    assignments in the source instance from the snapshot's principal IDs,
    re-delegate, re-enroll, and verify the original policy chain, which is

@@ -73,36 +73,109 @@ before collection.
 
 ## Transfer procedure (Organizations)
 
-Sources: [Removing a member account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html),
+Sources: [Migrating an account to another organization](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html),
+checked 2026-11-05;
+[Removing a member account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html),
 [Managing account invitations](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html),
 [Deleting an organization](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_delete.html),
 [Decommission a landing zone](https://docs.aws.amazon.com/controltower/latest/userguide/decommission-landing-zone.html),
-[About enrolling existing accounts](https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html);
+[About enrolling existing accounts](https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html),
 checked 2026-11-02. Versioned as the `transfer-procedure` model
-(`evaluator.TransferModelVersion`), named in the findings that use it.
+(`evaluator.TransferModelVersion`, `2026-11-05`), named in the findings that
+use it. Version `2026-11-02` modelled a single sequence, leave and then
+join, and presented its standalone interval as part of every move between
+organizations; that was wrong for a direct transfer and is what M5 defect 4
+corrected.
 
-- A member account can be removed only with the standalone-account
-  information in place (verified contact details, a payment method, a
-  support plan), otherwise `ConstraintViolationException`; with Enterprise
-  Support a billing case can arrange the standalone period. Accounts created
-  by Organizations wait four days; invited accounts do not. The account must
-  not be a delegated administrator. Its tags are deleted, the IAM role
-  Organizations created is kept, cost and usage data stay with the
-  management account, organization agreements no longer cover it.
-- An account belongs to one organization at a time, so it leaves before it
-  accepts an invitation; an invitation must be answered within 15 days;
-  policies attached to the destination root and the OU it lands in apply at
-  once on acceptance; the destination's organization trail covers it
-  automatically and Config, GuardDuty or Security Hub may enable
-  automatically for new members (duplicate charges with account-level
-  trails); Organizations does not create `OrganizationAccountAccessRole`
-  for an invited account.
-- The management account leaves only when the organization is deleted,
-  which requires removing every member first and deletes every organization
-  policy irrecoverably; a Control Tower landing zone operated from it has to
-  be decommissioned first, which cannot be undone and leaves S3 buckets and
-  log groups to delete by hand. The staged evaluation reports both as NO-GO
-  when the moving account is a management account.
+There are three procedures and orgshift keeps them apart. The result names
+the one that applies in `subject.transfer_method`.
+
+**Direct transfer** (`direct`, the default).
+
+- "With direct account transfer, you migrate an account by having the new
+  organization send an invitation and the migrating account accept it. The
+  migrating account doesn't need to leave its current organization or
+  operate as a standalone account first." There is no standalone interval,
+  and the standalone-account information is not a prerequisite.
+- "It does need the `organizations:LeaveOrganization` permission, because
+  accepting the invitation moves it out of its current organization." and
+  "An SCP in the source organization that denies
+  `organizations:LeaveOrganization` blocks the transfer, even when the
+  account's IAM policy allows it." orgshift evaluates the action against the
+  source SCP chain: a deny (explicit, or implicit under an allow list) is a
+  NO-GO with the statement as evidence; a deny that depends on the caller
+  or another condition is a REVIEW; no finding when nothing denies it.
+  Removal by the management account is not a way round it: that is the
+  other procedure.
+- "Accounts that are migrated ... will be automatically added to the root
+  of the new organization." Until the destination management account moves
+  the account into its OU, only the policies attached to the root apply.
+  orgshift reports that interval on its own (REVIEW when anything is
+  attached below the root on the target path): the policies not yet in
+  force, the actions in use and inbound requests that the target position
+  denies and the root still admits, and whether the target OU is governed
+  by Control Tower. The verdict board keeps evaluating the target position.
+- An invitation must be answered within 15 days (invitations page).
+
+**Leave or remove, then rejoin** (`leave-and-rejoin`, chosen with
+`--transfer-method` or `membership.method`).
+
+- The account leaves (`LeaveOrganization` from inside it) or is removed by
+  the source management account, runs standalone, and then accepts an
+  invitation. It can only do so with the standalone-account information in
+  place (verified contact details, a payment method, a support plan),
+  otherwise `ConstraintViolationException`. Reported as a REVIEW of its
+  own, and the standalone-account information as a requirement the
+  snapshots cannot confirm.
+- A source SCP that denies `organizations:LeaveOrganization` is a REVIEW
+  here, not a blocker: the management account can remove the account, and
+  SCPs do not restrict the management account.
+- The account lands at the destination root in this procedure too.
+
+**Management account** (`management-account`, follows from the account, not
+a choice).
+
+- "you must remove all member accounts from the organization and delete the
+  organization before migrating" the management account; it then accepts
+  the invitation as a standalone account and is a member account from then
+  on. Deleting the organization deletes every organization policy
+  irrecoverably; a Control Tower landing zone operated from it has to be
+  decommissioned first, which cannot be undone and leaves S3 buckets and
+  log groups to delete by hand. Both are NO-GO findings, separate from the
+  policy comparison, and neither of the member procedures is reported for
+  such an account.
+
+**Eligibility**, for any of them. Each requirement is confirmed, failed or
+reported as not confirmed; none is assumed to be met.
+
+| Requirement (migration page) | In the snapshot | Finding |
+| --- | --- | --- |
+| The destination organization is at least seven days old | `organization.created_at` of the destination (entered by hand; no Organizations API returns it) | NO-GO when younger at `generated_at`; not confirmed when absent. The date the management account joined is shown as a hint only: nothing documents it as the creation date. |
+| The Seller of Record of the account matches the destination's, or "the move fails" | `organization.seller_of_record` on both sides (entered by hand, from the invoices) | NO-GO when they differ; not confirmed when either is absent |
+| The account is not a delegated administrator | `delegated_administrators` | NO-GO per service |
+| Root MFA: "remove it before the migration. Otherwise, the new owner might not be able to sign in as the root user." | `accounts[].root_mfa_enabled` (entered by hand) | REVIEW when `true` (a decision: it matters when the owner changes); not confirmed when absent |
+| "Closed or suspended accounts cannot be migrated." | `accounts[].status` | NO-GO unless `ACTIVE`; not confirmed when absent |
+| An account created in an organization waits four days | `accounts[].joined_method`, `joined_at` | NO-GO when younger at `generated_at`; not confirmed when the date is absent; does not apply to invited accounts |
+| The IAM role that gives the old management account access "isn't automatically deleted" | `accounts[].joined_method` | REVIEW for created accounts (`OrganizationAccountAccessRole` exists), with a step after the move to delete it; INFO for invited ones |
+
+What is not confirmed is one REVIEW of category `missing-evidence` that
+lists each requirement and the field that settles it.
+
+Also from the migration page: the tags on the account are not carried over
+and have to be recreated, organization-level reports and billing history
+stay with the old organization, and Reserved Instances and Savings Plans
+move with the account. From the invitations page: the destination's
+organization trail covers the account automatically and Config, GuardDuty
+or Security Hub may enable automatically for new members (duplicate charges
+with account-level trails); Organizations does not create
+`OrganizationAccountAccessRole` for an invited account.
+
+Not modelled: what a direct transfer does to consolidated-billing
+proration, tax settings and AWS Marketplace subscriptions. The page does
+not describe a rollback; orgshift's rollback is another direct transfer in
+the other direction, with the same requirements applied to the other
+organization.
+
 - Control Tower enrolls an existing account from an unregistered OU of the
   same organization into a registered OU; it needs an
   `AWSControlTowerExecution` role trusting the management account and no
@@ -159,6 +232,11 @@ Sources: [About enrolling existing accounts](https://docs.aws.amazon.com/control
 ## Leaving an organization
 
 Source: [Removing a member account](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html).
+
+This section is about `LeaveOrganization` and
+`RemoveAccountFromOrganization`, the first half of the leave-and-rejoin
+procedure. A direct transfer does not go through it; see
+[Transfer procedure](#transfer-procedure-organizations).
 
 - The account must have the information a standalone account needs
   (verified contact information, a payment method, a support plan); the

@@ -96,7 +96,7 @@ func TestOURunbookMarkdown(t *testing.T) {
 		"- [ ] **2.4** Create OU Workloads under OU Business Units (ou-fern-bu)",
 		"  - Evidence (policy-document): source, SCP `Larkspur-Allowed-Regions` (p-lark0002)",
 		"## Account larkspur-payments-prod (`111111111115`): NO-GO",
-		"### 3. The move\n\nRun these in order.",
+		"### 3. The move\n\nA direct transfer: the destination invites, the account accepts,",
 		"Moved together with OU Workloads",
 	} {
 		if !strings.Contains(md, want) {

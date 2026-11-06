@@ -69,10 +69,11 @@
     "declared_operations": 0,
     "derived_operations": 0,
     "source_org_path": "o-larkspur0001/r-lark/ou-lark-work/ou-lark-prod/",
-    "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-fern-ret/"
+    "target_org_path": "o-fernhill0001/r-fern/ou-fern-bu/ou-fern-ret/",
+    "transfer_method": "direct"
   },
   "verdict": "NO-GO",
-  "summary": "52 steps: 7 before the move (2 blocking), 12 to re-create, 4 for the move itself, 23 checks afterwards and 6 to roll back.",
+  "summary": "52 steps: 8 before the move (3 blocking), 12 to re-create, 3 for the move itself, 24 checks afterwards and 5 to roll back.",
   "phases": [
     {
       "id": "before",
@@ -198,36 +199,27 @@
         },
         {
           "id": "before-3",
-          "title": "Make the account able to stand alone",
-          "detail": "Before it can leave, the account needs its own verified contact information, a payment method and a support plan choice; Organizations fails the removal with ConstraintViolationException until they are in place (with Enterprise Support, a billing case can arrange the standalone period instead of a payment method per account). It then has to be invited by the target management account 222222222221 and accept the invitation: an account belongs to one organization at a time, so it leaves first; the invitation must be answered within 15 days; the policies attached to the target root and the OU it lands in apply at once; the target's organization trail covers it automatically and Config, GuardDuty or Security Hub may be enabled automatically for new members, so account-level trails and detectors may double charges; Organizations does not create OrganizationAccountAccessRole for an invited account. SCPs in the source that deny organizations:LeaveOrganization must be lifted for the move, or the source management account removes the account instead. The account also loses access to the cost and usage data of its time in the source organization and is no longer covered by the source organization's agreements. Transfer procedure model 2026-11-02. Contact information, alternate contacts and the payment method can be checked with the Account API; identity verification and the support plan are done in the console.",
-          "status": "REVIEW",
-          "kind": "prerequisite",
-          "where": "account larkspur-data-prod (111111111118), signed in as root or an administrator",
-          "check": "org-services",
-          "finding": "Standalone account prerequisites and invitation",
-          "commands": [
-            "aws account get-contact-information",
-            "aws account get-alternate-contact --alternate-contact-type BILLING",
-            "# console: Billing and Cost Management → Payment preferences; Account → Identity verification; Support → Support plan"
-          ]
-        },
-        {
-          "id": "before-4",
-          "title": "Lift the deny on organizations:LeaveOrganization in SCP Larkspur-Baseline-Guardrails / DenyLeaveOrganization, or let the management account remove the account",
-          "detail": "SCP Larkspur-Baseline-Guardrails (p-lark0001) is attached at root Root (r-lark) and denies organizations:LeaveOrganization without a condition, so leave-organization run from inside the account fails. Either detach the policy or edit the statement for the duration of the move and put it back afterwards, or run remove-account-from-organization from the management account, which SCPs do not restrict.",
-          "status": "REVIEW",
+          "title": "Lift the deny on organizations:LeaveOrganization in SCP Larkspur-Baseline-Guardrails / DenyLeaveOrganization for the transfer",
+          "detail": "Accepting the invitation needs organizations:LeaveOrganization, because accepting moves the account out of its organization, and in o-larkspur0001 it is denied by Larkspur-Baseline-Guardrails, DenyLeaveOrganization, attached at root Root (r-lark). An SCP in the source organization that denies it blocks the transfer even when the account's own IAM policy allows it. Lift the deny for the principal that accepts the invitation, for the duration of the transfer. Removal by the source management account is not part of a direct transfer: it is the leave-and-rejoin procedure, with a standalone interval and the standalone-account prerequisites.",
+          "status": "NO-GO",
           "kind": "policy-change",
           "where": "management account 111111111111 of Larkspur Holdings",
           "check": "org-services",
-          "finding": "Standalone account prerequisites and invitation",
+          "finding": "A source SCP denies organizations:LeaveOrganization, which blocks the transfer",
           "actions": [
             "organizations:LeaveOrganization"
           ],
           "commands": [
-            "aws organizations describe-policy --policy-id p-lark0001 --query Content --output text",
-            "aws organizations remove-account-from-organization --account-id 111111111118   # the alternative that needs no policy change"
+            "aws organizations describe-policy --policy-id p-lark0001 --query Policy.Content --output text \u003e p-lark0001.json",
+            "# except the principal that accepts the invitation in the statement (or detach the policy for the transfer), then: aws organizations update-policy --policy-id p-lark0001 --content file://p-lark0001.json",
+            "# put the statement back in the source organization once the account has left; it no longer applies to this account"
           ],
           "evidence": [
+            {
+              "kind": "transfer",
+              "reference": "leave-organization",
+              "note": "direct"
+            },
             {
               "kind": "policy-statement",
               "side": "source",
@@ -236,12 +228,57 @@
               "policy_name": "Larkspur-Baseline-Guardrails",
               "policy_type": "SCP",
               "statement": "DenyLeaveOrganization",
-              "note": "Deny organizations:LeaveOrganization"
+              "statement_json": {
+                "Sid": "DenyLeaveOrganization",
+                "Effect": "Deny",
+                "Action": [
+                  "organizations:LeaveOrganization"
+                ],
+                "Resource": "*"
+              }
+            }
+          ]
+        },
+        {
+          "id": "before-4",
+          "title": "Plan the interval at the destination root: accept and move in one change",
+          "detail": "A migrated account is added to the root of the new organization; it reaches OU Retail (ou-fern-ret) only when the destination management account moves it there. Until then only the policies attached to the root apply. Not in force during that interval: SCP Fernhill-EU-Only-Regions at OU Business Units (ou-fern-bu); SCP aws-guardrails-kjwqpf at OU Business Units (ou-fern-bu); RCP Fernhill-Block-External-Principals at OU Business Units (ou-fern-bu); BACKUP Fernhill-Core-Backups at OU Business Units (ou-fern-bu). OU Retail (ou-fern-ret) is registered with Control Tower; at the root the account is not governed and cannot be enrolled. Of the actions in use, 7 are allowed at the root and denied at the target position, so the account can still perform them in the interval: athena:StartQueryExecution, ec2:CreateTransitGatewayVpcAttachment, ec2:RunInstances, glue:StartJobRun, kms:Decrypt, s3:GetObject, s3:PutObject. 1 inbound request(s) that the target position denies are still admitted at the root: s3:PutObject by arn:aws:iam::111111111115:role/SettlementExporter. Move the account in the same change as the acceptance, and treat anything done in between as done without the target OU's guardrails. The verdict board evaluates the target position; this finding is the root position. The move step that follows the acceptance in this runbook closes the interval; have the destination management account ready to run it as soon as the account has joined.",
+          "status": "REVIEW",
+          "kind": "decision",
+          "where": "management account 222222222221 of Fernhill Group",
+          "check": "org-services",
+          "finding": "The account lands at the destination root first: 4 policy(ies) of the target path do not apply until it is moved into OU Retail (ou-fern-ret)",
+          "evidence": [
+            {
+              "kind": "transfer",
+              "reference": "root-landing",
+              "note": "SCP Fernhill-EU-Only-Regions at OU Business Units (ou-fern-bu)\nSCP aws-guardrails-kjwqpf at OU Business Units (ou-fern-bu)\nRCP Fernhill-Block-External-Principals at OU Business Units (ou-fern-bu)\nBACKUP Fernhill-Core-Backups at OU Business Units (ou-fern-bu)"
             }
           ]
         },
         {
           "id": "before-5",
+          "title": "Confirm the transfer eligibility requirements the snapshots do not show",
+          "detail": "The snapshots do not say whether 2 requirement(s) of the migration are met, and none of them is assumed: the Seller of Record of the account matches the destination organization's, or the move fails (set organization.seller_of_record in both snapshots, from the invoices); the root user has no MFA device registered (AWS asks for one to be removed before a migration to a new owner; set root_mfa_enabled on the account, from the IAM account summary). Confirmed from the snapshots: the destination organization is older than seven days (created 2021-06-01T08:30:00Z, from organization.created_at); the account is active; the account was created more than four days ago; the account is not a delegated administrator. Record what you find in the snapshots (organization.created_at and organization.seller_of_record on both sides, root_mfa_enabled on the account) and simulate again, so the next result says confirmed instead of unknown.",
+          "status": "REVIEW",
+          "kind": "input",
+          "check": "org-services",
+          "finding": "Transfer eligibility: 2 requirement(s) cannot be confirmed from the snapshots",
+          "commands": [
+            "aws organizations describe-account --account-id 111111111118 --query \"Account.[Status,JoinedMethod,JoinedTimestamp]\"",
+            "aws iam get-account-summary --query SummaryMap.AccountMFAEnabled   # inside the account",
+            "# console: Billing and Cost Management → Bills → the invoice header names the Seller of Record, in the account and in the destination management account"
+          ],
+          "evidence": [
+            {
+              "kind": "transfer",
+              "reference": "unconfirmed-eligibility",
+              "note": "the Seller of Record of the account matches the destination organization's, or the move fails (set organization.seller_of_record in both snapshots, from the invoices)\nthe root user has no MFA device registered (AWS asks for one to be removed before a migration to a new owner; set root_mfa_enabled on the account, from the IAM account summary)"
+            }
+          ]
+        },
+        {
+          "id": "before-6",
           "title": "Find what references the 3 AWSReservedSSO_* role(s) of the account",
           "detail": "When the account leaves the organization, Identity Center cleans up the resources it created in the account; the documentation names the service-linked role, and the IAM roles provisioned for permission sets (path /aws-reserved/sso.amazonaws.com/us-east-1/) go with the instance's control over the account, so plan for them to disappear and confirm in IAM after the move. Anything that names these roles breaks: resource and trust policies, KMS key policies, S3 bucket policies, EKS access entries, pipelines and tools that assume them, and CloudTrail history keeps the old ARNs. The target instance provisions new roles with a different random suffix, so references have to be updated, not restored. The exact suffix is only visible in IAM; offline the roles are known by their pattern. List the exact role ARNs now, while they exist, and search for them so the references can be updated after the move.",
           "status": "REVIEW",
@@ -275,7 +312,7 @@
           ]
         },
         {
-          "id": "before-6",
+          "id": "before-7",
           "title": "Change the policy of arn:aws:s3:::larkspur-data-lake to name the destination organization",
           "detail": "Statement WorkloadAccountsWrite (Allow): it stops admitting the account's own principals (ForAnyValue:StringLike aws:PrincipalOrgPaths o-larkspur0001/r-lark/ou-lark-work/*); inside one account an identity policy can still grant the access, so whether anything breaks depends on policies this check does not read. Change the policy to name the destination organization (or both, for the transition) before the move.",
           "status": "REVIEW",
@@ -313,7 +350,7 @@
           ]
         },
         {
-          "id": "before-7",
+          "id": "before-8",
           "title": "Keep or replace stack StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054 before StackSet larkspur-baseline-roles deletes it",
           "detail": "StackSet larkspur-baseline-roles is service-managed with automatic deployment on and RetainStacksOnAccountRemoval off. When an account is removed from a target organization or OU, StackSets deletes its stack instances and their resources: here AWS::IAM::ManagedPolicy x1, AWS::IAM::Role x3. Whatever in the account uses them stops working at that moment, and the resources are not there for a rollback either. Before the move, either turn RetainStacksOnAccountRemoval on for the StackSet (the stack then stays in the account, detached from the StackSet and no longer updated) or make sure the destination deploys an equivalent. Turning retention on is a setting of the whole StackSet and applies to every account that leaves its targets from then on.",
           "status": "REVIEW",
@@ -645,12 +682,12 @@
     {
       "id": "move",
       "title": "The move",
-      "intro": "Run these in order. Between leaving and accepting the invitation the account is standalone, with no SCPs and no organization features; keep that window short.",
+      "intro": "A direct transfer: the destination invites, the account accepts, and that acceptance takes it out of its organization and into the destination's root in one step. It is never standalone. Run the move into the target OU straight after.",
       "steps": [
         {
           "id": "move-1",
           "title": "Invite the account into Fernhill Group (o-fernhill0001)",
-          "detail": "The invitation (a handshake) is valid for 15 days. Send it before the account leaves so the standalone window is short.",
+          "detail": "The invitation (a handshake) is valid for 15 days. Nothing changes for the account until it accepts.",
           "kind": "move",
           "where": "management account 222222222221 of Fernhill Group",
           "commands": [
@@ -659,19 +696,8 @@
         },
         {
           "id": "move-2",
-          "title": "Leave Larkspur Holdings (o-larkspur0001)",
-          "detail": "Run leave-organization from inside the account, or remove it from the management account (which SCPs do not restrict). Both need the standalone prerequisites to be in place. From this moment no SCP, RCP or tag policy of the source applies, organization-scoped shares stop reaching the account and Identity Center deletes its assignments and roles.",
-          "kind": "move",
-          "where": "account larkspur-data-prod (111111111118), or management account 111111111111 of Larkspur Holdings",
-          "commands": [
-            "aws organizations leave-organization   # run inside the account",
-            "aws organizations remove-account-from-organization --account-id 111111111118   # alternative, run by the management account"
-          ]
-        },
-        {
-          "id": "move-3",
-          "title": "Accept the invitation",
-          "detail": "The account joins Fernhill Group (o-fernhill0001) at its root with the AWS managed default policies attached. Everything on the verdict board that applies at the target position applies from the next step on.",
+          "title": "Accept the invitation: the account changes organization",
+          "detail": "Accepting is the transfer: the account leaves Larkspur Holdings (o-larkspur0001) and joins Fernhill Group (o-fernhill0001) at its root in the same step, with the AWS managed default policies attached. It does not run leave-organization and is never standalone, but the principal that accepts needs organizations:LeaveOrganization as well as organizations:AcceptHandshake, and no SCP of the source may deny it. From this moment no SCP, RCP or tag policy of the source applies, organization-scoped shares stop reaching the account and Identity Center deletes its roles in it.",
           "kind": "move",
           "where": "account larkspur-data-prod (111111111118)",
           "commands": [
@@ -680,7 +706,7 @@
           ]
         },
         {
-          "id": "move-4",
+          "id": "move-3",
           "title": "Move the account from the root to OU Retail (ou-fern-ret)",
           "detail": "Until this call the account sits at the target root with only the policies attached there.",
           "kind": "move",
@@ -825,6 +851,28 @@
         },
         {
           "id": "after-9",
+          "title": "Delete the role that lets 111111111111 into the account, and give Fernhill Group (o-fernhill0001) its own",
+          "detail": "The account was created in the source organization, which created an IAM role (OrganizationAccountAccessRole unless another name was given) that the source management account can assume. When an account leaves an organization, any IAM role that was created to give the organization's management account access is not deleted. To end that access from the former organization's management account, delete the role by hand; the destination management account needs a role of its own, since Organizations does not create one for an invited account. Look at the role's trust policy first: delete it only when it trusts the former management account and nothing else depends on it.",
+          "status": "REVIEW",
+          "kind": "prerequisite",
+          "where": "account larkspur-data-prod (111111111118)",
+          "check": "org-services",
+          "finding": "OrganizationAccountAccessRole stays in the account: 111111111111 keeps administrator access until it is deleted",
+          "commands": [
+            "aws iam get-role --role-name OrganizationAccountAccessRole --query Role.AssumeRolePolicyDocument",
+            "aws iam list-attached-role-policies --role-name OrganizationAccountAccessRole",
+            "# detach its policies, then: aws iam delete-role --role-name OrganizationAccountAccessRole"
+          ],
+          "evidence": [
+            {
+              "kind": "transfer",
+              "reference": "access-role",
+              "note": "joined_method: CREATED"
+            }
+          ]
+        },
+        {
+          "id": "after-10",
           "title": "Confirm StackSet fernhill-baseline deployed its stack instances to the account",
           "detail": "Baseline IAM roles and GuardDuty membership. Stack instances are created automatically when auto-deployment is on.",
           "status": "INFO",
@@ -845,7 +893,7 @@
           ]
         },
         {
-          "id": "after-10",
+          "id": "after-11",
           "title": "Confirm CloudTrail coverage",
           "detail": "Organization trail(s) larkspur-org-trail stop logging the account the moment it leaves. Trail(s) fernhill-org-trail (bucket fernhill-log-archive) of the target cover it once it has joined; confirm events arrive there. Between leaving and joining nothing logs management events unless the account has a trail of its own.",
           "kind": "logging",
@@ -870,7 +918,7 @@
           ]
         },
         {
-          "id": "after-11",
+          "id": "after-12",
           "title": "Confirm AWS Config aggregation",
           "detail": "Aggregator(s) larkspur-org-aggregator of the source stop receiving the account's configuration and compliance data. Aggregator(s) fernhill-org-aggregator in the target pick it up once it has joined and the recorder in the account is running; confirm the account appears as a source.",
           "kind": "logging",
@@ -894,7 +942,7 @@
           ]
         },
         {
-          "id": "after-12",
+          "id": "after-13",
           "title": "Confirm the target's delegated administrators enrol the account",
           "detail": "In the target organization: 222222222223 administers access-analyzer.amazonaws.com; 222222222223 administers guardduty.amazonaws.com; 222222222223 administers securityhub.amazonaws.com. Each administrator's auto-enable settings decide whether the account is enrolled on joining; check the service consoles for the new member.",
           "status": "INFO",
@@ -906,7 +954,7 @@
           ]
         },
         {
-          "id": "after-13",
+          "id": "after-14",
           "title": "Confirm the Control Tower controls that start applying at Retail",
           "detail": "3 preventive control(s) start applying at Retail: AWS-GR_CLOUDTRAIL_ENABLED, AWS-GR_CONFIG_ENABLED, AWS-GR_RESTRICT_ROOT_USER_ACCESS_KEYS. 4 detective control(s) start applying at Retail: AWS-GR_ENCRYPTED_VOLUMES, AWS-GR_RDS_STORAGE_ENCRYPTED, AWS-GR_RESTRICTED_COMMON_PORTS, AWS-GR_RESTRICTED_SSH. Preventive controls apply through the OU's SCPs at once; detective and proactive ones report once the account is enrolled.",
           "status": "INFO",
@@ -962,7 +1010,7 @@
           ]
         },
         {
-          "id": "after-14",
+          "id": "after-15",
           "title": "Enroll the account in Control Tower from Account Factory (OU Retail)",
           "detail": "Moving into a registered OU applies the OU's SCPs at once (the 3 preventive guardrail SCP(s) on the chain are attached to the OUs), but the 4 detective control(s) do not report and the baseline is not deployed until the account is enrolled. Enrolment is done from Account Factory (enroll account) and needs an AWSControlTowerExecution role in the account that trusts management account 222222222221, no Config recorder or delivery channel of the account's own in the governed regions (eu-west-1, eu-central-1), and an email address and name that Account Factory can register. The account has to have joined o-fernhill0001 before it can be enrolled.",
           "status": "REVIEW",
@@ -989,7 +1037,7 @@
           ]
         },
         {
-          "id": "after-15",
+          "id": "after-16",
           "title": "Update references to the deleted AWSReservedSSO_* roles with the ARNs the target instance provisions",
           "detail": "The new roles have a different random suffix. Replace the old ARNs found before the move in resource policies, key policies, EKS access entries and tooling.",
           "kind": "identity-center",
@@ -1001,7 +1049,7 @@
           ]
         },
         {
-          "id": "after-16",
+          "id": "after-17",
           "title": "Assign AdministratorAccess to group Platform-Admins for the account in the target instance",
           "detail": "Users and groups in identity store d-fern0000001 are different objects from the source ones, so look each one up by name first; create it there if it is missing. Identity Center then provisions a new AWSReservedSSO_AdministratorAccess_* role in the account.",
           "status": "REVIEW",
@@ -1015,7 +1063,7 @@
           ]
         },
         {
-          "id": "after-17",
+          "id": "after-18",
           "title": "Assign DataPlatformOperator to group Data-Platform for the account in the target instance",
           "detail": "Users and groups in identity store d-fern0000001 are different objects from the source ones, so look each one up by name first; create it there if it is missing. Identity Center then provisions a new AWSReservedSSO_DataPlatformOperator_* role in the account.",
           "status": "REVIEW",
@@ -1029,7 +1077,7 @@
           ]
         },
         {
-          "id": "after-18",
+          "id": "after-19",
           "title": "Assign ReadOnlyAccess to group Security-Auditors for the account in the target instance",
           "detail": "Users and groups in identity store d-fern0000001 are different objects from the source ones, so look each one up by name first; create it there if it is missing. Identity Center then provisions a new AWSReservedSSO_ReadOnlyAccess_* role in the account.",
           "status": "REVIEW",
@@ -1043,7 +1091,7 @@
           ]
         },
         {
-          "id": "after-19",
+          "id": "after-20",
           "title": "Take o-larkspur0001 out of the policy of arn:aws:s3:::larkspur-data-lake once nothing there needs it",
           "detail": "A condition that names both organizations is a transition state: it keeps admitting every principal of the organization the account left. Remove the former organization when the consumers that stayed behind no longer need the resource, or replace it with the specific accounts that do.",
           "status": "REVIEW",
@@ -1054,7 +1102,7 @@
           "resource": "arn:aws:s3:::larkspur-data-lake"
         },
         {
-          "id": "after-20",
+          "id": "after-21",
           "title": "Confirm what became of stack StackSet-larkspur-baseline-roles-99ef627b-e471-7169-1578-5f22b2eda054",
           "detail": "With retention on, the stack is still there and no longer belongs to the StackSet; with retention off, it and its resources are gone and whatever replaced them has to be in place.",
           "status": "REVIEW",
@@ -1070,7 +1118,7 @@
           ]
         },
         {
-          "id": "after-21",
+          "id": "after-22",
           "title": "Adopt or replace stack StackSet-larkspur-config-recorder-d7418753-b291-d801-567c-0fc53e2afd2c, which StackSet larkspur-config-recorder left behind",
           "detail": "RetainStacksOnAccountRemoval is on, so when the account leaves the organization the stack and its 3 resource(s) are kept in their current state and are no longer part of the StackSet: nobody updates them from then on. Adopt the stack in the destination or replace it. The stack is an ordinary stack of the account from now on: keep it under the account's own deployment, or delete it once the destination's baseline provides the same.",
           "status": "INFO",
@@ -1095,7 +1143,7 @@
           ]
         },
         {
-          "id": "after-22",
+          "id": "after-23",
           "title": "Exercise the 8 flagged request(s) from the account",
           "detail": "These were denied or undecidable in the simulation. After the policy changes above and the move, confirm each one works (a dry run or a read of the resource is enough): athena:StartQueryExecution in us-east-1; ec2:CreateTransitGatewayVpcAttachment in us-east-1; ec2:RunInstances in us-east-1; glue:StartJobRun in us-east-1; kms:Decrypt in us-east-1; s3:GetObject in us-east-1; s3:PutObject in us-east-1; s3:PutObject by arn:aws:iam::111111111115:role/SettlementExporter in eu-west-1, us-east-1.",
           "kind": "check",
@@ -1105,7 +1153,7 @@
           ]
         },
         {
-          "id": "after-23",
+          "id": "after-24",
           "title": "Collect a fresh snapshot and simulate the account at its new position",
           "detail": "With the account inside the target organization, a simulation of the account against its own parent compares it with itself and should come back GO, which closes the runbook.",
           "kind": "check",
@@ -1124,19 +1172,8 @@
       "steps": [
         {
           "id": "rollback-1",
-          "title": "Leave Fernhill Group (o-fernhill0001) again",
-          "detail": "Leave the target organization the same way the account left the source, or have the target management account remove it. The target chain denies organizations:LeaveOrganization (Fernhill-Root-Guardrails / DenyLeaveOrganization at root Root (r-fern)), so use remove-account-from-organization from the target management account.",
-          "kind": "rollback",
-          "where": "account larkspur-data-prod (111111111118), or management account 222222222221 of Fernhill Group",
-          "commands": [
-            "aws organizations leave-organization   # run inside the account",
-            "aws organizations remove-account-from-organization --account-id 111111111118   # alternative, run by the target management account"
-          ]
-        },
-        {
-          "id": "rollback-2",
-          "title": "Re-invite the account into Larkspur Holdings (o-larkspur0001) and accept",
-          "detail": "The account comes back at the source root with the AWS managed defaults only.",
+          "title": "Have Larkspur Holdings (o-larkspur0001) invite the account back, and accept",
+          "detail": "The way back is another transfer: the source management account invites, the account accepts and comes back at the source root with the AWS managed defaults only. The same eligibility requirements apply in this direction, and the principal that accepts needs organizations:LeaveOrganization in the target. The target chain denies organizations:LeaveOrganization (Fernhill-Root-Guardrails / DenyLeaveOrganization at root Root (r-fern)): that blocks a direct transfer back, so lift it for the principal that accepts, or have the target management account remove the account, which makes it standalone first and needs the standalone-account information.",
           "kind": "rollback",
           "where": "management account 111111111111 of Larkspur Holdings, then account larkspur-data-prod (111111111118)",
           "commands": [
@@ -1146,7 +1183,7 @@
           ]
         },
         {
-          "id": "rollback-3",
+          "id": "rollback-2",
           "title": "Move the account back to OU Production (ou-lark-prod)",
           "detail": "Restores the original chain of OU attachments.",
           "kind": "rollback",
@@ -1156,7 +1193,7 @@
           ]
         },
         {
-          "id": "rollback-4",
+          "id": "rollback-3",
           "title": "Re-create the 3 Identity Center assignment(s) in the source instance",
           "detail": "The source identity store still has the users and groups; the principal IDs below come from the snapshot. New AWSReservedSSO_* roles are provisioned with new suffixes, so references to the old ARNs do not come back by themselves.",
           "kind": "rollback",
@@ -1168,13 +1205,13 @@
           ]
         },
         {
-          "id": "rollback-5",
+          "id": "rollback-4",
           "title": "Organization-scoped shares and the organization trail cover the account again on their own",
           "detail": "Shares offered to the source organization or its OUs, the organization trail, the Config aggregator and service-managed StackSets follow membership and need no action. Shares that owners narrowed to the account ID keep working as well.",
           "kind": "rollback"
         },
         {
-          "id": "rollback-6",
+          "id": "rollback-5",
           "title": "Verify the original policy chain reaches the account again",
           "detail": "Compare with the source chain recorded by the simulation, root to account.",
           "kind": "rollback",

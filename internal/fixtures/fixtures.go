@@ -252,6 +252,8 @@ func Larkspur() *snapshot.Snapshot {
 		Source:        "fixture",
 		Organization: snapshot.Organization{
 			ID: org, ARN: orgArn(mgmt, org), ManagementAccountID: mgmt, FeatureSet: "ALL", Name: LarkspurName,
+			// Entered by hand in a real snapshot: no API returns them.
+			CreatedAt: "2019-03-12T09:00:00Z", SellerOfRecord: "Amazon Web Services, Inc.",
 		},
 		Root: snapshot.Root{
 			ID: root, ARN: "arn:aws:organizations::" + mgmt + ":root/" + org + "/" + root, Name: "Root",
@@ -270,7 +272,7 @@ func Larkspur() *snapshot.Snapshot {
 			acct("111111111112", "larkspur-network", "ou-lark-infra", "platform", []string{"us-east-1", "eu-west-1", "ap-southeast-1"}),
 			acct("111111111113", "larkspur-security", "ou-lark-sec", "security", []string{"us-east-1", "eu-west-1", "ap-southeast-1"}),
 			acct("111111111114", "larkspur-logging", "ou-lark-sec", "security", []string{"us-east-1", "eu-west-1", "ap-southeast-1"}),
-			acct(LarkspurPaymentsProd, "larkspur-payments-prod", "ou-lark-prod", "payments", []string{"us-east-1", "eu-west-1", "ap-southeast-1"}),
+			rootMFA(acct(LarkspurPaymentsProd, "larkspur-payments-prod", "ou-lark-prod", "payments", []string{"us-east-1", "eu-west-1", "ap-southeast-1"}), true),
 			acct("111111111116", "larkspur-payments-dev", "ou-lark-dev", "payments", []string{"us-east-1", "eu-west-1"}),
 			acct("111111111117", "larkspur-sandbox-1", "ou-lark-sand", "sandbox", []string{"us-east-1"}),
 			acct("111111111118", "larkspur-data-prod", "ou-lark-prod", "data", []string{"us-east-1", "eu-west-1"}),
@@ -494,6 +496,9 @@ func Fernhill() *snapshot.Snapshot {
 		Source:        "fixture",
 		Organization: snapshot.Organization{
 			ID: org, ARN: orgArn(mgmt, org), ManagementAccountID: mgmt, FeatureSet: "ALL", Name: FernhillName,
+			// The Seller of Record is left out on purpose: a transfer into
+			// Fernhill cannot confirm that it matches, and says so.
+			CreatedAt: "2021-06-01T08:30:00Z",
 		},
 		Root: snapshot.Root{
 			ID: root, ARN: "arn:aws:organizations::" + mgmt + ":root/" + org + "/" + root, Name: "Root",
@@ -791,6 +796,13 @@ func fernhillIdentityCenter(g *gen) *snapshot.IdentityCenter {
 		},
 		Assignments: assignments,
 	}
+}
+
+// rootMFA records whether the root user of a fixture account has an MFA
+// device, which a real snapshot takes from the IAM account summary.
+func rootMFA(a snapshot.Account, enabled bool) snapshot.Account {
+	a.RootMFAEnabled = &enabled
+	return a
 }
 
 func acct(id, name, parent, team string, regions []string) snapshot.Account {

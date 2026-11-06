@@ -44,6 +44,7 @@ func runSimulate(args []string) error {
 	actions := fs.String("actions", "", "JSON file with actions in use; merged into the snapshot's list for the account")
 	lastAccessed := fs.String("last-accessed", "", "IAM last-accessed export (get-service-last-accessed-details JSON) to import as actions in use")
 	replace := fs.Bool("replace-actions", false, "replace the snapshot's actions in use instead of merging")
+	method := fs.String("transfer-method", evaluator.TransferDirect, "how the account changes organization: direct (the destination invites, the account accepts, no standalone interval) or leave-and-rejoin (it leaves or is removed, runs standalone, then accepts); ignored inside one organization")
 	critical := fs.String("critical-operations", "", "YAML or JSON file of critical operations the account must keep performing (a list of {action, regions, reason}); evaluated next to the observed usage and reported as declared")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: orgshift simulate --from A.json [--to B.json] (--account ID | --ou OU) --target-ou OU [flags]")
@@ -52,6 +53,9 @@ func runSimulate(args []string) error {
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if err := evaluator.ValidTransferMethod(*method); err != nil {
+		return fmt.Errorf("--transfer-method: %w", err)
 	}
 	if *from == "" || *targetOU == "" || (*account == "") == (*ou == "") {
 		fs.Usage()
@@ -92,7 +96,7 @@ func runSimulate(args []string) error {
 		f = "markdown"
 	}
 	if *ou != "" {
-		res, err := evaluator.EvaluateOU(evaluator.OUInput{From: src, To: dst, OUID: *ou, TargetParentID: *targetOU})
+		res, err := evaluator.EvaluateOU(evaluator.OUInput{From: src, To: dst, OUID: *ou, TargetParentID: *targetOU, TransferMethod: *method})
 		if err != nil {
 			return err
 		}
@@ -116,7 +120,7 @@ func runSimulate(args []string) error {
 			return fmt.Errorf("unknown format %q", *format)
 		}
 	} else {
-		res, err := evaluator.Evaluate(evaluator.Input{From: src, To: dst, AccountID: *account, TargetOUID: *targetOU, Declared: declared})
+		res, err := evaluator.Evaluate(evaluator.Input{From: src, To: dst, AccountID: *account, TargetOUID: *targetOU, Declared: declared, TransferMethod: *method})
 		if err != nil {
 			return err
 		}

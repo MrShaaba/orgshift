@@ -25,7 +25,7 @@ human-readable contract.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `schema_version` | int | `3` for this version; `1` and `2` are accepted and upgraded. Required. |
-| `generated_at` | string | RFC 3339 timestamp. Informational, and the reference time for the four-day rule on created accounts. |
+| `generated_at` | string | RFC 3339 timestamp. Informational, and the reference time for the four-day rule on created accounts and the seven-day rule on the destination organization. |
 | `source` | string | `collector`, `fixture` or `manual`. |
 | `organization` | object | See [Organization](#organization). |
 | `root` | object | See [Root](#root). |
@@ -52,6 +52,8 @@ human-readable contract.
 | `arn` | Organization ARN. |
 | `management_account_id` | 12 digit account ID. |
 | `feature_set` | `ALL` or `CONSOLIDATED_BILLING`. |
+| `created_at` | Optional, RFC 3339. When the organization was created. No Organizations API returns it, so the collector leaves it out: enter it by hand. An account can only be migrated into an organization that is at least seven days old; without the field that requirement is reported as not confirmed (REVIEW). |
+| `seller_of_record` | Optional. The AWS entity that sells to the organization's accounts, as named on its invoices. Not collected: enter it by hand on both snapshots. A transfer fails when the account's Seller of Record differs from the destination's; compared ignoring case, and reported as not confirmed when either side lacks it. |
 | `name` | Friendly label. AWS has no such attribute; the collector takes it from `--name`. |
 
 ## Root
@@ -75,8 +77,9 @@ human-readable contract.
 | Field | Notes |
 | --- | --- |
 | `id` | 12 digit account ID. Fixtures use `111111111111`-style IDs. |
-| `name`, `email`, `status`, `joined_method` | As returned by Organizations. Email is optional and may be redacted. |
-| `joined_at` | RFC 3339. When `joined_method` is `CREATED`, Organizations refuses to remove the account until four days after this time; a missing value makes that check a REVIEW. |
+| `name`, `email`, `status`, `joined_method` | As returned by Organizations. Email is optional and may be redacted. A `status` other than `ACTIVE` is a NO-GO on a move between organizations: closed or suspended accounts cannot be migrated. |
+| `joined_at` | RFC 3339. When `joined_method` is `CREATED`, the account cannot be migrated or removed until four days after this time; a missing value is reported as a requirement that is not confirmed (REVIEW). |
+| `root_mfa_enabled` | Optional boolean: whether the root user has an MFA device registered (`AccountMFAEnabled` in the IAM account summary). Not collected yet: enter it by hand. `true` is a REVIEW on a move between organizations (AWS asks for root MFA to be removed before a migration to a new owner); absent means not known and is reported as not confirmed. |
 | `parent_id` | Root or OU the account sits in. |
 | `tags` | Account tags as a string map. Deleted by AWS when the account leaves the organization. |
 | `enabled_regions` | Regions that are enabled or opted in for the account. Used as the default region set when evaluating `aws:RequestedRegion`. |

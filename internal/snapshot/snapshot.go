@@ -110,6 +110,18 @@ type Organization struct {
 	// Name is a friendly label; AWS has no such attribute, so it is set by the
 	// collector flag or the fixture generator.
 	Name string `json:"name,omitempty"`
+	// CreatedAt is when the organization was created (RFC 3339). No
+	// Organizations API returns it; enter it by hand. An account can only
+	// be migrated into an organization that is at least seven days old.
+	// Without it the requirement is reported as not confirmed; the date
+	// the management account joined is shown as a hint and never used to
+	// decide, since nothing documents the two as the same moment.
+	CreatedAt string `json:"created_at,omitempty"`
+	// SellerOfRecord is the AWS entity that sells to the organization's
+	// accounts, as shown on its invoices. No Organizations API returns it;
+	// enter it by hand on both snapshots. A transfer fails when the moving
+	// account's Seller of Record differs from the destination's.
+	SellerOfRecord string `json:"seller_of_record,omitempty"`
 }
 
 // Root is the organization root.
@@ -144,6 +156,11 @@ type Account struct {
 	ParentID       string            `json:"parent_id"`
 	Tags           map[string]string `json:"tags,omitempty"`
 	EnabledRegions []string          `json:"enabled_regions,omitempty"`
+	// RootMFAEnabled says whether the root user has an MFA device
+	// registered (IAM account summary, AccountMFAEnabled). Not collected
+	// yet; enter it by hand. AWS asks for root MFA to be removed before an
+	// account is migrated to a new owner. Absent means not known.
+	RootMFAEnabled *bool `json:"root_mfa_enabled,omitempty"`
 }
 
 // Policy is an organization policy of any type together with its targets.

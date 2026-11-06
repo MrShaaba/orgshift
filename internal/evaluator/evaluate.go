@@ -20,6 +20,12 @@ type Input struct {
 	// operations that history alone does not show. They are evaluated like
 	// observed actions and their findings carry source "declared".
 	Declared []snapshot.ActionInUse
+	// TransferMethod is how the account changes organization: "direct"
+	// (the default: the destination invites and the account accepts, with
+	// no standalone interval) or "leave-and-rejoin". It is ignored inside
+	// one organization and for a management account, whose only way out is
+	// the management-account sequence.
+	TransferMethod string
 }
 
 type evaluation struct {
@@ -31,6 +37,9 @@ type evaluation struct {
 	docs      map[string]parsedDoc
 	// usage is the account's usage merged with the declared operations.
 	usage *snapshot.AccountUsage
+	// method is the transfer method the operator chose for a move between
+	// organizations.
+	method string
 }
 
 // move is the resolved description of one account move: where the account
@@ -43,6 +52,7 @@ type move struct {
 	targetPath []snapshot.Node // root ... parent, account
 	fresh      map[string]bool
 	declared   []snapshot.ActionInUse
+	method     string
 }
 
 // Models lists the versioned AWS behaviour models every evaluation uses.
@@ -68,6 +78,9 @@ func Evaluate(in Input) (*Result, error) {
 	if in.From == nil {
 		return nil, fmt.Errorf("a source snapshot is required")
 	}
+	if err := ValidTransferMethod(in.TransferMethod); err != nil {
+		return nil, err
+	}
 	to := in.To
 	if to == nil {
 		to = in.From
@@ -83,7 +96,7 @@ func Evaluate(in Input) (*Result, error) {
 	}
 	m := move{from: in.From, to: to, fromIx: fromIx, toIx: toIx, account: acct,
 		targetPath: toIx.PathUnder(in.TargetOUID, snapshot.Node{ID: acct.ID, Name: acct.Name, Kind: snapshot.KindAccount}),
-		fresh:      map[string]bool{}, declared: in.Declared}
+		fresh:      map[string]bool{}, declared: in.Declared, method: in.TransferMethod}
 	if in.From.Organization.ID != to.Organization.ID {
 		m.fresh[acct.ID] = true
 	}
@@ -97,6 +110,7 @@ func evaluateMove(m move) (*Result, error) {
 		from: m.from, to: m.to, accountID: acct.ID, account: acct,
 		crossOrg: m.from.Organization.ID != m.to.Organization.ID,
 		docs:     map[string]parsedDoc{},
+		method:   m.method,
 	}
 	e.src = side{name: "source", snap: m.from, ix: m.fromIx, orgID: m.from.Organization.ID, path: m.fromIx.PathTo(acct.ID), fresh: map[string]bool{}}
 	e.dst = side{name: "target", snap: m.to, ix: m.toIx, orgID: m.to.Organization.ID, path: m.targetPath, fresh: m.fresh}
@@ -125,6 +139,9 @@ func evaluateMove(m move) (*Result, error) {
 		Models: Models(), Limitations: Limitations(),
 	}
 	sort.Strings(res.Subject.RegionsAssumed)
+	if e.crossOrg {
+		res.Subject.TransferMethod = e.transferMethod()
+	}
 	if !e.crossOrg && samePath(e.src.path, e.dst.path) {
 		res.Notes = append(res.Notes, "The target OU is the account's current parent; the simulation compares the account with itself.")
 	}

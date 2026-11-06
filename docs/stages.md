@@ -27,7 +27,7 @@ Every stage may change any of these, and every report keeps them apart:
 
 | Layer | Stage key | What changes |
 | --- | --- | --- |
-| membership | `membership.organization` | which organization the account belongs to: `source` or `destination`. Entering the destination is the cross-organization transition; the account lands at the root unless the same stage places it. |
+| membership | `membership.organization`, `membership.method` | which organization the account belongs to: `source` or `destination`. Entering the destination is the cross-organization transition; the account lands at the root unless the same stage places it. `method` says how it gets there: `direct` (the default: the destination invites, the account accepts, no standalone interval) or `leave-and-rejoin` (it leaves or is removed, runs standalone, then accepts). A management account has a procedure of its own whatever the method. |
 | placement | `placement.parent`, `policies.attach/detach` | the root or OU the account sits in (existing or proposed) and the policy attachments made at the stage (progressive tightening). |
 | governance | `governance.enrolled`, `governance.register_ou`, declarations | Control Tower: enrolling or unenrolling the account, registering an OU, and the enrollment prerequisites the collector cannot see. |
 | network | `network.recreate_shares`, `network.remove_shares`, `network.validated` | RAM shares created in the destination or withdrawn in the source, and the validation point. |
@@ -98,7 +98,14 @@ evaluated.
   account: without its tags (Organizations deletes them on leaving), with
   `joined_method` INVITED, with the AWS managed defaults attached, with its
   usage and declared operations carried over. The transition into that stage
-  is the cross-organization evaluation.
+  is the cross-organization evaluation, run with the stage's
+  `membership.method`: a direct transfer by default, whose findings are the
+  `organizations:LeaveOrganization` permission in the organization being
+  left, the landing at the root, and the eligibility requirements; or
+  leave-and-rejoin, which adds the standalone interval. The stage's own
+  finding says which of the two it is. A stage that returns the account to
+  the source is the same transfer in the other direction, evaluated against
+  the destination's policies.
 - **Placement** moves the account under the given parent in the current
   organization's derived snapshot. A proposed OU inherits every policy
   attached above it; the stage finding lists them and names the explicit

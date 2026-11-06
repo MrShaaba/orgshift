@@ -127,11 +127,31 @@ func TestCrossOrgRunbook(t *testing.T) {
 	if s.Status != evaluator.StatusReview || s.Kind != KindDecision {
 		t.Errorf("undecidable condition should be a REVIEW decision: %+v", s)
 	}
-	s = stepWith(t, rb, PhaseBefore, "Lift the deny on organizations:LeaveOrganization in SCP Larkspur-Baseline-Guardrails / DenyLeaveOrganization")
-	if s.Status != evaluator.StatusReview || len(s.Evidence) != 1 || s.Evidence[0].Side != "source" || !strings.Contains(strings.Join(s.Commands, "\n"), "remove-account-from-organization --account-id 111111111115") {
+	// The source SCP that denies LeaveOrganization blocks a direct transfer:
+	// a NO-GO step with the statement as evidence, and no "let the
+	// management account remove it" way out, which is another procedure.
+	s = stepWith(t, rb, PhaseBefore, "Lift the deny on organizations:LeaveOrganization in SCP Larkspur-Baseline-Guardrails / DenyLeaveOrganization for the transfer")
+	if s.Status != evaluator.StatusNoGo || len(s.Evidence) != 2 || s.Evidence[1].Side != "source" || s.Evidence[1].Statement != "DenyLeaveOrganization" ||
+		!strings.Contains(strings.Join(s.Commands, "\n"), "aws organizations describe-policy --policy-id p-lark0001") || strings.Contains(strings.Join(s.Commands, "\n"), "remove-account-from-organization") {
 		t.Errorf("leave deny step: %+v", s)
 	}
-	stepWith(t, rb, PhaseBefore, "Make the account able to stand alone")
+	// A direct transfer has no standalone interval and asks for no
+	// standalone-account information.
+	for _, st := range rb.Steps() {
+		if strings.Contains(st.Title, "stand alone") || strings.Contains(strings.Join(st.Commands, "\n"), "aws organizations leave-organization") {
+			t.Errorf("a direct transfer never leaves first: %q", st.Title)
+		}
+	}
+	stepWith(t, rb, PhaseBefore, "Plan the interval at the destination root: accept and move in one change")
+	stepWith(t, rb, PhaseBefore, "Decide whether the root user changes hands, and remove its MFA device if it does")
+	s = stepWith(t, rb, PhaseBefore, "Confirm the transfer eligibility requirements the snapshots do not show")
+	if s.Kind != KindInput || !strings.Contains(s.Detail, "Seller of Record") || !strings.Contains(s.Detail, "organization.seller_of_record") {
+		t.Errorf("eligibility step: %+v", s)
+	}
+	s = stepWith(t, rb, PhaseAfter, "Delete the role that lets 111111111111 into the account")
+	if s.Status != evaluator.StatusReview || !strings.Contains(strings.Join(s.Commands, "\n"), "aws iam get-role --role-name OrganizationAccountAccessRole") {
+		t.Errorf("access role step: %+v", s)
+	}
 	s = stepWith(t, rb, PhaseBefore, "Re-tag before the move")
 	if s.Status != evaluator.StatusReview || !strings.Contains(strings.Join(s.Commands, "\n"), "tag-resources --resource-arn-list arn:") {
 		t.Errorf("tag step: %+v", s)
@@ -161,7 +181,7 @@ func TestCrossOrgRunbook(t *testing.T) {
 
 	// The move, in order.
 	move := rb.Phase(PhaseMove).Steps
-	wantMove := []string{"Invite the account into Fernhill Group", "Leave Larkspur Holdings", "Accept the invitation", "Move the account from the root to OU Payments (ou-fern-pay1)"}
+	wantMove := []string{"Invite the account into Fernhill Group", "Accept the invitation: the account changes organization", "Move the account from the root to OU Payments (ou-fern-pay1)"}
 	if len(move) != len(wantMove) {
 		t.Fatalf("move steps:\n%s", titles(rb.Phase(PhaseMove)))
 	}
@@ -170,8 +190,8 @@ func TestCrossOrgRunbook(t *testing.T) {
 			t.Errorf("move step %d = %q (%s), want %q", i, move[i].Title, move[i].Status, w)
 		}
 	}
-	if !strings.Contains(strings.Join(move[3].Commands, "\n"), "move-account --account-id 111111111115 --source-parent-id r-fern --destination-parent-id ou-fern-pay1") {
-		t.Errorf("move command: %v", move[3].Commands)
+	if !strings.Contains(strings.Join(move[2].Commands, "\n"), "move-account --account-id 111111111115 --source-parent-id r-fern --destination-parent-id ou-fern-pay1") {
+		t.Errorf("move command: %v", move[2].Commands)
 	}
 
 	// After: position first, assignments, shares, trail, re-simulate last.
@@ -194,12 +214,42 @@ func TestCrossOrgRunbook(t *testing.T) {
 		t.Errorf("flagged actions should be listed: %s", s.Detail)
 	}
 
-	// Rollback from the source chain.
-	s = stepWith(t, rb, PhaseRollback, "Leave Fernhill Group (o-fernhill0001) again")
-	if !strings.Contains(s.Detail, "Fernhill-Root-Guardrails / DenyLeaveOrganization") {
+	if intro := rb.Phase(PhaseMove).Intro; !strings.Contains(intro, "never standalone") || !strings.Contains(move[1].Detail, "organizations:LeaveOrganization") {
+		t.Errorf("the move phase describes a direct transfer: %s", intro)
+	}
+
+	// Rollback from the source chain: another direct transfer, blocked by
+	// the target's own deny on LeaveOrganization unless it is lifted.
+	s = stepWith(t, rb, PhaseRollback, "Have Larkspur Holdings (o-larkspur0001) invite the account back, and accept")
+	if !strings.Contains(s.Detail, "Fernhill-Root-Guardrails / DenyLeaveOrganization") || !strings.Contains(s.Detail, "blocks a direct transfer back") {
 		t.Errorf("rollback should warn about the target's leave deny: %s", s.Detail)
 	}
-	stepWith(t, rb, PhaseRollback, "Re-invite the account into Larkspur Holdings (o-larkspur0001)")
+	for _, st := range rb.Phase(PhaseRollback).Steps {
+		if strings.Contains(st.Title, "Leave Fernhill") {
+			t.Errorf("the rollback of a direct transfer has no leave step: %q", st.Title)
+		}
+	}
+
+	// The same move with the leave-and-rejoin method keeps the older
+	// sequence, with its standalone interval and prerequisites.
+	lres, err := evaluator.Evaluate(evaluator.Input{From: scenarios()[0].from, To: scenarios()[0].to, AccountID: fixtures.LarkspurPaymentsProd, TargetOUID: fixtures.FernhillPaymentsOU, TransferMethod: evaluator.TransferLeaveAndRejoin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lrb := Build(lres, scenarios()[0].from, scenarios()[0].to)
+	stepWith(t, lrb, PhaseBefore, "Make the account able to stand alone")
+	ls := stepWith(t, lrb, PhaseBefore, "Lift the deny on organizations:LeaveOrganization in SCP Larkspur-Baseline-Guardrails / DenyLeaveOrganization")
+	if !strings.Contains(strings.Join(ls.Commands, "\n"), "remove-account-from-organization --account-id 111111111115") {
+		t.Errorf("with leave-and-rejoin the management account can remove the account instead: %v", ls.Commands)
+	}
+	var lmove []string
+	for _, st := range lrb.Phase(PhaseMove).Steps {
+		lmove = append(lmove, st.Title)
+	}
+	if got := strings.Join(lmove, " | "); !strings.Contains(got, "Leave Larkspur Holdings") || !strings.Contains(lrb.Phase(PhaseMove).Intro, "the account is standalone") {
+		t.Errorf("leave-and-rejoin move steps: %s", got)
+	}
+	stepWith(t, lrb, PhaseRollback, "Leave Fernhill Group (o-fernhill0001) again")
 	s = stepWith(t, rb, PhaseRollback, "Move the account back to OU Production (ou-lark-prod)")
 	if !strings.Contains(strings.Join(s.Commands, "\n"), "--source-parent-id r-lark --destination-parent-id ou-lark-prod") {
 		t.Errorf("rollback move: %v", s.Commands)
@@ -408,7 +458,9 @@ func TestOURunbooks(t *testing.T) {
 	if !strings.Contains(strings.Join(s.Commands, "\n"), "attach-policy --policy-id <ID of the recreated Larkspur-Allowed-Regions> --target-id <ID of the new Workloads OU>") {
 		t.Errorf("cross-org attach should use placeholders: %v", s.Commands)
 	}
-	ouStepWith(t, rb, PhaseMove, "Move the 3 account(s) one by one")
+	if s := ouStepWith(t, rb, PhaseMove, "Transfer the 3 account(s) one by one: invite, accept"); strings.Contains(strings.Join(s.Commands, "\n"), "leave-organization") || !strings.Contains(s.Detail, "without a standalone interval") {
+		t.Errorf("the OU runbook transfers each account directly: %+v", s)
+	}
 	s = ouStepWith(t, rb, PhaseMove, "Move larkspur-payments-prod (111111111115) from the target root into the new Production OU")
 	if !strings.Contains(strings.Join(s.Commands, "\n"), "--source-parent-id r-fern --destination-parent-id <ID of the new Production OU>") {
 		t.Errorf("cross-org account move: %v", s.Commands)

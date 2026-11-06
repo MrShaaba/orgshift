@@ -69,6 +69,7 @@ stages:
     title: Destination organization entry at the root
     membership:
       organization: destination     # source or destination
+      method: direct                # direct (invite, accept, never standalone) or leave-and-rejoin
   - id: legacy
     title: Placement into the transitional Legacy OU
     placement:

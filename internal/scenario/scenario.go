@@ -22,6 +22,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/MrShaaba/orgshift/internal/evaluator"
 	"github.com/MrShaaba/orgshift/internal/snapshot"
 )
 
@@ -166,6 +167,13 @@ type Stage struct {
 // Membership changes the organization the account belongs to.
 type Membership struct {
 	Organization string `yaml:"organization" json:"organization"`
+	// Method is how the account changes organization: "direct" (the
+	// default: the other organization invites, the account accepts, and it
+	// is never standalone) or "leave-and-rejoin" (it leaves or is removed,
+	// runs standalone, then accepts). A management account has neither: its
+	// organization has to be emptied and deleted first, and the stage says
+	// so whatever is written here.
+	Method string `yaml:"method,omitempty" json:"method,omitempty"`
 }
 
 // Placement changes the account's parent (a root, an existing OU or a
@@ -407,6 +415,11 @@ func (sc *Scenario) Validate() error {
 		seen[st.ID] = true
 		if st.Title == "" {
 			fail("%s (%s) needs a title", where, st.ID)
+		}
+		if m := st.Membership; m != nil {
+			if err := evaluator.ValidTransferMethod(m.Method); err != nil {
+				fail("%s.membership.method: %v", where, err)
+			}
 		}
 		if m := st.Membership; m != nil && m.Organization != OrgSource && m.Organization != OrgDestination {
 			fail("%s.membership.organization must be %s or %s, got %q", where, OrgSource, OrgDestination, m.Organization)

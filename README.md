@@ -52,11 +52,23 @@ offline and reports:
 - **Cross-organization moves**: lost RAM shares with the documented
   behaviour per resource type (transit gateway attachments and shared-subnet
   resources keep working, Resolver rules stop answering, other types are
-  reported as unverified), delegated administration and the four-day rule
-  for created accounts as blockers, the organization trail, Config
-  aggregation, StackSets, trusted access gaps, the standalone-account
-  prerequisites, and the account tags and management role AWS deletes or
-  keeps.
+  reported as unverified), the organization trail, Config aggregation,
+  StackSets, trusted access gaps, and the account tags AWS does not carry
+  over.
+- **The transfer itself**, as three procedures kept apart. A direct
+  transfer (the default) is invite then accept with no standalone interval:
+  it needs `organizations:LeaveOrganization`, so a source SCP that denies
+  it is a NO-GO, and the account lands at the destination root, so the
+  interval before it reaches its OU is reported with the policies not yet
+  in force and the actions the root still admits. Leave or remove, then
+  rejoin (`--transfer-method leave-and-rejoin`) keeps the standalone
+  interval and its prerequisites. A management account moves only after
+  every member is removed and the organization deleted. Eligibility is
+  checked for all of them: destination organization at least seven days
+  old, Seller of Record match, delegated administration deregistered, root
+  MFA, account not closed or suspended, the four-day rule for created
+  accounts, and the old `OrganizationAccountAccessRole` left behind. What
+  the snapshots cannot confirm is a REVIEW that names the field to fill in.
 - **Workloads**: for the accounts you name, the collector reads the
   workload inventory inside the account: CloudFormation stacks, the
   StackSet instances that target it, a resource sample and the policies
@@ -77,7 +89,8 @@ offline and reports:
   (membership, OU placement, Control Tower governance, network, workload),
   with proposed OUs, policies and shares that exist only in the overlay.
   Every transition is evaluated with the full verdict board, the stage's own
-  findings cover the standalone window, what a proposed OU inherits,
+  findings cover how the account changes organization (direct transfer, or
+  leave-and-rejoin with its standalone interval), what a proposed OU inherits,
   enrollment prerequisites and management-account constraints from the
   official transfer procedure, and the transfer strategy is compared with
   creating destination accounts and migrating the workloads: for that
@@ -123,8 +136,9 @@ offline and reports:
   generated from the findings. First the evidence to collect; then, before
   the move, each denied action grouped by the SCP or RCP statement that
   causes it, tags to fix, delegated administration to hand over, Control
-  Tower unenrolment, the `LeaveOrganization` deny to lift, the standalone
-  prerequisites; then what does not travel and has to be re-created: RAM
+  Tower unenrolment, the `LeaveOrganization` deny to lift, the eligibility
+  requirements that are not met or not confirmed, the plan for the interval
+  at the destination root; then what does not travel and has to be re-created: RAM
   shares re-shared with the account directly, permission sets prepared in
   the target Identity Center, StackSets, trusted access; then the move
   itself, the checks afterwards and a rollback built from the source chain.
@@ -240,6 +254,10 @@ go build -o orgshift ./cmd/orgshift
 ./orgshift scenario example > plan.yaml
 ./orgshift simulate --from fixtures/larkspur-holdings.json --to fixtures/fernhill-group.json \
   --account 111111111115 --target-ou ou-fern-pay1 --critical-operations plan.yaml
+
+# the same move by leaving and rejoining instead of a direct transfer
+./orgshift simulate --from fixtures/larkspur-holdings.json --to fixtures/fernhill-group.json \
+  --account 111111111115 --target-ou ou-fern-pay1 --transfer-method leave-and-rejoin
 ```
 
 `simulate` exits 0 for GO, 2 for REVIEW and 3 for NO-GO, so it can gate a
@@ -410,6 +428,16 @@ has every option.
 - A cross-organization move drops policies attached directly to the account
   and attaches the target's AWS managed defaults, which is what Organizations
   does when an account joins.
+- A move between organizations is evaluated as a direct transfer unless
+  `--transfer-method leave-and-rejoin` (or `membership.method` in a
+  scenario) says otherwise; a management account always gets its own
+  procedure. The verdict board judges the target OU; the time the account
+  spends at the destination root before it is moved there is a finding of
+  its own, not part of that comparison. The organization's creation date,
+  the Seller of Record and root MFA are not collected: they are entered in
+  the snapshot by hand, and without them the requirement is "not
+  confirmed", never assumed met
+  ([docs/aws-behaviour.md](docs/aws-behaviour.md#transfer-procedure-organizations)).
 - A policy that is not well formed for its type (both `Action` and
   `NotAction`, both `Resource` and `NotResource`, an SCP or RCP statement
   without a resource element) is kept with the reason and never guessed

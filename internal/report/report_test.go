@@ -32,6 +32,25 @@ func TestRenderers(t *testing.T) {
 	if !strings.Contains(txt, "VERDICT: NO-GO") || !strings.Contains(txt, "ec2:CreateVpc") {
 		t.Errorf("text summary incomplete:\n%s", txt)
 	}
+	// The procedure the move was evaluated as is in the header of both, and
+	// its findings are in the body.
+	const direct = "direct transfer (invite, accept; no standalone interval)"
+	if !strings.Contains(md, "Transfer procedure: "+direct+".") || !strings.Contains(txt, "transfer: "+direct) {
+		t.Error("the reports name the transfer procedure")
+	}
+	for _, want := range []string{"### NO-GO: A source SCP denies organizations:LeaveOrganization, which blocks the transfer", "### REVIEW: The account lands at the destination root first: 6 policy(ies)",
+		"### REVIEW: Transfer eligibility: 1 requirement(s) cannot be confirmed from the snapshots", "### INFO: Direct transfer: 222222222221 invites the account and the account accepts; it is never standalone"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown missing %q", want)
+		}
+	}
+	same, err := evaluator.Evaluate(evaluator.Input{From: fixtures.Larkspur(), AccountID: "111111111116", TargetOUID: "ou-lark-prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(Markdown(same), "Transfer procedure") || strings.Contains(Text(same), "transfer:") {
+		t.Error("a move inside one organization has no transfer procedure")
+	}
 	// The workload layer: how much was evaluated, from what, and the findings.
 	for _, want := range []string{"## Workload layer: evaluated", "8 stack(s) with 37 resource(s), 14 sampled resource(s) from tagging-api", "| `workloads.resources` | observed |",
 		"| How it would be redeployed | Stacks | Resources in stacks | Sampled resources outside stacks |", "| redeployable from a template or pipeline | 5 | 27 | 3 |",
@@ -72,6 +91,9 @@ func TestOURenderers(t *testing.T) {
 	txt := OUText(res)
 	if !strings.Contains(txt, "VERDICT: NO-GO") || !strings.Contains(txt, "Accounts (worst first)") || !strings.Contains(txt, "larkspur-data-prod (111111111118) in Workloads / Production") {
 		t.Errorf("OU text summary incomplete:\n%s", txt)
+	}
+	if !strings.Contains(md, "Transfer procedure for each account: direct transfer") || !strings.Contains(txt, "transfer, for each account: direct transfer") {
+		t.Error("the OU reports name the transfer procedure")
 	}
 }
 

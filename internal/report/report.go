@@ -29,6 +29,9 @@ func Markdown(r *evaluator.Result) string {
 	fmt.Fprintf(&b, "| | Source | Target |\n|---|---|---|\n")
 	fmt.Fprintf(&b, "| Organization | %s | %s |\n", orgLabel(s.SourceOrg), orgLabel(s.TargetOrg))
 	fmt.Fprintf(&b, "| Path | %s | %s |\n\n", snapshot.PathString(s.SourcePath), snapshot.PathString(s.TargetPath))
+	if s.TransferMethod != "" {
+		fmt.Fprintf(&b, "Transfer procedure: %s.\n\n", evaluator.TransferMethodLabel(s.TransferMethod))
+	}
 	writeMarkdownBody(&b, r, 2)
 	return b.String()
 }
@@ -216,6 +219,9 @@ func OUMarkdown(r *evaluator.OUResult) string {
 	fmt.Fprintf(&b, "| Organization | %s | %s |\n", orgLabel(s.SourceOrg), orgLabel(s.TargetOrg))
 	fmt.Fprintf(&b, "| Path | %s | %s |\n\n", snapshot.PathString(s.SourcePath), snapshot.PathString(s.TargetPath))
 	fmt.Fprintf(&b, "OU `%s` (%s) with %d nested OU(s) and %d account(s).\n\n", s.OUID, s.OUName, s.NestedOUs, s.Accounts)
+	if s.TransferMethod != "" {
+		fmt.Fprintf(&b, "Transfer procedure for each account: %s.\n\n", evaluator.TransferMethodLabel(s.TransferMethod))
+	}
 	for _, n := range r.Notes {
 		fmt.Fprintf(&b, "> %s\n\n", n)
 	}
@@ -267,6 +273,9 @@ func OUText(r *evaluator.OUResult) string {
 	fmt.Fprintf(&b, "%s\n\n%s\n\n", banner(r.Verdict), r.Summary)
 	for _, n := range r.Notes {
 		fmt.Fprintf(&b, "note: %s\n", n)
+	}
+	if m := r.Subject.TransferMethod; m != "" {
+		fmt.Fprintf(&b, "transfer, for each account: %s\n", evaluator.TransferMethodLabel(m))
 	}
 	for _, f := range r.Findings {
 		fmt.Fprintf(&b, "[%-6s] %s\n", f.Status, f.Title)
@@ -380,6 +389,9 @@ func Text(r *evaluator.Result) string {
 		fmt.Fprintf(&b, "note: %s\n", n)
 	}
 	fmt.Fprintf(&b, "coverage: %s\n", r.Coverage.Line())
+	if m := r.Subject.TransferMethod; m != "" {
+		fmt.Fprintf(&b, "transfer: %s\n", evaluator.TransferMethodLabel(m))
+	}
 	if wl := r.WorkloadLayer; wl != nil {
 		fmt.Fprintf(&b, "workload layer: %s (%s)\n", wl.Evaluation, wl.Detail)
 	}

@@ -18,13 +18,14 @@ const ReportSchemaVersion = 2
 
 // Documentation the stage findings refer to.
 const (
-	refRemoveAccount  = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
-	refInvitations    = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
-	refInheritance    = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_inheritance_auth.html"
-	refCTEnroll       = "https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html"
-	refCTRegisterOU   = "https://docs.aws.amazon.com/controltower/latest/userguide/importing-existing.html"
-	refRAMSharing     = "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html"
-	refAccountFactory = "https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html"
+	refRemoveAccount    = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_remove.html"
+	refInvitations      = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_invites.html"
+	refAccountMigration = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_account_migration.html"
+	refInheritance      = "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_inheritance_auth.html"
+	refCTEnroll         = "https://docs.aws.amazon.com/controltower/latest/userguide/enroll-account.html"
+	refCTRegisterOU     = "https://docs.aws.amazon.com/controltower/latest/userguide/importing-existing.html"
+	refRAMSharing       = "https://docs.aws.amazon.com/ram/latest/userguide/getting-started-sharing.html"
+	refAccountFactory   = "https://docs.aws.amazon.com/controltower/latest/userguide/account-factory.html"
 )
 
 // Input runs a scenario against snapshots.
@@ -254,7 +255,11 @@ func Run(in Input) (*Report, error) {
 		if err != nil {
 			return nil, fmt.Errorf("stage %s: %w", st.ID, err)
 		}
-		res, err := evaluator.Evaluate(evaluator.Input{From: cur.snap, To: next.snap, AccountID: acct.ID, TargetOUID: next.parent, Declared: sc.Declared()})
+		method := ""
+		if st.Membership != nil {
+			method = st.Membership.Method
+		}
+		res, err := evaluator.Evaluate(evaluator.Input{From: cur.snap, To: next.snap, AccountID: acct.ID, TargetOUID: next.parent, Declared: sc.Declared(), TransferMethod: method})
 		if err != nil {
 			return nil, fmt.Errorf("stage %s: %w", st.ID, err)
 		}
@@ -567,8 +572,12 @@ func (r *runner) apply(prev state, st Stage) (state, []LayerChange, []evaluator.
 		if st.Placement == nil {
 			note(LayerPlacement, "lands at the root of "+base.Organization.ID+" (no placement given)")
 		}
-		note(LayerMembership, fmt.Sprintf("joins organization %s (%s)", base.Organization.ID, orgLabel(base)))
-		findings = append(findings, r.membershipFindings(org, base)...)
+		how := "by direct transfer"
+		if m.Method == evaluator.TransferLeaveAndRejoin {
+			how = "by leaving and rejoining"
+		}
+		note(LayerMembership, fmt.Sprintf("joins organization %s (%s) %s", base.Organization.ID, orgLabel(base), how))
+		findings = append(findings, r.membershipFindings(org, base, m.Method)...)
 	}
 	target := r.mods[org]
 	if p := st.Placement; p != nil {
@@ -684,16 +693,33 @@ func orgLabel(s *snapshot.Snapshot) string {
 	return s.Organization.ID
 }
 
-// membershipFindings describe the standalone window and the invitation.
-func (r *runner) membershipFindings(org string, base *snapshot.Snapshot) []evaluator.Finding {
-	if org != OrgDestination {
-		return []evaluator.Finding{{Status: evaluator.StatusInfo, Category: evaluator.CategoryInformational, Title: "The account returns to the source organization",
-			Detail: "Returning means leaving the destination (standalone-account information again) and accepting a new invitation from the source management account; the tags, assignments and shares it had in the destination are lost the same way.", References: []string{refRemoveAccount, refInvitations}}}
+// membershipFindings describe how the account changes organization at a
+// stage: by direct transfer, with no standalone interval, or by leaving and
+// rejoining, with one.
+func (r *runner) membershipFindings(org string, base *snapshot.Snapshot, method string) []evaluator.Finding {
+	from, to := r.in.Source.Organization.ID, base.Organization.ID
+	back := org != OrgDestination
+	if back && r.in.Destination != nil {
+		from = r.in.Destination.Organization.ID
 	}
-	return []evaluator.Finding{{Status: evaluator.StatusInfo, Category: evaluator.CategoryInformational, Title: "Between leaving the source and accepting the invitation the account is standalone",
-		Detail: fmt.Sprintf("An account belongs to one organization at a time, so it leaves %s before it accepts the invitation from %s (valid 15 days). In between no SCP, RCP, tag or backup policy applies, the account pays its own bill, organization shares and Identity Center access are gone and the former management account's role in it is still there. Keep the window short and do not run changes during it. On acceptance the policies attached to the destination root (and the OU it lands in) apply at once, the destination's organization trail covers it, and Config, GuardDuty or Security Hub may enable automatically for new members.",
-			r.in.Source.Organization.ID, base.Organization.ManagementAccountID),
-		References: []string{refRemoveAccount, refInvitations}}}
+	if method == evaluator.TransferLeaveAndRejoin {
+		title := "Between leaving the source and accepting the invitation the account is standalone"
+		if back {
+			title = "The account returns to the source organization by leaving and rejoining: it is standalone in between"
+		}
+		return []evaluator.Finding{{Status: evaluator.StatusInfo, Category: evaluator.CategoryInformational, Title: title,
+			Detail: fmt.Sprintf("The stage uses the leave-and-rejoin method: the account leaves %s (or is removed by its management account) before it accepts the invitation from %s, which is valid for 15 days. In between no SCP, RCP, tag or backup policy applies, the account pays its own bill, organization shares and Identity Center access are gone and the former management account's role in it is still there; leaving needs the standalone-account information (payment method, verified contact details, support plan). Keep the interval short and do not run changes during it, or use the direct method, which has no such interval. On acceptance the account is added to the root of %s, the policies attached there apply at once, the organization trail covers it, and Config, GuardDuty or Security Hub may enable automatically for new members.",
+				from, base.Organization.ManagementAccountID, to),
+			References: []string{refRemoveAccount, refInvitations, refAccountMigration}}}
+	}
+	title := "Direct transfer: the account accepts the destination's invitation and is never standalone"
+	if back {
+		title = "The account returns to the source organization by direct transfer"
+	}
+	return []evaluator.Finding{{Status: evaluator.StatusInfo, Category: evaluator.CategoryInformational, Title: title,
+		Detail: fmt.Sprintf("The management account %s of %s invites the account and the account accepts within 15 days. Accepting takes it out of %s and into %s in one step: there is no interval without an organization, and the standalone-account information is not needed. The principal that accepts needs organizations:LeaveOrganization, and an SCP of %s that denies it blocks the transfer; the transition below evaluates that. The account is added to the root of %s, where only the policies attached to the root apply until a later stage places it; the tags on the account are not carried over, the organization trail covers it, and Config, GuardDuty or Security Hub may enable automatically for new members.",
+			base.Organization.ManagementAccountID, to, from, to, from, to),
+		References: []string{refAccountMigration, refInvitations}}}
 }
 
 // networkFindings describe re-created and withdrawn shares and the
@@ -984,7 +1010,7 @@ func (r *runner) compare(rep *Report) []StrategyComparison {
 	transfer := StrategyComparison{Strategy: StrategyTransfer, Title: "Transfer the account into the destination organization", Selected: rep.Strategy == StrategyTransfer}
 	transfer.Prerequisites = titles(entry, map[string]bool{"org-services": true, "control-tower": true}, evaluator.StatusNoGo, evaluator.StatusReview)
 	if len(transfer.Prerequisites) == 0 {
-		transfer.Prerequisites = []string{"Standalone-account information, a destination invitation and no delegated-administrator role (transfer procedure model " + evaluator.TransferModelVersion + ")"}
+		transfer.Prerequisites = []string{"A destination invitation, organizations:LeaveOrganization for the principal that accepts it, no delegated-administrator role and the eligibility requirements of the migration (transfer procedure model " + evaluator.TransferModelVersion + ")"}
 	}
 	transfer.Risks = titles(entry, map[string]bool{"scp": true, "rcp": true, "ram": true, "identity-center": true, "tags": true, "workloads": true}, evaluator.StatusNoGo, evaluator.StatusReview)
 	if len(transfer.Risks) == 0 {
@@ -996,7 +1022,7 @@ func (r *runner) compare(rep *Report) []StrategyComparison {
 		"Data-plane continuity of shared networking is modelled per resource type, not tested",
 	}
 	transfer.Reversal = []string{
-		"Moving back is another transfer: the account needs the standalone-account information again, a new invitation from the source, and loses the destination's tags, assignments and shares on the way out",
+		"Moving back is another transfer: the source invites, the account accepts (it needs organizations:LeaveOrganization in the destination, and the eligibility requirements apply again), and it loses the destination's tags, assignments and shares on the way out",
 		"Control Tower unenrollment removes the baseline resources from the account and cannot be partially undone; re-enrollment redeploys them",
 		"Organization policies deleted or detached in the source during the move are not restored by the account's return",
 		"Invited accounts are not subject to the four-day rule, so the return itself is not delayed by it",
@@ -1011,7 +1037,7 @@ func (r *runner) compare(rep *Report) []StrategyComparison {
 		inbound = len(r.usage.InboundAccess)
 	}
 	recreate.Prerequisites = []string{
-		"Create the destination account with Account Factory in the target OU (enrolled and baselined from creation; no transfer prerequisites, no standalone window)",
+		"Create the destination account with Account Factory in the target OU (enrolled and baselined from creation; no transfer eligibility requirements, no interval at the destination root)",
 		fmt.Sprintf("Re-create access: %d Identity Center assignment(s) on the source account have to be granted in the destination instance", assignments),
 		fmt.Sprintf("Re-point %d inbound principal(s) and every resource policy, trust policy and share principal that names account %s at the new account ID", inbound, r.account.ID),
 		"A migration plan per workload: data, secrets, DNS and endpoint cutover",
@@ -1045,7 +1071,7 @@ func (r *runner) compare(rep *Report) []StrategyComparison {
 	recreate.Reversal = []string{
 		"The source account is untouched until it is closed: rollback is a cutover back",
 		"An abandoned destination account is closed and stays in the 90-day post-closure period before it disappears",
-		"No four-day rule and no standalone-account prerequisites apply",
+		"No four-day rule and no transfer eligibility requirements apply",
 	}
 	return []StrategyComparison{transfer, recreate}
 }

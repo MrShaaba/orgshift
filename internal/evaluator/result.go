@@ -163,6 +163,9 @@ type Subject struct {
 	// and after the move, as evaluated.
 	SourceOrgPath string `json:"source_org_path"`
 	TargetOrgPath string `json:"target_org_path"`
+	// TransferMethod is the procedure evaluated for a move between
+	// organizations: direct, leave-and-rejoin or management-account.
+	TransferMethod string `json:"transfer_method,omitempty"`
 }
 
 // Check is one area of the verdict board.

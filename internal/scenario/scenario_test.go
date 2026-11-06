@@ -194,14 +194,26 @@ func TestCrossOrgStagedScenario(t *testing.T) {
 	if !layer(enter, LayerMembership).Changed || enter.Transition == nil || !enter.Transition.Subject.CrossOrg || enter.State.Organization.ID != f.Organization.ID || enter.State.ParentID != f.Root.ID {
 		t.Fatalf("entry: %+v %+v", enter.Layers, enter.State)
 	}
-	if hasFinding(enter.Findings, "standalone") == nil || hasFinding(enter.Findings, "lands at the root") == nil {
+	if d := hasFinding(enter.Findings, "Direct transfer: the account accepts the destination's invitation and is never standalone"); d == nil || !strings.Contains(d.Detail, "organizations:LeaveOrganization") || !strings.Contains(d.Detail, "no interval without an organization") || hasFinding(enter.Findings, "lands at the root") == nil {
 		t.Errorf("entry findings: %+v", enter.Findings)
+	}
+	if !strings.Contains(layer(enter, LayerMembership).Summary, "by direct transfer") || enter.Transition.Subject.TransferMethod != evaluator.TransferDirect {
+		t.Errorf("the entry stage is a direct transfer: %+v", layer(enter, LayerMembership))
 	}
 	if f := transitionFinding(enter.Transition, "ram", "fernhill-payments-transit becomes available"); f == nil {
 		t.Error("the re-created share should be available on entry")
 	}
-	if f := transitionFinding(enter.Transition, "org-services", "Standalone account prerequisites"); f == nil || !strings.Contains(f.Detail, "15 days") || f.Category != evaluator.CategoryPotentialImpact {
+	if f := transitionFinding(enter.Transition, "org-services", "Direct transfer: 222222222221 invites the account"); f == nil || !strings.Contains(f.Detail, "15 days") || f.Status != evaluator.StatusInfo {
 		t.Errorf("invitation facts: %+v", f)
+	}
+	if f := transitionFinding(enter.Transition, "org-services", "A source SCP denies organizations:LeaveOrganization"); f == nil || f.Status != evaluator.StatusNoGo {
+		t.Errorf("the source deny on LeaveOrganization blocks the entry stage: %+v", f)
+	}
+	// The scenario enters at the root, so the root is the target of this
+	// stage and there is no interval to report; the later stage that places
+	// the account evaluates the OU.
+	if f := transitionFinding(enter.Transition, "org-services", "lands at the destination root, which is also its target"); f == nil {
+		t.Error("entering at the root is said")
 	}
 	if enter.Transition.Subject.DeclaredOperations != 4 || enter.Transition.Subject.TargetOrgPath != f.Organization.ID+"/"+f.Root.ID+"/" {
 		t.Errorf("declared operations and target path: %+v", enter.Transition.Subject)
@@ -385,8 +397,11 @@ stages:
 	}
 	st := rep.Stages[0]
 	mgmt := transitionFinding(st.Transition, "org-services", "management account of the source organization")
-	if mgmt == nil || mgmt.Status != evaluator.StatusNoGo || !strings.Contains(mgmt.Detail, "deleting the organization") && !strings.Contains(mgmt.Detail, "organization is deleted") {
+	if mgmt == nil || mgmt.Status != evaluator.StatusNoGo || !strings.Contains(mgmt.Detail, "the organization deleted first") || !strings.Contains(mgmt.Detail, "neither a direct transfer nor leave-and-rejoin") {
 		t.Fatalf("management account constraint: %+v", mgmt)
+	}
+	if st.Transition.Subject.TransferMethod != evaluator.TransferManagementAccount {
+		t.Errorf("a management account has a procedure of its own: %q", st.Transition.Subject.TransferMethod)
 	}
 	if ct := transitionFinding(st.Transition, "org-services", "runs Control Tower from this management account"); ct == nil || ct.Status != evaluator.StatusNoGo || !strings.Contains(ct.Detail, "decommissioned") {
 		t.Errorf("landing zone decommissioning: %+v", ct)
@@ -623,5 +638,77 @@ func golden(t *testing.T, name string, rep *Report) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Errorf("report differs from %s (run go test ./internal/scenario -update after reviewing)", path)
+	}
+}
+
+// M5 defect 4: a membership stage says how the account changes
+// organization. Direct transfer is the default and has no standalone
+// interval; leave-and-rejoin is asked for by name and has one.
+func TestStageTransferMethod(t *testing.T) {
+	l, f := fixtures.Larkspur(), fixtures.Fernhill()
+	doc := func(method string) string {
+		return `schema_version: 1
+name: payments to Fernhill
+account: "111111111115"
+stages:
+  - id: enter
+    title: Into Fernhill
+    membership:
+      organization: destination` + method + `
+  - id: back
+    title: Back to Larkspur
+    membership:
+      organization: source` + method + `
+`
+	}
+	// Default: direct, both ways.
+	rep, err := Run(Input{Scenario: mustParse(t, doc("")), Source: l, Destination: f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enter, back := rep.Stages[0], rep.Stages[1]
+	if d := hasFinding(enter.Findings, "Direct transfer: the account accepts the destination's invitation and is never standalone"); d == nil || len(d.References) == 0 || !strings.Contains(d.References[0], "orgs_account_migration") {
+		t.Errorf("entry: %+v", enter.Findings)
+	}
+	if hasFinding(enter.Findings, "Between leaving the source") != nil || transitionFinding(enter.Transition, "org-services", "Leave or remove, then rejoin") != nil {
+		t.Error("a direct transfer has no standalone interval")
+	}
+	if enter.Transition.Subject.TransferMethod != evaluator.TransferDirect || back.Transition.Subject.TransferMethod != evaluator.TransferDirect {
+		t.Errorf("methods: %q, %q", enter.Transition.Subject.TransferMethod, back.Transition.Subject.TransferMethod)
+	}
+	if hasFinding(back.Findings, "The account returns to the source organization by direct transfer") == nil {
+		t.Errorf("return: %+v", back.Findings)
+	}
+	// The way back is a transfer out of Fernhill, whose root guardrails deny
+	// LeaveOrganization: the same blocker, on the other organization.
+	if f := transitionFinding(back.Transition, "org-services", "A source SCP denies organizations:LeaveOrganization"); f == nil || f.Status != evaluator.StatusNoGo || !strings.Contains(f.Detail, "Fernhill-Root-Guardrails") {
+		t.Errorf("the return transfer is blocked by the destination's deny: %+v", f)
+	}
+
+	// Named: leave-and-rejoin.
+	rep, err = Run(Input{Scenario: mustParse(t, doc("\n      method: leave-and-rejoin")), Source: l, Destination: f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enter, back = rep.Stages[0], rep.Stages[1]
+	if s := hasFinding(enter.Findings, "Between leaving the source and accepting the invitation the account is standalone"); s == nil || !strings.Contains(s.Detail, "leave-and-rejoin method") {
+		t.Errorf("entry: %+v", enter.Findings)
+	}
+	if hasFinding(enter.Findings, "Direct transfer:") != nil {
+		t.Error("the two procedures are not mixed")
+	}
+	if p := transitionFinding(enter.Transition, "org-services", "Leave or remove, then rejoin: the account is standalone between the two organizations"); p == nil || p.Status != evaluator.StatusReview {
+		t.Errorf("transition procedure: %+v", p)
+	}
+	if enter.Transition.Subject.TransferMethod != evaluator.TransferLeaveAndRejoin || !strings.Contains(layer(enter, LayerMembership).Summary, "by leaving and rejoining") {
+		t.Errorf("entry method %q, layer %q", enter.Transition.Subject.TransferMethod, layer(enter, LayerMembership).Summary)
+	}
+	if hasFinding(back.Findings, "returns to the source organization by leaving and rejoining") == nil {
+		t.Errorf("return: %+v", back.Findings)
+	}
+
+	// Anything else is refused when the scenario is read.
+	if _, err := Parse([]byte(doc("\n      method: teleport"))); err == nil || !strings.Contains(err.Error(), "membership.method") || !strings.Contains(err.Error(), "direct, leave-and-rejoin") {
+		t.Errorf("unknown method: %v", err)
 	}
 }

@@ -114,16 +114,10 @@ func evalCondition(c Condition, ctx Context) (Outcome, string) {
 // in which case the result is Yes only when the policy value covers every
 // possible context value, Unknown when they merely overlap.
 func comparator(op string) (func(want, have string) Outcome, bool) {
-	like := func(fold bool) func(w, h string) Outcome {
-		return func(w, h string) Outcome {
-			if covers(w, h, fold) {
-				return Yes
-			}
-			if hasWildcard(h) && overlaps(w, h, fold) {
-				return Unknown
-			}
-			return No
-		}
+	// The string operators match anywhere in the string; the ARN operators
+	// check the six components of the ARN one by one.
+	like := func(fold bool, mode matchMode) func(w, h string) Outcome {
+		return func(w, h string) Outcome { return compare(w, h, fold, mode) }
 	}
 	exact := func(fold bool) func(w, h string) Outcome {
 		return func(w, h string) Outcome {
@@ -145,8 +139,10 @@ func comparator(op string) (func(want, have string) Outcome, bool) {
 		return exact(false), true
 	case "StringEqualsIgnoreCase":
 		return exact(true), true
-	case "StringLike", "ArnEquals", "ArnLike":
-		return like(false), true
+	case "StringLike":
+		return like(false, modeString), true
+	case "ArnEquals", "ArnLike":
+		return like(false, modeARN), true
 	case "Bool":
 		return exact(true), true
 	}

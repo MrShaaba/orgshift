@@ -187,6 +187,42 @@ Source: [AWS IAM Identity Center and AWS Organizations](https://docs.aws.amazon.
   the instruction to confirm in IAM after the move, since the page does not
   name those roles.
 
+## Wildcards in ARNs
+
+Sources: [IAM condition operators](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html),
+[IAM policy elements: Resource](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_resource.html).
+Checked on 2026-11-05.
+
+IAM matches a wildcard differently depending on where the pattern stands,
+and the policy engine (`internal/policy`) follows each rule:
+
+- ARN condition operators (`ArnLike`, `ArnEquals` and their negations):
+  "Each of the six colon-delimited components of the ARN is checked
+  separately". A wildcard never reaches into the next component.
+- String condition operators (`StringLike`): wildcards can stand
+  "anywhere in the string", and the comparison "does not enforce a
+  predefined format". A `*` can stand for a colon.
+- The `Resource` element: wildcards are used "within the individual
+  segments of an ARN", and "if the `*` wildcard is the last character of a
+  resource ARN segment, it can expand to match beyond the colon
+  boundaries". So `arn:aws:logs:*:log-group:prod`, which leaves a component
+  out, still matches a log group ARN. Whether a `*` in the middle of a
+  component or a `?` can do the same is not stated; when a match depends
+  on it the engine answers unknown (REVIEW), never "no match".
+
+A value that is itself a pattern is the evaluator's way of writing a set of
+real ARNs ("any role of the account" is `role/*`). Its wildcards stand for
+a name, not for further colon-separated parts, so the root-user pattern
+`arn:aws:iam::*:root` does not match `arn:aws:iam::111111111111:role/*`.
+This is an assumption about names, and it is the reason the common
+root-user deny is evaluated instead of turning every action into a REVIEW.
+
+Before 2026-11-05 the engine matched ARN-shaped values component by
+component everywhere, which is right for the ARN operators and too strict
+for `Resource` and `StringLike`: a Deny whose pattern left a component out
+was read as not matching. The fuzz test that compares the matching
+algorithms with each other found the case.
+
 ## Workloads (model `workload-behaviour`, version 2026-11-05)
 
 What the Workloads check and the workload inventory rely on. Checked on

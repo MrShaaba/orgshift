@@ -391,6 +391,11 @@ has every option.
 - An action whose resource names no account is assumed to act on the
   account's own resources; a resource in another account is evaluated
   against that account's RCPs.
+- A wildcard in a resource or principal of the usage list (`role/*`,
+  `bucket/*`) stands for a name, not for further colon-separated parts of
+  an ARN. Wildcards in policies follow IAM's own rules, which differ
+  between the `Resource` element, the string operators and the ARN
+  operators ([docs/aws-behaviour.md](docs/aws-behaviour.md#wildcards-in-arns)).
 - A cross-organization move drops policies attached directly to the account
   and attaches the target's AWS managed defaults, which is what Organizations
   does when an account joins.

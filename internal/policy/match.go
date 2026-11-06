@@ -105,14 +105,15 @@ func (s *Statement) Applies(req Request) Match {
 }
 
 // matchPatterns matches a value (which may itself be a pattern) against a
-// list of patterns.
-func matchPatterns(patterns []string, value string, fold bool) Outcome {
+// list of patterns, with the wildcard semantics of the place the patterns
+// stand in.
+func matchPatterns(patterns []string, value string, fold bool, mode matchMode) Outcome {
 	out := No
 	for _, p := range patterns {
-		if covers(p, value, fold) {
+		switch compare(p, value, fold, mode) {
+		case Yes:
 			return Yes
-		}
-		if hasWildcard(value) && overlaps(p, value, fold) {
+		case Unknown:
 			out = Unknown
 		}
 	}
@@ -121,7 +122,7 @@ func matchPatterns(patterns []string, value string, fold bool) Outcome {
 
 // MatchAction matches an action (possibly a wildcard) against patterns.
 func MatchAction(patterns []string, action string) Outcome {
-	return matchPatterns(patterns, action, true)
+	return matchPatterns(patterns, action, true, modeString)
 }
 
 func (s *Statement) matchAction(action string) Match {
@@ -158,7 +159,7 @@ func (s *Statement) matchResource(resource string) Match {
 	if resource == "" {
 		return Match{Outcome: Unknown, Reason: "statement is scoped to specific resources and the resource in use is unknown"}
 	}
-	o := matchPatterns(patterns, resource, false)
+	o := matchPatterns(patterns, resource, false, modeResource)
 	if negate {
 		switch o {
 		case Yes:

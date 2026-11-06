@@ -156,6 +156,16 @@ than assumed: what a StackSet does with an instance when automatic
 deployment is off, the answer of `ListImports` for an export nobody
 imports, and the S3 error code for a bucket without a policy.
 
+Found on the way, outside the workload layer: the fuzz smoke test in CI
+produced an ARN-shaped pattern on which the policy engine's matching
+algorithms disagreed. IAM matches wildcards per component for the ARN
+operators, anywhere in the string for the string operators, and lets a `*`
+that ends a component cross the colon in the `Resource` element; the engine
+matched per component everywhere, so a Deny whose `Resource` pattern left a
+component out was read as not matching. The engine now follows the three
+rules, answers unknown where the documentation is silent, and the fuzz
+property checks the modes against each other. No fixture verdict changed.
+
 Not done, and where it is listed:
 
 - The collection code has only run against mocks, as the hard rule

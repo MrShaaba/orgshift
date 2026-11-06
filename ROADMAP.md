@@ -19,31 +19,114 @@ the summary says what to try.
   inventory of member accounts, deployment provenance with its evidence,
   the Workloads check, the workload layer evaluated at every stage and the
   recreate strategy listing what must be redeployed; fixtures, CLI and UI.
-- **Later:** Section 8, the network paths behind the validation stages;
-  Section 9; then the rest of Section 5 and the items below.
+- **M5 (done, 2026-11-05):** correctness before features. Four defects
+  found by a review at `9dbfdee`, each reproduced against HEAD with a
+  failing test and then fixed: SCP and RCP exemptions per side, regional
+  STS, malformed policies and policy variables, and the transfer procedure
+  (direct transfer, eligibility). No new features.
+- **M6 (planned):** the focused SCP comparison report.
+- **M7 (planned):** the remaining collectors.
+- **M8 to M10 (planned):** the network workstream: inventory, then
+  configuration-derived reachability, then behaviour across the stages of
+  a migration.
+- **Later:** Section 9, then the rest of Section 5 and the items below.
 
-## Next up: about 44 hours
+## Next up: about 114 hours
 
-Remaining work, sized. Details for each item are in the sections below.
+Remaining work, sized. The milestones come first and in order; the items
+after them are independent of each other. Details for each are in the
+sections below. Re-sized after M5: the network item, which was a six-hour
+note about the validation stages, is now the three milestones M8 to M10;
+the organization trail and Config aggregator collection and the KMS and
+Secrets Manager policies moved from the smaller items and the workload
+follow-ups into M7.
 
 | Item | Hours |
 | --- | --- |
-| Section 8: network-path reasoning behind the validation stages | 6 |
+| M6: focused SCP comparison report | 14 |
+| M7: remaining collectors, with active and planned permissions separated | 16 |
+| M8: network inventory (transit gateways, peering, RAM, DXGW, VPN, VPC and subnet routes) | 16 |
+| M9: configuration-derived reachability (endpoints, DNS, ingress, egress, inspection, return paths) | 18 |
+| M10: network behaviour during transfer, coexistence, cutover and rollback | 14 |
 | Workload dependency graph across accounts | 5 |
 | Snapshot diff: two snapshots of one organization taken at different times | 4 |
 | Actions in use from CloudTrail and CloudTrail Lake | 4 |
 | Backup policy and AI opt-out policy comparison | 4 |
-| Workload inventory follow-ups (delegated-administrator StackSets, more resource policies, Account Factory provenance) | 4 |
+| Workload inventory follow-ups (delegated-administrator StackSets, further resource policies, Account Factory provenance) | 3.5 |
 | Section 9: stable finding identifiers, severities and redaction | 3 |
 | HTML report bundle | 3 |
 | Identity Center group-membership import | 3 |
 | IAM Access Analyzer policy validation | 3 |
-| Smaller items | 4.5 |
-| **Total** | **43.5** |
+| Smaller items | 3.5 |
+| **Total** | **114** |
 
 Hard rule for the development sessions: never run `orgshift collect`, the
 AWS CLI or any AWS SDK call against a real account; fixtures and mocks only.
 Live collection is run by the owner. The server on 8080 is left alone.
+
+### M5 outcome
+
+A review at `9dbfdee` found four defects. HEAD had moved since (StackSet
+and workload collection, the wildcard change in `43d374f`), so each was
+first reproduced against HEAD with a failing test. None had been fixed in
+the meantime; parts of the fourth were already right and are listed. Every
+fix turned its reproduction into a test of the correct behaviour.
+
+1. **SCP exemptions, per side** (`cc3d2a5`). SCPs do not apply to the
+   management account or to service-linked roles. Before: a call by
+   `AWSServiceRoleForAutoScaling` under a target-root deny was NO-GO, and a
+   source management account that becomes a destination member under the
+   same deny at both roots was "already denied today". After: calls by
+   service-linked roles are not evaluated and are listed in an INFO
+   finding; each side is asked separately whether its SCPs apply, so the
+   second case is a new destination restriction (NO-GO, "becomes denied
+   after the move"). The management-account prerequisite blocker stays a
+   separate finding. The same per-side rule holds for RCPs and the
+   resources of a management account.
+2. **Regional STS** (`36e5848`). Before: `sts` was in the set of services
+   always evaluated in `us-east-1`, so a call to a regional endpoint was
+   judged in the wrong Region in both directions. After: the Region the
+   usage entry names is used, `global` stands for the global endpoint
+   (which counts as `us-east-1`), and an entry that names none is REVIEW
+   (missing evidence) when a policy looks at the Region, not a guess.
+3. **Policy validation and variables** (`cc09c43`). Before: a statement
+   with both `Action` and `NotAction` or both `Resource` and `NotResource`
+   was accepted, a missing `Resource` was read as `"*"`, a policy variable
+   in `Resource` was a definite non-match (and a definite match in
+   `NotResource`), and one unparseable policy aborted the collection.
+   After: such a policy is recorded as malformed with the reason, the
+   collection continues, and every check that depends on it is REVIEW; an
+   SCP or RCP statement without a resource element is malformed, per the
+   syntax pages, instead of being given a `"*"`; a variable is resolved
+   from the request context when it can be and is unknown otherwise, for
+   Allow and Deny, `Resource` and `NotResource`.
+4. **Transfer procedure** (`d9ba683`). Before: one sequence, leave and
+   then join, with its standalone interval presented as part of every move
+   between organizations; no evaluator finding for a source deny of
+   `organizations:LeaveOrganization`; nothing about the landing at the
+   destination root; no eligibility checks beyond the two below. After:
+   transfer model `2026-11-05` with three procedures kept apart (direct
+   transfer by default, leave-and-rejoin on request, management account),
+   the leave permission evaluated against the source chain, the interval at
+   the destination root reported with what it exposes, and the eligibility
+   requirements of the migration page, each confirmed, failed or reported
+   as not confirmed. Runbooks, scenarios (`membership.method`), stage
+   findings, OU moves, reports, UI, docs and goldens follow.
+   Already right at HEAD and kept: the four-day rule for created accounts
+   and the delegated-administrator blocker (both NO-GO), the
+   management-account sequence (remove every member, delete the
+   organization, then accept), the note that `OrganizationAccountAccessRole`
+   is kept (now a REVIEW with a step to delete it), and a runbook step for
+   the `LeaveOrganization` deny (it was derived in the runbook only, as a
+   REVIEW, and offered removal by the management account as a way round).
+
+Snapshot schema stays at 3 and the result schema at 4: the new fields
+(`policies[].malformed`, `organization.created_at`,
+`organization.seller_of_record`, `accounts[].root_mfa_enabled`,
+`subject.transfer_method`) are optional additions. The organization's
+creation date and the Seller of Record are returned by no Organizations
+API and are entered by hand; root MFA is not collected yet (see the smaller
+items).
 
 ### M4 outcome
 
@@ -176,7 +259,8 @@ Not done, and where it is listed:
   "Workload inventory follow-ups" below.
 - Dependencies between accounts (which accounts have to move together):
   "Workload dependency graph" below.
-- Network paths behind the shared subnets and transit gateways: Section 8.
+- Network paths behind the shared subnets and transit gateways: Section 8
+  of the brief, now the network milestones M8 to M10.
 
 ### M1 outcome
 
@@ -284,8 +368,8 @@ Policy and impact evaluation (Section 7):
 
 Left for later milestones at the time: workload inventory and deployment
 provenance behind the recreate strategy and the workload layer (done in
-M4); network-path reasoning behind the validation stage (Section 8); stable
-finding identifiers and redaction (Section 9).
+M4); network-path reasoning behind the validation stage (Section 8, now
+M8 to M10); stable finding identifiers and redaction (Section 9).
 
 ### M2 outcome
 
@@ -364,17 +448,124 @@ Done since the first pass:
   Organizations, RAM, Control Tower and Identity Center; CloudTrail Lake
   import and Access Analyzer validation would add steps of their own.
 
-## Section 8: network-path reasoning behind the validation stages (6 h)
+## M6: focused SCP comparison report (14 h)
 
-- Read, through the member and network roles, the transit gateway
-  attachments, VPCs and subnets (shared ones included), route tables,
-  peerings, prefix lists and Resolver rule associations the catalog already
-  lists as planned.
-- Join them with the workload inventory: which stack's resources sit in
-  which subnet, which routes leave through a shared transit gateway, which
-  names resolve through a shared Resolver rule.
-- Report per stage which paths exist before and after, so the validation
-  stage lists paths to test instead of a generic reminder.
+A report about one thing: what the SCPs of the two positions restrict, and
+how that differs. It is built for a reviewer who has to sign off the
+guardrail change, and it says at the top and in every export what it is
+not: not IAM authorization (an SCP allow grants nothing) and not a
+statement that the migration as a whole is safe.
+
+- Ancestry before and after: every level from the root to the account on
+  both sides, with what is attached at each level and what reaches the
+  account by inheritance, told apart. (2 h)
+- Added and removed restrictions at statement level, not only for the
+  actions in the usage list: denies that start, denies that stop, and
+  denies that change scope, each with its conditional exceptions
+  (`ArnNotLike` on a break-glass role, Region lists, tag conditions) spelt
+  out as who or what is excepted. (3.5 h)
+- Allow-list intersections: where a level replaces `FullAWSAccess`, the
+  set of actions that survives every level, before and after, and what
+  falls out of it. (2.5 h)
+- Declared critical operations and declared recovery operations (the
+  calls needed to undo the move or to break glass), each evaluated at both
+  positions and at the destination root. (1.5 h)
+- Provenance for every line (policy, statement, level, snapshot,
+  collection time, Control Tower guardrail or customer policy) and the
+  unknowns kept as unknowns: malformed policies, unresolved variables,
+  conditions that depend on context, coverage gaps. (1.5 h)
+- `orgshift scp-report` with text, Markdown and JSON, and a panel in the
+  UI. (2 h)
+- Fixtures, goldens and documentation. (1 h)
+
+## M7: remaining collectors (16 h)
+
+Read-only collection that the checks already ask for. Every operation is
+classified in the catalog first; anything a service bills per request goes
+behind an opt-in that is off by default, with a test that the call is not
+made without it. Exercised with mocks only.
+
+- StackSet operation status: the latest operations and their results per
+  StackSet, so a StackSet that is mid-operation or failed in the account
+  is seen before the move. (2 h)
+- Scoped resource-policy discovery, for conditions on organization
+  identity and for principals outside the account, limited to the accounts
+  and Regions already configured and to a stated maximum per service:
+  - KMS key policies. (3 h)
+  - Secrets Manager resource policies. Metadata and policy only: no call
+    that returns a secret value is in the catalog, and a test looks for
+    one. (2.5 h)
+  - EventBridge event bus policies. (1.5 h)
+  - IAM: role trust policies beyond the current sample, with the scope
+    and the cut-off recorded in coverage. (2 h)
+- Organization trails and Config aggregators, which coverage records as
+  unsupported today. (2 h)
+- Active and planned permissions separated: the catalog, the IAM
+  templates, `docs/permissions.md` and the preflight say for each action
+  whether a collector uses it now or a later milestone will, so a role can
+  be granted exactly what runs. (2 h)
+- Coverage domains, fixtures and documentation. (1 h)
+
+## M8: network inventory (16 h)
+
+The first of three network milestones. It collects and models; it draws no
+conclusions about reachability yet.
+
+- A `network` block in the snapshot with its coverage domains and
+  validation, per account and Region. (2.5 h)
+- Transit gateways: attachments, route table associations, propagations
+  and the effective routes of each route table, static and propagated,
+  blackholes included. (4 h)
+- VPC peering, the RAM shares behind shared transit gateways and subnets
+  joined to their owners, Direct Connect gateways and their associations,
+  and Site-to-Site VPN connections. (3.5 h)
+- VPC and subnet route tables (main and explicit associations) and the
+  prefix lists they use. (3 h)
+- Catalog entries, IAM templates, preflight probes and mocks for all of
+  it. (2 h)
+- Fixture topologies for both organizations and an `orgshift network`
+  inventory view. (1 h)
+
+## M9: configuration-derived reachability (18 h)
+
+What the collected configuration says can reach what. Everything in this
+milestone is derived from configuration and is labelled so; it is never
+presented as observed traffic.
+
+- A route evaluation engine: longest prefix match from the subnet route
+  table through the transit gateway route table to the next attachment,
+  with blackholes, loops and hops that cannot be resolved reported as
+  such. (5 h)
+- Centralised endpoints and DNS: interface and gateway endpoints with
+  their policies (conditions on organization identity included), private
+  hosted zone associations, Resolver endpoints and rules. (4 h)
+- Ingress, egress and inspection: paths through inspection VPCs and
+  firewall endpoints, NAT and internet gateways, and the appliance-mode
+  setting of the attachments in between. (3.5 h)
+- Return-path symmetry: for each path, whether the way back passes the
+  same inspection point, and where it cannot be told. (2.5 h)
+- Two evidence classes kept apart in the schema, the findings and the
+  reports: configuration-derived reachability, and observed traffic, which
+  is only ever imported from a file the operator supplies and is never
+  merged into the first. (2 h)
+- Fixture topologies and fuzzing of the route matcher. (1 h)
+
+## M10: network behaviour across the migration (14 h)
+
+What happens to the paths of M9 at each stage, replacing the generic
+reminder of the validation stages.
+
+- The network state per stage: at the transfer (the account at the
+  destination root), during coexistence, at cutover and on rollback: what
+  shares, attachments, propagations, endpoint policies and DNS
+  associations do at each, verified against the AWS documentation per
+  resource type and recorded in `docs/aws-behaviour.md`. (4.5 h)
+- Paths before and after each stage, and the ones that break, appear or
+  change their inspection point. (3 h)
+- The validation stage lists the paths to test, and the runbook gains the
+  network steps. (2.5 h)
+- A network panel in the UI and sections in the reports. (2.5 h)
+- Goldens and documentation. (1.5 h)
 
 ## Workload dependency graph across accounts (5 h)
 
@@ -419,14 +610,14 @@ Done since the first pass:
   destination.
 - The identity store calls are free; the catalog entries come first.
 
-## Workload inventory follow-ups (4 h)
+## Workload inventory follow-ups (3.5 h)
 
 - StackSets administered by a CloudFormation delegated administrator:
   `CallAs` DELEGATED_ADMIN through an access block of their own. (1 h)
-- More resource policies read from the service for conditions on
-  organization identity: KMS key policies, SQS, SNS, Secrets Manager, ECR
-  and Lambda. Each call is classified in the catalog first, and any the
-  service bills goes behind an opt-in. (2 h)
+- Further resource policies read from the service for conditions on
+  organization identity: SQS, SNS, ECR and Lambda (KMS, Secrets Manager
+  and EventBridge are in M7). Each call is classified in the catalog
+  first, and any the service bills goes behind an opt-in. (1.5 h)
 - Account Factory provenance with `servicecatalog:SearchProvisionedProducts`,
   so "Control Tower or Account Factory" is told apart. (1 h)
 
@@ -473,12 +664,12 @@ Done since the first pass:
 - A severity next to the status, and redaction of account IDs, names and
   ARNs in exports on request.
 
-## Smaller items (4.5 h)
+## Smaller items (3.5 h)
 
-- Collect organization trails and Config aggregators in `orgshift collect`
-  (free `Describe` calls, with the catalog test extended). Until then the
-  coverage block records them as unsupported. StackSets and the tagged
-  resource sample, which were on this list, are collected since M4. (2 h)
+- Collect `root_mfa_enabled` from the IAM account summary through the
+  member inspection role, so the root MFA requirement of a transfer is
+  confirmed without a hand-entered field. The organization's creation date
+  and the Seller of Record stay manual: no API returns them. (1 h)
 - Evaluate `aws:SourceVpc`, `aws:SourceIp` and `aws:CalledVia` conditions
   when the usage entry supplies them, instead of returning REVIEW. (2 h)
 - A `--fail-on review` switch for CI so a REVIEW can be made blocking. (0.5 h)

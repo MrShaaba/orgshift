@@ -249,6 +249,57 @@ Before 2026-11-05 every `sts` call was evaluated in `us-east-1`, which made
 a call through a Regional endpoint look denied by a guardrail that admits
 its Region, or allowed by one that only denies `us-east-1`.
 
+## Malformed policies and policy variables
+
+Sources: [SCP syntax](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps_syntax.html),
+[RCP syntax](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps_syntax.html),
+[IAM policy grammar](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_grammar.html),
+[IAM policy variables](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html).
+Checked on 2026-11-05.
+
+- One action element and one resource element per statement. The grammar
+  writes a statement as an `<action_block>` and a `<resource_block>`, each
+  an alternative: `("Action" | "NotAction")` and `("Resource" |
+  "NotResource")`. No page says "not both" in words; the rule is read from
+  the grammar. A statement with both is treated as malformed, not as if
+  one of the two were absent.
+- What a missing `Resource` means depends on the policy type. "Each
+  statement in an SCP must include a `Resource` or `NotResource` element",
+  and for RCPs "Each statement must contain the `Resource` or
+  `NotResource` element". So in an SCP or RCP a statement without one is
+  malformed; it is never read as a statement about every resource. A role
+  trust policy, by contrast, has no `Resource` at all, and its statements
+  are about the role.
+- Further rules of the two types: in an SCP, "in statements where the
+  `Effect` element has a value of `Allow`, you can specify only "\*" in
+  the `Resource` element" and `Principal` and `NotPrincipal` are not
+  supported; in an RCP the `Principal` must be `"*"` and `NotPrincipal`
+  and `NotAction` are not supported.
+- A malformed policy is kept in the snapshot with the reason
+  (`malformed`). The evaluator treats it as unknown in both directions: it
+  may hold a Deny that applies or the Allow a level needs, so the check
+  whose chain holds it is a REVIEW, with one finding that names the
+  policy, where it is attached and why it is malformed.
+- Policy variables. "You can use policy variables in the `Resource`
+  element and in string comparisons in the `Condition` element." In
+  `Resource` and `NotResource` the engine resolves a variable from the
+  request context when it knows the value (a `principal_tags` entry gives
+  `${aws:PrincipalTag/...}`), uses the default of `${key, 'default'}`
+  when the key has no value, and follows the documented rule for a key
+  that is known to be absent and has no default: "the resource that
+  includes a policy variable with no value will not match any resource".
+  When the value is not known, the pattern is tried with a wildcard in the
+  variable's place: if that cannot match the resource the answer is a
+  definite no, otherwise it is unknown (REVIEW), for `Allow` and `Deny`
+  and for `Resource` and `NotResource` alike. In `Condition` values a
+  variable is always unknown.
+
+Before 2026-11-05 the parser accepted a statement with both elements and
+used one of them, gave a statement without `Resource` the value `*`, and
+compared `${...}` in a resource as literal text, which made a Deny behind
+a variable a definite non-match. A malformed policy that the parser did
+reject stopped the whole collection.
+
 ## Wildcards in ARNs
 
 Sources: [IAM condition operators](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html),

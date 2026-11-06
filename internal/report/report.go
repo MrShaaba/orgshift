@@ -292,9 +292,12 @@ func chainCell(ch []evaluator.ChainLink, i int) string {
 	l := ch[i]
 	names := make([]string, 0, len(l.Policies))
 	for _, p := range l.Policies {
-		if p.ControlTowerManaged {
+		switch {
+		case p.Malformed != "":
+			names = append(names, "`"+p.Name+"` (malformed, not evaluated)")
+		case p.ControlTowerManaged:
 			names = append(names, "`"+p.Name+"` (Control Tower guardrail)")
-		} else {
+		default:
 			names = append(names, "`"+p.Name+"`")
 		}
 	}
@@ -313,6 +316,9 @@ func writeRefs(b *strings.Builder, title string, refs []evaluator.PolicyRef) {
 		fmt.Fprintf(b, "- `%s` (%s) at %s", p.Name, p.ID, p.Level)
 		if p.ControlTowerManaged {
 			b.WriteString(", Control Tower guardrail")
+		}
+		if p.Malformed != "" {
+			fmt.Fprintf(b, ", malformed and not evaluated (%s)", p.Malformed)
 		}
 		if p.Description != "" {
 			fmt.Fprintf(b, ": %s", p.Description)

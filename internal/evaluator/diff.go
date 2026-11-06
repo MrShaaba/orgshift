@@ -11,7 +11,11 @@ import (
 func (e *evaluation) policyRef(snap *snapshot.Snapshot, p *snapshot.Policy, level string) PolicyRef {
 	ref := PolicyRef{ID: p.ID, Name: p.Name, Description: p.Description, AWSManaged: p.AWSManaged, ControlTowerManaged: p.ControlTowerManaged(), Level: level, Document: p.Document}
 	if p.Type == snapshot.PolicyTypeSCP || p.Type == snapshot.PolicyTypeRCP {
-		if doc, err := e.parsed(snap, p); err == nil {
+		doc, err := e.parsed(snap, p)
+		if err != nil {
+			ref.Malformed = err.Error()
+		}
+		if err == nil {
 			for _, st := range doc.Statements {
 				ss := StatementSummary{Sid: st.Sid, Effect: st.Effect, Actions: st.Actions, NotActions: st.NotActions, HasCondition: len(st.Conditions) > 0}
 				for _, c := range st.Conditions {

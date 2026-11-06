@@ -36,8 +36,9 @@ offline and reports:
   `aws:PrincipalArn`, `aws:PrincipalTag/*`, `aws:ResourceAccount` and
   `aws:PrincipalIsAWSService` are evaluated; anything the tool cannot decide
   offline comes back as REVIEW rather than a guess. A policy document that
-  does not parse is rejected on load with the statement at fault, and never
-  turns into an implicit allow. RCPs follow a versioned applicability model
+  is malformed is reported with the statement at fault, kept by the
+  collector with the reason, and never turns into an implicit allow or a
+  guessed deny: the checks that depend on it are REVIEW. RCPs follow a versioned applicability model
   of the services AWS lists (62 on 2026-11-01); actions on other services
   are reported as not evaluated, and a resource owned by another account is
   checked against that account's RCPs with the caller's organization
@@ -409,6 +410,12 @@ has every option.
 - A cross-organization move drops policies attached directly to the account
   and attaches the target's AWS managed defaults, which is what Organizations
   does when an account joins.
+- A policy that is not well formed for its type (both `Action` and
+  `NotAction`, both `Resource` and `NotResource`, an SCP or RCP statement
+  without a resource element) is kept with the reason and never guessed
+  at: the checks that depend on it are REVIEW. A policy variable in
+  `Resource` or `NotResource` is resolved from `principal_tags` when the
+  usage entry has them and is unknown otherwise, not a non-match.
 - Only SCPs, RCPs and tag policies are evaluated. Backup policies are shown
   in the chain and the diff; comparing them is on the roadmap. The
   governance-policy evaluation is not a replacement for IAM authorization:

@@ -61,8 +61,43 @@ func (e *evaluation) parsed(snap *snapshot.Snapshot, p *snapshot.Policy) (*polic
 		return d.doc, d.err
 	}
 	d, err := policy.Parse(p.Document)
+	if err == nil {
+		// A document that parses can still be malformed for its policy
+		// type: an SCP statement without a Resource element is not a
+		// statement about every resource. The rules of the type decide.
+		if reason := p.MalformedReason(); reason != "" {
+			d, err = nil, fmt.Errorf("%s", reason)
+		}
+	}
 	e.docs[key] = parsedDoc{doc: d, err: err}
 	return d, err
+}
+
+// malformedFindings adds one REVIEW finding for every malformed policy on
+// the source or target chain of a check, so the check reads REVIEW whenever
+// its answer rests on a document that cannot be evaluated, whatever the
+// actions in use are.
+func (e *evaluation) malformedFindings(c *Check, t snapshot.PolicyType, src, dst []link) {
+	for _, sd := range []struct {
+		name  string
+		chain []link
+	}{{"source", src}, {"target", dst}} {
+		seen := map[string]bool{}
+		for _, lvl := range sd.chain {
+			for _, p := range lvl.policies {
+				if _, err := e.parsed(lvl.snap, p); err == nil || seen[p.ID] {
+					continue
+				} else {
+					seen[p.ID] = true
+					c.add(Finding{Status: StatusReview, Category: CategoryUnsupported, Confidence: ConfidenceHigh,
+						Title: fmt.Sprintf("%s %s on the %s chain is malformed and could not be evaluated", t.Short(), p.Name, sd.name),
+						Detail: fmt.Sprintf("Policy %s (%s), attached at %s, is not a well-formed %s: %s. It may hold a Deny that applies or the Allow a level needs, so nothing on this chain is decided where it matters: the check is a REVIEW until the policy is corrected or replaced and the snapshot collected again.",
+							p.Name, p.ID, levelLabel(lvl.node), t.Short(), err.Error()),
+						Evidence: []Evidence{{Kind: "policy-unparseable", Side: sd.name, Level: levelLabel(lvl.node), PolicyID: p.ID, PolicyName: p.Name, PolicyType: t.Short(), Note: err.Error(), StatementJSON: p.Document}}})
+				}
+			}
+		}
+	}
 }
 
 type parsedDoc struct {
@@ -259,7 +294,7 @@ func compare(p outcomePair, what string) (Status, string, string, string) {
 // of the evaluator (an operator or construct it does not model) rather than
 // from context the snapshot lacks.
 func unsupportedReason(reason string) bool {
-	return strings.Contains(reason, "not supported by the offline evaluator") || strings.Contains(reason, "policy variable") || strings.Contains(reason, "could not be parsed")
+	return strings.Contains(reason, "not supported by the offline evaluator") || strings.Contains(reason, "cannot be resolved offline") || strings.Contains(reason, "could not be parsed")
 }
 
 // sourceOf returns the finding source for an action in use.
@@ -330,6 +365,7 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 		c.add(Finding{Status: StatusInfo, Title: t.Short() + "s are not enabled in the target organization",
 			Detail: "The policy type is not enabled at the target root, so nothing of this type restricts the account after the move."})
 	}
+	e.malformedFindings(c, t, src, dst)
 	usage := e.usage
 	if len(usage.Actions) == 0 {
 		c.add(Finding{Status: StatusReview, Category: CategoryMissingEvidence, Title: "No actions in use were provided for this account",

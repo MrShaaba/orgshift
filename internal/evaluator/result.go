@@ -243,10 +243,13 @@ type PolicyRef struct {
 	AWSManaged  bool   `json:"aws_managed"`
 	// ControlTowerManaged marks the aws-guardrails-* SCPs that implement
 	// Control Tower's preventive controls.
-	ControlTowerManaged bool               `json:"control_tower_managed,omitempty"`
-	Level               string             `json:"level,omitempty"`
-	Statements          []StatementSummary `json:"statements,omitempty"`
-	Document            json.RawMessage    `json:"document,omitempty"`
+	ControlTowerManaged bool   `json:"control_tower_managed,omitempty"`
+	Level               string `json:"level,omitempty"`
+	// Malformed is the reason the document is not a well-formed policy of
+	// its type; such a policy is unknown in both directions.
+	Malformed  string             `json:"malformed,omitempty"`
+	Statements []StatementSummary `json:"statements,omitempty"`
+	Document   json.RawMessage    `json:"document,omitempty"`
 }
 
 // StatementSummary is a one-line view of an SCP or RCP statement.

@@ -58,6 +58,15 @@ func (s *Statement) Label() string {
 // IsAllow reports whether the statement effect is Allow.
 func (s *Statement) IsAllow() bool { return strings.EqualFold(s.Effect, "Allow") }
 
+// HasResourceElement reports whether the statement carries a Resource or a
+// NotResource element. A statement of a role trust policy has neither and
+// is about the role it is attached to; whether the element is required is a
+// rule of the policy type (service and resource control policies require
+// it), not of the parser, which never invents a "*" for a missing one.
+func (s *Statement) HasResourceElement() bool {
+	return len(s.Resources) > 0 || len(s.NotResources) > 0
+}
+
 // Parse parses a policy document.
 func Parse(data []byte) (*Document, error) {
 	var raw struct {
@@ -112,6 +121,17 @@ func parseStatement(i int, data json.RawMessage) (Statement, error) {
 	if len(r.Action) == 0 && len(r.NotAction) == 0 {
 		return Statement{}, fmt.Errorf("statement has neither Action nor NotAction")
 	}
+	// The policy grammar gives a statement one action element and one
+	// resource element, each written as an alternative: ("Action" |
+	// "NotAction") and ("Resource" | "NotResource"). A statement with both
+	// does not say which one holds, so it is malformed rather than read as
+	// if one of them were absent.
+	if len(r.Action) > 0 && len(r.NotAction) > 0 {
+		return Statement{}, fmt.Errorf("statement has both Action and NotAction; a statement carries one or the other")
+	}
+	if len(r.Resource) > 0 && len(r.NotResource) > 0 {
+		return Statement{}, fmt.Errorf("statement has both Resource and NotResource; a statement carries one or the other")
+	}
 	st := Statement{
 		Index:        i,
 		Sid:          r.Sid,
@@ -121,10 +141,6 @@ func parseStatement(i int, data json.RawMessage) (Statement, error) {
 		Resources:    r.Resource,
 		NotResources: r.NotResource,
 		Raw:          data,
-	}
-	if len(st.Resources) == 0 && len(st.NotResources) == 0 {
-		// SCPs always carry a Resource, but be lenient for hand-written input.
-		st.Resources = []string{"*"}
 	}
 	var err error
 	if st.Principals, err = parsePrincipal(r.Principal); err != nil {

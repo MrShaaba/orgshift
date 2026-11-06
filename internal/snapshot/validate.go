@@ -77,10 +77,13 @@ func (s *Snapshot) Validate() error {
 		policyIDs[p.ID] = true
 		switch p.Type {
 		case PolicyTypeSCP, PolicyTypeRCP, PolicyTypeTag, PolicyTypeBackup:
+			// A malformed document is an error unless the snapshot records
+			// it as malformed: the collector records what the organization
+			// holds, and a slip in a hand-written file is still caught.
 			if len(p.Document) == 0 || !json.Valid(p.Document) {
 				fail("policy %s (%s): document is not valid JSON", p.ID, p.Name)
-			} else if err := ValidatePolicyDocument(p.Type, p.Document); err != nil {
-				fail("policy %s (%s): %v", p.ID, p.Name, err)
+			} else if err := ValidatePolicyDocument(p.Type, p.Document); err != nil && p.Malformed == "" {
+				fail("policy %s (%s): %v (record the reason under \"malformed\" to keep the policy as found)", p.ID, p.Name, err)
 			}
 		default:
 			fail("policy %s (%s): unknown type %q", p.ID, p.Name, p.Type)
@@ -112,9 +115,20 @@ func (s *Snapshot) Validate() error {
 
 // ValidatePolicyDocument checks that a document has the structure its policy
 // type requires, so that malformed input is reported with the statement and
-// element at fault. SCPs and RCPs must parse as IAM policy documents; an RCP
-// statement must carry Principal "*" and an SCP statement none; tag and
-// backup policies must be objects with their top-level map.
+// element at fault. SCPs and RCPs must parse as IAM policy documents (one
+// action element and one resource element per statement); an RCP statement
+// must carry Principal "*" and an SCP statement none; tag and backup
+// policies must be objects with their top-level map.
+//
+// The Resource rules come from the syntax pages of the two policy types
+// (checked 2026-11-05), not from IAM in general, where a role trust policy
+// has no Resource at all: "Each statement in an SCP must include a Resource
+// or NotResource element", "In statements where the Effect element has a
+// value of Allow, you can specify only "*" in the Resource element of an
+// SCP", and for RCPs "Each statement must contain the Resource or
+// NotResource element" with NotAction and NotPrincipal unsupported. A
+// statement without the element is therefore malformed; it is never read
+// as a statement about every resource.
 func ValidatePolicyDocument(t PolicyType, doc json.RawMessage) error {
 	switch t {
 	case PolicyTypeSCP, PolicyTypeRCP:
@@ -124,12 +138,21 @@ func ValidatePolicyDocument(t PolicyType, doc json.RawMessage) error {
 		}
 		for i := range d.Statements {
 			st := &d.Statements[i]
+			if !st.HasResourceElement() {
+				return fmt.Errorf("%s: each statement of a %s must include a Resource or NotResource element", st.Label(), policyTypeWords(t))
+			}
 			switch t {
 			case PolicyTypeSCP:
 				if st.Principals != nil || st.NotPrincipals != nil {
 					return fmt.Errorf("%s: service control policies cannot carry a Principal or NotPrincipal element", st.Label())
 				}
+				if st.IsAllow() && len(st.Resources) > 0 && !(len(st.Resources) == 1 && st.Resources[0] == "*") {
+					return fmt.Errorf("%s: an Allow statement of a service control policy can only have \"*\" as its Resource", st.Label())
+				}
 			case PolicyTypeRCP:
+				if len(st.NotActions) > 0 {
+					return fmt.Errorf("%s: resource control policies do not support NotAction", st.Label())
+				}
 				if st.NotPrincipals != nil {
 					return fmt.Errorf("%s: resource control policies do not support NotPrincipal", st.Label())
 				}
@@ -169,6 +192,13 @@ func ValidatePolicyDocument(t PolicyType, doc json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+func policyTypeWords(t PolicyType) string {
+	if t == PolicyTypeRCP {
+		return "resource control policy"
+	}
+	return "service control policy"
 }
 
 // validateControlTower checks that every Control Tower reference points at a

@@ -157,8 +157,59 @@ type Policy struct {
 	// Document is the policy content as stored by AWS (IAM JSON for SCP and
 	// RCP, the tag or backup policy JSON syntax otherwise).
 	Document json.RawMessage `json:"document"`
+	// Malformed is the reason the document is not a well-formed policy of
+	// its type (a statement with both Action and NotAction, an SCP statement
+	// without a Resource element), recorded by the collector so one bad
+	// policy does not stop a collection. The evaluator treats such a policy
+	// as unknown in both directions: every check whose chain holds it is a
+	// REVIEW. Empty for a well-formed policy.
+	Malformed string `json:"malformed,omitempty"`
 	// Targets lists root, OU and account IDs the policy is attached to.
 	Targets []string `json:"targets"`
+}
+
+// MalformedReason returns why a policy's document is not a well-formed
+// policy of its type, or "" when it is. The document decides: a recorded
+// reason on a document that validates is ignored.
+func (p *Policy) MalformedReason() string {
+	if len(p.Document) == 0 || !json.Valid(p.Document) {
+		if p.Malformed != "" {
+			return p.Malformed
+		}
+		return "document is not valid JSON"
+	}
+	if err := ValidatePolicyDocument(p.Type, p.Document); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// MalformedPolicies returns the policies whose documents are malformed.
+func (s *Snapshot) MalformedPolicies() []*Policy {
+	var out []*Policy
+	for i := range s.Policies {
+		if s.Policies[i].MalformedReason() != "" {
+			out = append(out, &s.Policies[i])
+		}
+	}
+	return out
+}
+
+// MarkMalformedPolicies records the reason on every policy whose document
+// is malformed and returns how many there are. The collector calls it so a
+// collected snapshot says what it found instead of failing validation.
+func (s *Snapshot) MarkMalformedPolicies() int {
+	n := 0
+	for i := range s.Policies {
+		p := &s.Policies[i]
+		if reason := p.MalformedReason(); reason != "" {
+			p.Malformed = reason
+			n++
+		} else {
+			p.Malformed = ""
+		}
+	}
+	return n
 }
 
 // ResourceShare is an AWS RAM resource share seen from the owning organization.

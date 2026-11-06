@@ -835,6 +835,16 @@ func (r *run) policyType(t snapshot.PolicyType) {
 			ID: id, ARN: aws.ToString(summary.Arn), Name: aws.ToString(summary.Name), Description: aws.ToString(summary.Description),
 			Type: t, AWSManaged: summary.AwsManaged, Document: []byte(aws.ToString(desc.Policy.Content)), Targets: []string{},
 		}
+		// A policy whose document is not well formed for its type is kept
+		// as found, with the reason: the collector records what the
+		// organization holds and carries on, and the evaluator turns every
+		// check that depends on the policy into a REVIEW.
+		if len(p.Document) == 0 || !json.Valid(p.Document) {
+			quoted, _ := json.Marshal(aws.ToString(desc.Policy.Content))
+			p.Document, p.Malformed = quoted, "document is not valid JSON"
+		} else if reason := p.MalformedReason(); reason != "" {
+			p.Malformed = reason
+		}
 		targets := organizations.NewListTargetsForPolicyPaginator(r.opts.Organizations, &organizations.ListTargetsForPolicyInput{PolicyId: aws.String(id)})
 		tn, err := r.paginate(domain, ops[2], targets.HasMorePages, func() error {
 			tp, err := targets.NextPage(r.ctx)
@@ -877,10 +887,20 @@ func (r *run) policyType(t snapshot.PolicyType) {
 		r.record(d)
 		return
 	}
+	var malformed []string
 	for _, res := range results {
 		r.snap.Policies = append(r.snap.Policies, res.policy)
+		if res.policy.Malformed != "" {
+			malformed = append(malformed, fmt.Sprintf("%s (%s): %s", res.policy.Name, res.policy.ID, res.policy.Malformed))
+			r.opts.Logger.Printf("policy %s (%s) is malformed and kept as found: %s", res.policy.Name, res.policy.ID, res.policy.Malformed)
+		}
 	}
-	r.record(r.observed(domain, items, pages, ops...))
+	d := r.observed(domain, items, pages, ops...)
+	if len(malformed) > 0 {
+		// The domain was read completely; what it holds is another matter.
+		d.Reason = fmt.Sprintf("%d malformed policy(ies) kept as found, each a REVIEW for the checks that depend on it: %s", len(malformed), strings.Join(malformed, "; "))
+	}
+	r.record(d)
 }
 
 func (r *run) delegated() {
@@ -1731,6 +1751,13 @@ func Summary(s *snapshot.Snapshot) string {
 	}
 	if ic := s.IdentityCenter; ic != nil {
 		out += fmt.Sprintf("; Identity Center with %d permission sets and %d account assignments", len(ic.PermissionSets), len(ic.Assignments))
+	}
+	if bad := s.MalformedPolicies(); len(bad) > 0 {
+		names := make([]string, 0, len(bad))
+		for _, p := range bad {
+			names = append(names, p.Name)
+		}
+		out += fmt.Sprintf("; %d malformed policy(ies) kept as found (%s)", len(bad), strings.Join(names, ", "))
 	}
 	if len(s.StackSets) > 0 {
 		instances := 0

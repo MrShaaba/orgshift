@@ -59,6 +59,22 @@ func (b *builder) policySteps(c evaluator.Check) {
 		if hasEvidence(f, "coverage") {
 			continue // handled by coverageSteps
 		}
+		if ev := firstEvidence(f, "policy-unparseable"); ev != nil && f.Action == "" {
+			// A malformed policy on a chain: nothing behind it is decided
+			// until the document is corrected and collected again.
+			where, side := b.targetMgmt(), "destination"
+			if ev.Side == "source" {
+				where, side = b.sourceMgmt(), "source"
+			}
+			b.add(PhaseBefore, Step{Kind: KindPolicy, Status: f.Status, Title: fmt.Sprintf("Correct or replace the malformed %s %s, then collect again", typ, ev.PolicyName), Check: c.ID, Finding: f.Title, Where: where,
+				Detail: f.Detail + " The actions that meet this policy are listed as REVIEW below for the same reason; they are decided once the document is well formed.",
+				Commands: []string{
+					fmt.Sprintf("aws organizations describe-policy --policy-id %s --query Policy.Content --output text > %s.json", ev.PolicyID, ev.PolicyID),
+					fmt.Sprintf("# correct the statement named above, then: aws organizations update-policy --policy-id %s --content file://%s.json", ev.PolicyID, ev.PolicyID),
+					fmt.Sprintf("orgshift collect --config orgshift.yaml --side %s --out <%s snapshot>", side, map[string]string{"source": "source", "destination": "target"}[side]),
+				}, Evidence: f.Evidence})
+			continue
+		}
 		if f.Action == "" {
 			b.add(PhaseBefore, Step{Kind: KindInput, Status: f.Status, Title: f.Title, Detail: f.Detail, Check: c.ID, Finding: f.Title,
 				Commands: []string{fmt.Sprintf("orgshift simulate --from <source snapshot> --to <target snapshot> --account %s --target-ou %s --last-accessed <get-service-last-accessed-details output>", b.acct, b.res.Subject.TargetOUID)}})

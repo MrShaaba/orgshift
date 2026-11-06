@@ -148,8 +148,9 @@
 
 {{define "policy_ref"}}
 <details class="policy">
-  <summary><strong>{{.Name}}</strong> <code>{{.ID}}</code> <span class="muted small">at {{.Level}}</span>{{if .AWSManaged}} <span class="pill side">AWS managed</span>{{end}}{{if .ControlTowerManaged}} <span class="pill ct" title="A preventive control enforced by Control Tower; change it by disabling the control, not by editing the SCP">Control Tower guardrail</span>{{end}}</summary>
+  <summary><strong>{{.Name}}</strong> <code>{{.ID}}</code> <span class="muted small">at {{.Level}}</span>{{if .AWSManaged}} <span class="pill side">AWS managed</span>{{end}}{{if .ControlTowerManaged}} <span class="pill ct" title="A preventive control enforced by Control Tower; change it by disabling the control, not by editing the SCP">Control Tower guardrail</span>{{end}}{{if .Malformed}} <span class="pill review" title="{{.Malformed}}">malformed</span>{{end}}</summary>
   {{if .Description}}<p class="muted">{{.Description}}</p>{{end}}
+  {{if .Malformed}}<p class="muted">Not a well-formed policy of its type, so it was not evaluated and every check that depends on it is a REVIEW: {{.Malformed}}.</p>{{end}}
   {{if .Statements}}
   <ul class="statements">
     {{range .Statements}}<li><span class="effect {{lower .Effect}}">{{.Effect}}</span> {{if .NotActions}}<em>NotAction</em> {{join .NotActions ", "}}{{else}}{{join .Actions ", "}}{{end}}{{if .HasCondition}} <span class="muted">when {{join .Conditions " and "}}</span>{{end}}{{if .Sid}} <code class="sid">{{.Sid}}</code>{{end}}</li>{{end}}

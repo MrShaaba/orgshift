@@ -85,7 +85,7 @@ type Match struct {
 func (s *Statement) Applies(req Request) Match {
 	parts := []Match{
 		s.matchAction(req.Action),
-		s.matchResource(req.Resource),
+		s.matchResource(req.Resource, req.Context),
 		s.matchPrincipal(req.Principal),
 		s.matchConditions(req.Context),
 	}
@@ -144,7 +144,12 @@ func (s *Statement) matchAction(action string) Match {
 	return Match{Outcome: No, Reason: "action not listed"}
 }
 
-func (s *Statement) matchResource(resource string) Match {
+func (s *Statement) matchResource(resource string, ctx Context) Match {
+	if !s.HasResourceElement() {
+		// No Resource element: a statement of a policy attached to a
+		// resource (a role trust policy) is about that resource.
+		return Match{Outcome: Yes}
+	}
 	patterns, negate := s.Resources, false
 	if len(s.NotResources) > 0 {
 		patterns, negate = s.NotResources, true
@@ -159,7 +164,15 @@ func (s *Statement) matchResource(resource string) Match {
 	if resource == "" {
 		return Match{Outcome: Unknown, Reason: "statement is scoped to specific resources and the resource in use is unknown"}
 	}
-	o := matchPatterns(patterns, resource, false, modeResource)
+	o, unresolved := matchResourcePatterns(patterns, resource, ctx)
+	element := "Resource"
+	if negate {
+		element = "NotResource"
+	}
+	variableReason := ""
+	if len(unresolved) > 0 {
+		variableReason = fmt.Sprintf("%s names a policy variable (%s) whose value is not known for this request, so the statement may or may not apply; give the principal's tags or attributes in the usage entry to decide it", element, strings.Join(unresolved, ", "))
+	}
 	if negate {
 		switch o {
 		case Yes:
@@ -167,15 +180,73 @@ func (s *Statement) matchResource(resource string) Match {
 		case No:
 			return Match{Outcome: Yes}
 		}
+		if variableReason != "" {
+			return Match{Outcome: Unknown, Reason: variableReason}
+		}
 		return Match{Outcome: Unknown, Reason: "resource only partly overlaps the NotResource list"}
 	}
 	switch o {
 	case Yes:
 		return Match{Outcome: Yes}
 	case No:
-		return Match{Outcome: No, Reason: "resource not covered"}
+		return Match{Outcome: No, Reason: "resource not listed"}
+	}
+	if variableReason != "" {
+		return Match{Outcome: Unknown, Reason: variableReason}
 	}
 	return Match{Outcome: Unknown, Reason: "resource only partly overlaps the Resource list"}
+}
+
+// matchResourcePatterns matches a resource against the patterns of a
+// Resource or NotResource element, resolving policy variables from the
+// request context. It returns the variables that could not be resolved and
+// on which the outcome depends.
+//
+// A variable whose value is known is substituted. A variable that is known
+// to have no value makes its pattern match no resource, as IAM documents:
+// "the resource that includes a policy variable with no value will not
+// match any resource". A variable whose value is not known is neither: the
+// pattern is tried with a wildcard in its place, and where that could match
+// the outcome is unknown, never a definite non-match.
+func matchResourcePatterns(patterns []string, resource string, ctx Context) (Outcome, []string) {
+	out := No
+	var unresolved []string
+	for _, p := range patterns {
+		rp, state, names := resolveVariables(p, ctx)
+		switch state {
+		case variableNoValue:
+			continue
+		case variableUnresolved:
+			if compare(rp, resource, false, modeResource) != No {
+				out = Unknown
+				for _, n := range names {
+					if !containsString(unresolved, n) {
+						unresolved = append(unresolved, n)
+					}
+				}
+			}
+			continue
+		}
+		switch compare(rp, resource, false, modeResource) {
+		case Yes:
+			return Yes, nil
+		case Unknown:
+			out = Unknown
+		}
+	}
+	if out != Unknown {
+		unresolved = nil
+	}
+	return out, unresolved
+}
+
+func containsString(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Statement) matchPrincipal(principal string) Match {

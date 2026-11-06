@@ -96,3 +96,34 @@ func TestSameOrgWorkloadStep(t *testing.T) {
 		t.Errorf("same-organization StackSet step: %+v", s)
 	}
 }
+
+// A malformed policy on a chain is a step of its own: correct the document
+// and collect again, in the management account of the side that holds it.
+func TestMalformedPolicyStep(t *testing.T) {
+	l, f := fixtures.Larkspur(), fixtures.Fernhill()
+	for i := range f.Policies {
+		if f.Policies[i].Name == "Fernhill-EU-Only-Regions" {
+			f.Policies[i].Document = []byte(`{"Version":"2012-10-17","Statement":[{"Sid":"Broken","Effect":"Deny","Action":"ec2:*","NotAction":"s3:*","Resource":"*"}]}`)
+			f.Policies[i].Malformed = "statement #1: statement has both Action and NotAction; a statement carries one or the other"
+		}
+	}
+	if err := f.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	res, err := evaluator.Evaluate(evaluator.Input{From: l, To: f, AccountID: fixtures.LarkspurPaymentsProd, TargetOUID: fixtures.FernhillPaymentsOU})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rb := Build(res, l, f)
+	s := stepWith(t, rb, PhaseBefore, "Correct or replace the malformed SCP Fernhill-EU-Only-Regions, then collect again")
+	cmds := strings.Join(s.Commands, "\n")
+	if s.Kind != KindPolicy || s.Status != evaluator.StatusReview || !strings.Contains(s.Where, "222222222221") || !strings.Contains(s.Detail, "both Action and NotAction") ||
+		!strings.Contains(cmds, "aws organizations describe-policy --policy-id p-fern0002") || !strings.Contains(cmds, "orgshift collect --config orgshift.yaml --side destination") {
+		t.Errorf("malformed policy step: %+v", s)
+	}
+	for _, st := range rb.Steps() {
+		if strings.Contains(st.Finding, "is malformed") && st.Kind == KindInput {
+			t.Errorf("a malformed policy is not a missing usage list: %s", st.Title)
+		}
+	}
+}

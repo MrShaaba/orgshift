@@ -187,6 +187,40 @@ Source: [AWS IAM Identity Center and AWS Organizations](https://docs.aws.amazon.
   the instruction to confirm in IAM after the move, since the page does not
   name those roles.
 
+## Who SCPs and RCPs do not restrict
+
+Source: [Service control policies](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html),
+checked on 2026-11-05; the RCP exemptions are part of the
+`rcp-applicability` model above.
+
+- "SCPs don't affect users or roles in the management account. They affect
+  only the member accounts in your organization." The evaluator asks this
+  of each side separately: an account is exempt in the organization it
+  manages and nowhere else. A management account that becomes a member of
+  another organization is evaluated as unrestricted before the move and
+  against the full chain after it, so every restriction of the destination
+  is reported as new, including one its own root carries in a policy of
+  the same content. Inside one organization the management account is
+  exempt at either position. The prerequisite that a management account
+  cannot leave the organization it manages is a separate finding of the
+  organization services check.
+- "SCPs do not affect any service-linked role." A usage entry whose
+  `principal_arn` is under `role/aws-service-role/` is not evaluated
+  against SCPs or RCPs on either side; an informational finding lists the
+  calls that were left out.
+- The same page lists other tasks SCPs cannot restrict (registering for
+  the Enterprise support plan as the root user, CloudFront trusted
+  signers, reverse DNS for Lightsail and EC2 as the root user, and tasks
+  on a few AWS-related services). They are not modelled: none of them is
+  an action a usage list would carry.
+- RCPs do not restrict resources that belong to a management account, on
+  the side where the account is one. The rule is applied to the moving
+  account's own resources and inbound access the same way.
+
+Before 2026-11-05 the evaluator ran both sides through the chain whatever
+the account was, so a management account read as "already denied" by its
+own root, and a service-linked role's call as denied by any SCP.
+
 ## Wildcards in ARNs
 
 Sources: [IAM condition operators](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html),

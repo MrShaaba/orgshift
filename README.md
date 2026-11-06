@@ -386,6 +386,11 @@ has every option.
 - Actions in use are assumed to be performed by IAM roles of the account
   unless `principal_arn` says otherwise. This lets the common root-user deny
   be evaluated instead of turning every action into a REVIEW.
+- SCPs do not apply to the management account of an organization or to
+  service-linked roles, and RCPs do not restrict a management account's
+  resources. Each side of a move is asked separately, so a management
+  account that becomes a member elsewhere is unrestricted before and fully
+  restricted after.
 - Actions without explicit regions are evaluated in every region the
   account has enabled; global services are evaluated in `us-east-1`.
 - An action whose resource names no account is assumed to act on the

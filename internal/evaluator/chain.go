@@ -338,9 +338,15 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 		return
 	}
 	total, flagged := 0, 0
-	var notGoverned, exempt, elsewhere []string
+	var notGoverned, exempt, elsewhere, serviceLinked []string
 	skipped := map[string]bool{}
 	for _, a := range usage.Actions {
+		// Neither SCPs nor RCPs restrict a call made by a service-linked
+		// role, on either side.
+		if isServiceLinkedRole(a.PrincipalArn) {
+			serviceLinked = append(serviceLinked, a.Action+" by "+a.PrincipalArn)
+			continue
+		}
 		if t == snapshot.PolicyTypeRCP {
 			switch applies, why := rcpApplies(a.Action); applies {
 			case false:
@@ -370,14 +376,18 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 		}
 		total++
 		regions := regionsFor(a.Action, a.Regions, e.account.EnabledRegions)
+		// Each side is asked on its own whether the policy type applies to
+		// the account there: a management account is exempt in the
+		// organization it manages and nowhere else.
+		srcExempt, dstExempt := e.exemptOn(&e.src, t, routed.owner == ""), e.exemptOn(&e.dst, t, routed.owner == "")
 		groups := map[string]*regionGroup{}
 		var order []string
 		for _, r := range regions {
 			var sd, dd decision
-			if routed.srcEnabled {
+			if routed.srcEnabled && !srcExempt {
 				sd = e.evalChain(routed.srcChain, e.ownRequest(&e.src, a, r))
 			}
-			if routed.dstEnabled {
+			if routed.dstEnabled && !dstExempt {
 				dd = e.evalChain(routed.dstChain, e.ownRequest(&e.dst, a, r))
 			}
 			key := sd.groupKey() + "||" + dd.groupKey()
@@ -400,6 +410,7 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 			if a.Source == SourceDeclared {
 				f.Detail += " This operation was declared critical by the operator rather than observed."
 			}
+			f.Detail += e.exemptionNote(t, srcExempt, dstExempt)
 			if routed.owner != "" {
 				f.Detail += fmt.Sprintf(" The resource belongs to account %s, so the RCPs of that account's organization apply; what changes is that the caller's organization becomes %s.", routed.owner, e.dst.orgID)
 			}
@@ -426,8 +437,12 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 	if t == snapshot.PolicyTypeRCP {
 		e.rcpModelFindings(c, notGoverned, exempt)
 	}
+	e.exemptionFindings(c, t, serviceLinked)
 	sortFindings(c.Findings)
 	c.Summary = fmt.Sprintf("%d actions evaluated against the %s chain; %d flagged.", total, t.Short(), flagged)
+	if len(serviceLinked) > 0 {
+		c.Summary += fmt.Sprintf(" %d call(s) by service-linked roles are not restricted by %ss and were not evaluated.", len(serviceLinked), t.Short())
+	}
 	if t == snapshot.PolicyTypeRCP {
 		c.Summary += fmt.Sprintf(" RCP applicability model %s: %d action(s) on services RCPs do not govern were not evaluated, %d exempt.", RCPModelVersion, len(notGoverned), len(exempt))
 		if len(elsewhere) > 0 {
@@ -466,12 +481,15 @@ func (e *evaluation) evaluateInbound(c *Check) {
 			regions := regionsFor(action, explicit, e.account.EnabledRegions)
 			groups := map[string]*regionGroup{}
 			var order []string
+			// The resource is the account's own: RCPs do not restrict it on
+			// a side where the account is the management account.
+			srcExempt, dstExempt := e.exemptOn(&e.src, t, true), e.exemptOn(&e.dst, t, true)
 			for _, r := range regions {
 				var sd, dd decision
-				if enabledSrc {
+				if enabledSrc && !srcExempt {
 					sd = e.evalChain(src, e.inboundRequest(&e.src, in, action, r))
 				}
-				if enabledDst {
+				if enabledDst && !dstExempt {
 					dd = e.evalChain(dst, e.inboundRequest(&e.dst, in, action, r))
 				}
 				key := sd.groupKey() + "||" + dd.groupKey()
@@ -498,6 +516,7 @@ func (e *evaluation) evaluateInbound(c *Check) {
 				if in.Note != "" {
 					f.Detail += " Note from the usage list: " + in.Note + "."
 				}
+				f.Detail += e.exemptionNote(t, srcExempt, dstExempt)
 				if status == StatusReview && in.PrincipalOrgID == "" {
 					if _, known := e.orgOfAccount(policy.AccountFromPrincipal(in.Principal)); !known && !strings.HasSuffix(in.Principal, ".amazonaws.com") {
 						f.Detail += " Set principal_org_id on this inbound_access entry if the caller's organization is known."

@@ -382,7 +382,7 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 		srcExempt, dstExempt := e.exemptOn(&e.src, t, routed.owner == ""), e.exemptOn(&e.dst, t, routed.owner == "")
 		groups := map[string]*regionGroup{}
 		var order []string
-		for _, r := range regions {
+		for _, r := range regions.regions {
 			var sd, dd decision
 			if routed.srcEnabled && !srcExempt {
 				sd = e.evalChain(routed.srcChain, e.ownRequest(&e.src, a, r))
@@ -414,9 +414,10 @@ func (e *evaluation) evaluateOwnActions(c *Check, t snapshot.PolicyType) {
 			if routed.owner != "" {
 				f.Detail += fmt.Sprintf(" The resource belongs to account %s, so the RCPs of that account's organization apply; what changes is that the caller's organization becomes %s.", routed.owner, e.dst.orgID)
 			}
-			if !(len(g.regions) == 1 && g.regions[0] == "") && !globalServices[serviceOf(a.Action)] {
+			if regions.known() && !globalServices[serviceOf(a.Action)] {
 				f.Regions = g.regions
 			}
+			e.regionNote(&f, regions, a.Action, g.pair)
 			switch {
 			case a.Source == SourceWorkload:
 				f.Detail += " This operation was derived from the workload inventory: " + a.Note + "."
@@ -456,6 +457,29 @@ type regionGroup struct {
 	regions []string
 }
 
+// regionNote says where a finding's Region comes from when the service has
+// more than one kind of endpoint. A decision that could not be made because
+// the endpoint is not known is missing evidence: the usage entry can supply
+// it.
+func (e *evaluation) regionNote(f *Finding, regions regionSet, action string, pair outcomePair) {
+	note := regions.note(action)
+	if note == "" {
+		return
+	}
+	if regions.endpointUnknown {
+		undecided := (pair.dst.kind == unknown && strings.Contains(pair.dst.reason, "aws:RequestedRegion")) ||
+			(pair.src.kind == unknown && strings.Contains(pair.src.reason, "aws:RequestedRegion"))
+		if !undecided {
+			return // the policies decide the call whatever its endpoint
+		}
+		if f.Status == StatusReview {
+			f.Category = CategoryMissingEvidence
+		}
+	}
+	f.Detail += note
+	f.References = append(f.References, refSTSRegions)
+}
+
 // evaluateInbound runs inbound access entries through the RCP chains of the
 // account (the resource owner).
 func (e *evaluation) evaluateInbound(c *Check) {
@@ -484,7 +508,7 @@ func (e *evaluation) evaluateInbound(c *Check) {
 			// The resource is the account's own: RCPs do not restrict it on
 			// a side where the account is the management account.
 			srcExempt, dstExempt := e.exemptOn(&e.src, t, true), e.exemptOn(&e.dst, t, true)
-			for _, r := range regions {
+			for _, r := range regions.regions {
 				var sd, dd decision
 				if enabledSrc && !srcExempt {
 					sd = e.evalChain(src, e.inboundRequest(&e.src, in, action, r))
@@ -510,9 +534,10 @@ func (e *evaluation) evaluateInbound(c *Check) {
 				}
 				flagged++
 				f := Finding{Status: status, Category: category, Source: SourceObserved, Title: title, Detail: detail, Action: action, Resource: in.Resource, Principal: in.Principal}
-				if !(len(g.regions) == 1 && g.regions[0] == "") && !globalServices[serviceOf(action)] {
+				if regions.known() && !globalServices[serviceOf(action)] {
 					f.Regions = g.regions
 				}
+				e.regionNote(&f, regions, action, g.pair)
 				if in.Note != "" {
 					f.Detail += " Note from the usage list: " + in.Note + "."
 				}

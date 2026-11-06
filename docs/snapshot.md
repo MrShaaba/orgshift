@@ -254,8 +254,8 @@ One entry per IAM action that principals in the account perform.
 | --- | --- |
 | `action` | `service:Action`. Wildcards are accepted, for example `dynamodb:*` for an import that only knows the service was used. |
 | `resource` | Optional ARN or ARN pattern. When empty the resource is unknown and statements that are scoped to specific resources produce a REVIEW instead of a verdict. For RCPs, a resource whose ARN names another account routes the evaluation to that account's RCPs (the resource owner's policies apply). |
-| `regions` | Optional. Defaults to the account's `enabled_regions`. Global services (IAM, STS, Organizations, Route 53, CloudFront, Support, and similar) are evaluated in `us-east-1`. |
-| `principal_arn`, `principal_tags` | Optional caller description. Needed for `aws:PrincipalArn` and `aws:PrincipalTag/*` conditions; without them those conditions produce a REVIEW. |
+| `regions` | Optional. Defaults to the account's `enabled_regions`. Services with a single global endpoint (IAM, Organizations, Route 53, CloudFront, Support, and similar) are evaluated in `us-east-1`. For `sts` actions name the Region of the endpoint in use, or `"global"` for `sts.amazonaws.com` (evaluated as `us-east-1`); an `sts` entry without regions leaves the Region unknown, and a policy that looks at `aws:RequestedRegion` then gives a REVIEW rather than a guess. |
+| `principal_arn`, `principal_tags` | Optional caller description. Needed for `aws:PrincipalArn` and `aws:PrincipalTag/*` conditions; without them those conditions produce a REVIEW. A `principal_arn` under `role/aws-service-role/` is a service-linked role, which SCPs and RCPs do not restrict: the entry is listed as exempt and not evaluated. |
 | `source` | `manual` or `iam-last-accessed`. |
 | `last_used`, `note` | Free text. |
 

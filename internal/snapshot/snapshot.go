@@ -253,7 +253,10 @@ type ActionInUse struct {
 	// treats the resource as unknown.
 	Resource string `json:"resource,omitempty"`
 	// Regions limits where the action is used. When empty the account's
-	// enabled regions are assumed. Global services always use us-east-1.
+	// enabled regions are assumed. Services with a single global endpoint
+	// always use us-east-1. AWS STS has Regional endpoints and a global one:
+	// name the Region of the endpoint, or "global" for sts.amazonaws.com
+	// (evaluated as us-east-1); without either the Region is unknown.
 	Regions []string `json:"regions,omitempty"`
 	// PrincipalArn and PrincipalTags describe the caller when known. They are
 	// needed to evaluate aws:PrincipalArn and aws:PrincipalTag conditions.

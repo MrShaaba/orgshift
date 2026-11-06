@@ -221,6 +221,34 @@ Before 2026-11-05 the evaluator ran both sides through the chain whatever
 the account was, so a management account read as "already denied" by its
 own root, and a service-linked role's call as denied by any SCP.
 
+## The Region of a request (`aws:RequestedRegion`)
+
+Source: [Manage AWS STS in an AWS Region](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_region-endpoints.html),
+checked on 2026-11-05.
+
+- Services with one global endpoint (IAM, Organizations, CloudFront,
+  Route 53 and the others in the evaluator's list) are evaluated in
+  `us-east-1`.
+- AWS STS has Regional endpoints (`sts.eu-west-1.amazonaws.com`) and a
+  global one (`sts.amazonaws.com`). "Requests made to the AWS STS global
+  endpoint have a value of `us-east-1` for the `aws:RequestedRegion`
+  condition key, regardless of which Region served the request." A request
+  to a Regional endpoint is evaluated in that Region. So an `sts` usage
+  entry is evaluated in the Regions it names, with `"global"` (or
+  `"aws-global"`) standing for the global endpoint.
+- When an `sts` entry names no Region, the endpoint is not known and
+  neither is the Region: `aws:RequestedRegion` is left unknown. A policy
+  that does not look at the Region still decides the call; one that does
+  gives a REVIEW (missing evidence) that says what to add. The account's
+  enabled Regions are not used as a stand-in, because the endpoint a
+  client calls is a client setting, not an account one. This also holds
+  for the `sts:AssumeRole` call derived from a `Fn::GetStackOutput`
+  reference: which endpoint CloudFormation uses is not documented.
+
+Before 2026-11-05 every `sts` call was evaluated in `us-east-1`, which made
+a call through a Regional endpoint look denied by a guardrail that admits
+its Region, or allowed by one that only denies `us-east-1`.
+
 ## Wildcards in ARNs
 
 Sources: [IAM condition operators](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html),

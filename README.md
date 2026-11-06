@@ -392,7 +392,12 @@ has every option.
   account that becomes a member elsewhere is unrestricted before and fully
   restricted after.
 - Actions without explicit regions are evaluated in every region the
-  account has enabled; global services are evaluated in `us-east-1`.
+  account has enabled; services with a single global endpoint (IAM,
+  Organizations, CloudFront, Route 53 and the like) are evaluated in
+  `us-east-1`. AWS STS is not one of them: an `sts` entry is evaluated in
+  the regions it names, `"global"` stands for the global endpoint (which
+  counts as `us-east-1`), and an entry without regions leaves the region
+  unknown, which is a REVIEW when a policy looks at it, not a guess.
 - An action whose resource names no account is assumed to act on the
   account's own resources; a resource in another account is evaluated
   against that account's RCPs.
